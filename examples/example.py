@@ -9,7 +9,7 @@ BASE_PATH = os.path.abspath(os.path.dirname(__file__))
 
 
 def main():
-    # Create emulator
+    # Initialize emulator
     emulator = Infernum()
 
     # Load modules
@@ -26,7 +26,8 @@ def main():
 
     # Call function
     result = emulator.call_symbol("crc32", a1, a2, a3)
-    logging.info(f"0x{result:x}")
+
+    logging.info(hex(result))
 
 
 if __name__ == "__main__":
