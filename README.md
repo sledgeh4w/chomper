@@ -14,6 +14,7 @@ $ pip install infernum
 
 ## Examples
 
+Load modules and call functions.
 
 ```python
 from infernum import Infernum
@@ -37,4 +38,16 @@ emulator.write_bytes(a2, data)
 result = emulator.call_symbol("crc32", a1, a2, a3)
 
 print(hex(result))
+```
+
+Trace instructions.
+
+```python
+from infernum import Infernum
+
+# Trace all instructions.
+emulator = Infernum(trace_all_inst=True)
+
+# Trace instructions in this module.
+emulator.load_module("lib64/libz.so", trace_inst=True)
 ```
