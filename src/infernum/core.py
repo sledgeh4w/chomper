@@ -152,13 +152,13 @@ class Infernum:
         fp = self.uc.reg_read(arm64_const.UC_ARM64_REG_FP)
 
         while True:
-            fp = self.read_int(fp)
             lr = self.read_int(fp + 8)
+            fp = self.read_int(fp)
             if not fp or not lr:
                 break
             lr_list.append(lr)
 
-        return BackTrace([self.get_location(lr - 4) for lr in lr_list])
+        return BackTrace([self.get_location(lr - 4) for lr in lr_list if lr])
 
     def add_hook(self, symbol_or_addr: Union[str, int], callback: UC_HOOK_CODE_TYPE):
         """Add hook to emulator.
