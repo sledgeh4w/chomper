@@ -5,7 +5,7 @@ from infernum import Infernum
 
 @pytest.fixture()
 def emulator():
-    return Infernum()
+    yield Infernum()
 
 
 def test_alloc(emulator):
@@ -15,5 +15,5 @@ def test_alloc(emulator):
 
 
 def test_free(emulator):
-    buffer = emulator.memory_manager.alloc(255)
+    buffer = emulator.memory_manager.alloc(1024)
     emulator.memory_manager.free(buffer)
