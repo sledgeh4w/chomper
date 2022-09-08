@@ -185,7 +185,7 @@ class Infernum:
             UC_HOOK_CODE,
             callback,
             begin=hook_addr,
-            end=hook_addr + 4,
+            end=hook_addr,
             user_data={"emulator": self},
         )
 
