@@ -28,9 +28,10 @@ class Infernum:
     Args:
         trace_all_inst: If ``True``, trace all instructions and display
             disassemble results.
+        trace_symbol_calls: If ``True``, trace all symbol calls.
     """
 
-    def __init__(self, trace_all_inst: bool = False):
+    def __init__(self, trace_all_inst: bool = False, trace_symbol_calls: bool = True):
         self.logger = logging.getLogger(self.__class__.__name__)
 
         self.uc = Uc(UC_ARCH_ARM64, UC_MODE_ARM)
@@ -42,6 +43,7 @@ class Infernum:
         self.register_size = 8
 
         self.trace_all_inst = trace_all_inst
+        self.trace_symbol_calls = trace_symbol_calls
 
         self.module_address = const.MODULE_ADDRESS
         self.modules: List[Module] = []
@@ -123,6 +125,16 @@ class Infernum:
                 f"Tracing instruction at {self.get_location(address)}: {inst[-1]}."
             )
 
+    def _trace_symbol_call_callback(self, *args):
+        """Trace symbol call."""
+        user_data = args[-1]
+        symbol = user_data["symbol"]
+        ret_addr = self.uc.reg_read(arm64_const.UC_ARM64_REG_LR)
+        self.logger.info(
+            f"Call symbol '{symbol.name}'"
+            + (f"from {self.get_location(ret_addr)}" if ret_addr else "")
+        )
+
     def find_symbol(self, symbol_name: str) -> Symbol:
         """Find symbol from loaded modules.
 
@@ -160,7 +172,12 @@ class Infernum:
 
         return BackTrace([self.get_location(lr - 4) for lr in lr_list if lr])
 
-    def add_hook(self, symbol_or_addr: Union[str, int], callback: UC_HOOK_CODE_TYPE):
+    def add_hook(
+        self,
+        symbol_or_addr: Union[str, int],
+        callback: UC_HOOK_CODE_TYPE,
+        user_data: Optional[dict] = None,
+    ):
         """Add hook to emulator.
 
         Args:
@@ -169,6 +186,8 @@ class Infernum:
                 take its value as the hook address.
             callback: The callback function, same as callback of type
                 ``UC_HOOK_CODE`` in Unicorn.
+            user_data: A ``dict`` that contains the data you want to pass to
+                callback.
         """
         if isinstance(symbol_or_addr, str):
             symbol = self.find_symbol(symbol_or_addr)
@@ -181,12 +200,15 @@ class Infernum:
             hook_addr = symbol_or_addr
             self.logger.info(f"Hook address at {self.get_location(hook_addr)}.")
 
+        if user_data is None:
+            user_data = {}
+
         self.uc.hook_add(
             UC_HOOK_CODE,
             callback,
             begin=hook_addr,
             end=hook_addr,
-            user_data={"emulator": self},
+            user_data={"emulator": self, **user_data},
         )
 
     def _relocate_address(self, relocation: dict, segment: DynamicSegment):
@@ -214,7 +236,11 @@ class Infernum:
             self.write_int(self.module_address + relocation["r_offset"], reloc_addr)
 
     def load_module(
-        self, module_file: str, exec_init_array: bool = False, trace_inst: bool = False
+        self,
+        module_file: str,
+        exec_init_array: bool = False,
+        trace_inst: bool = False,
+        trace_symbol_calls: bool = False,
     ) -> Module:
         """Load ELF library file from path.
 
@@ -224,6 +250,7 @@ class Infernum:
                 in the section ``.init_array``.
             trace_inst: If ``True``, trace instructions in this module and display
                 disassemble results.
+            trace_symbol_calls: If ``True``, trace symbol calls in this module.
         """
         module_name = os.path.basename(module_file)
         elffile = ELFFile.load_from_path(module_file)
@@ -272,10 +299,17 @@ class Infernum:
                     )
 
                     # Hook symbol
-                    if symbol.entry["st_info"][
-                        "type"
-                    ] == "STT_FUNC" and self._symbol_hooks.get(symbol.name):
-                        self.add_hook(symbol.name, self._symbol_hooks[symbol.name])
+                    if symbol.entry["st_info"]["type"] == "STT_FUNC":
+                        # Trace
+                        if self.trace_symbol_calls or trace_symbol_calls:
+                            self.add_hook(
+                                symbol.name,
+                                self._trace_symbol_call_callback,
+                                user_data={"symbol": symbol},
+                            )
+
+                        if self._symbol_hooks.get(symbol.name):
+                            self.add_hook(symbol.name, self._symbol_hooks[symbol.name])
 
             for tag in segment.iter_tags():
                 if tag.entry.d_tag == "DT_NEEDED":
