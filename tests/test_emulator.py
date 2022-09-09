@@ -219,25 +219,19 @@ def test_emulate(emulator, szstonelib, tinylib):
 
 
 def test_unhandled_system_call_exception(emulator):
-    emulator._symbol_hooks.pop("malloc")
-    emulator.load_module(os.path.join(LIBRARY_PATH, "libc.so"))
-
-    with pytest.raises(EmulatorCrashedException) as exc:
+    with pytest.raises(EmulatorCrashedException, match=r"Unhandled system call.*"):
+        emulator._symbol_hooks.pop("malloc")
+        emulator.load_module(os.path.join(LIBRARY_PATH, "libc.so"))
         emulator.call_symbol("malloc")
-
-    assert str(exc).find("Unhandled system call") != -1
 
 
 def test_missing_symbol_required_exception(emulator, szstonelib):
-    data = b"infernum"
+    with pytest.raises(EmulatorCrashedException, match=r"Missing symbol.*"):
+        data = b"infernum"
 
-    a1 = emulator.create_buffer(len(data))
-    a2 = len(data)
-    a3 = emulator.create_buffer(1024)
+        a1 = emulator.create_buffer(len(data))
+        a2 = len(data)
+        a3 = emulator.create_buffer(1024)
 
-    emulator.write_bytes(a1, data)
-
-    with pytest.raises(EmulatorCrashedException) as exc:
+        emulator.write_bytes(a1, data)
         emulator.call_address(szstonelib.base + 0x289A4, a1, a2, a3)
-
-    assert str(exc).find("Missing symbol") != -1
