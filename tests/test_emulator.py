@@ -3,8 +3,8 @@ import zlib as _zlib
 
 import pytest
 
-from src.infernum import Infernum
-from src.infernum.exceptions import EmulatorCrashedException
+from infernum import Infernum
+from infernum.exceptions import EmulatorCrashedException
 
 BASE_PATH = os.path.abspath(os.path.dirname(__file__))
 LIBRARY_PATH = os.path.join(BASE_PATH, "..", "examples/lib64")
