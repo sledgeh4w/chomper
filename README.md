@@ -5,7 +5,7 @@
 ![PyPI - Python Version](https://img.shields.io/pypi/pyversions/infernum)
 [![GitHub license](https://img.shields.io/github/license/Sh4ww/infernum)](https://github.com/Sh4ww/infernum/blob/main/LICENSE)
 
-Infernum is a lightweight Android ELF emulation framework. It is mainly used to emulate native algorithm, so it will not provide JNI environment or file system support. It only supports arch ARM64 for now.
+Infernum is a lightweight Android native library emulation framework. It is mainly used to emulate pure algorithm, so it will not provide JNI environment or file system support. It only supports arch ARM64 for now.
 
 ## Requirements
 
