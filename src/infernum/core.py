@@ -12,6 +12,7 @@ from unicorn.unicorn import UC_HOOK_CODE_TYPE
 
 from . import const, hooks
 from .exceptions import EmulatorCrashedException, SymbolNotFoundException
+from .log import get_logger
 from .memory import MemoryManager
 from .structs import BackTrace, Location, Module, Symbol
 from .utils import aligned
@@ -26,13 +27,19 @@ class Infernum:
     """Lightweight Android native library emulation framework.
 
     Args:
+        logger: The logger.
         trace_inst: If ``True``, trace all instructions and display
             disassemble results.
         trace_symbol_calls: If ``True``, trace all symbol calls.
     """
 
-    def __init__(self, trace_inst: bool = False, trace_symbol_calls: bool = True):
-        self.logger = logging.getLogger(self.__class__.__name__)
+    def __init__(
+        self,
+        logger: Optional[logging.Logger] = None,
+        trace_inst: bool = False,
+        trace_symbol_calls: bool = True,
+    ):
+        self.logger = logger or get_logger(self.__class__.__name__)
 
         self.uc = Uc(UC_ARCH_ARM64, UC_MODE_ARM)
         self.cs = Cs(CS_ARCH_ARM64, CS_MODE_ARM)
@@ -128,9 +135,7 @@ class Infernum:
     def _trace_inst_callback(self, uc: Uc, address: int, size: int, _: Any):
         """Trace instruction."""
         for inst in self.cs.disasm_lite(uc.mem_read(address, size), 0):
-            self.logger.info(
-                f"Tracing instruction at {self.get_location(address)}: {inst[-1]}."
-            )
+            self.logger.info(f"Trace at {self.get_location(address)}: {inst[-1]}.")
 
     def _trace_symbol_call_callback(self, *args):
         """Trace symbol call."""
