@@ -4,6 +4,7 @@ import zlib as _zlib
 import pytest
 
 from infernum import Infernum
+from infernum.exceptions import EmulatorCrashedException
 
 BASE_PATH = os.path.abspath(os.path.dirname(__file__))
 LIBRARY_PATH = os.path.join(BASE_PATH, "..", "examples/lib64")
@@ -215,3 +216,22 @@ def test_emulate(emulator, szstonelib, tinylib):
     result = emulator.read_bytes(a3, 32)
 
     assert _zlib.crc32(result) == 2637469588
+
+
+def test_unhandled_system_call_exception(emulator):
+    with pytest.raises(EmulatorCrashedException, match=r"Unhandled system call.*"):
+        emulator._symbol_hooks.pop("malloc")
+        emulator.load_module(os.path.join(LIBRARY_PATH, "libc.so"))
+        emulator.call_symbol("malloc")
+
+
+def test_missing_symbol_required_exception(emulator, szstonelib):
+    with pytest.raises(EmulatorCrashedException, match=r"Missing symbol.*"):
+        data = b"infernum"
+
+        a1 = emulator.create_buffer(len(data))
+        a2 = len(data)
+        a3 = emulator.create_buffer(1024)
+
+        emulator.write_bytes(a1, data)
+        emulator.call_address(szstonelib.base + 0x289A4, a1, a2, a3)
