@@ -453,6 +453,10 @@ class Infernum:
         self.write_string(address, string)
         return address
 
+    def free(self, address: int):
+        """Free memory."""
+        self.memory_manager.free(address)
+
     def write_int(
         self,
         address: int,

@@ -138,6 +138,11 @@ def test_create_string(emulator):
     assert result is not None
 
 
+def test_free(emulator):
+    buffer = emulator.create_buffer(1024)
+    emulator.free(buffer)
+
+
 def test_write_and_read_int(emulator):
     buffer = emulator.create_buffer(1024)
     value = 105
