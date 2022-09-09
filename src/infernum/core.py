@@ -26,12 +26,12 @@ class Infernum:
     """Lightweight Android ELF emulation framework.
 
     Args:
-        trace_all_inst: If ``True``, trace all instructions and display
+        trace_inst: If ``True``, trace all instructions and display
             disassemble results.
         trace_symbol_calls: If ``True``, trace all symbol calls.
     """
 
-    def __init__(self, trace_all_inst: bool = False, trace_symbol_calls: bool = True):
+    def __init__(self, trace_inst: bool = False, trace_symbol_calls: bool = True):
         self.logger = logging.getLogger(self.__class__.__name__)
 
         self.uc = Uc(UC_ARCH_ARM64, UC_MODE_ARM)
@@ -42,7 +42,7 @@ class Infernum:
         self.little_endian = True
         self.register_size = 8
 
-        self.trace_all_inst = trace_all_inst
+        self.trace_inst = trace_inst
         self.trace_symbol_calls = trace_symbol_calls
 
         self.module_address = const.MODULE_ADDRESS
@@ -301,7 +301,7 @@ class Infernum:
                     # Hook symbol
                     if symbol.entry["st_info"]["type"] == "STT_FUNC":
                         # Trace
-                        if self.trace_symbol_calls or trace_symbol_calls:
+                        if trace_symbol_calls or self.trace_symbol_calls:
                             self.add_hook(
                                 symbol.name,
                                 self._trace_symbol_call_callback,
@@ -338,7 +338,7 @@ class Infernum:
                     # Execute the initialization functions.
                     self._start_emulate(init_func_addr)
 
-        if trace_inst or self.trace_all_inst:
+        if trace_inst or self.trace_inst:
             # Trace instructions
             self.uc.hook_add(
                 UC_HOOK_CODE, self._trace_inst_callback, begin=low_addr, end=high_addr
