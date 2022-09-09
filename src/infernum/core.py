@@ -48,6 +48,9 @@ class Infernum:
         self.module_address = const.MODULE_ADDRESS
         self.modules: List[Module] = []
 
+        self._trap_address = const.TARP_ADDRESS
+        self._init_trap_memory()
+
         self._symbol_hooks: Dict[str, UC_HOOK_CODE_TYPE] = {}
         self._init_symbol_hooks()
 
@@ -118,6 +121,10 @@ class Infernum:
             }
         )
 
+    def _init_trap_memory(self):
+        """Initialize trap memory."""
+        self.uc.mem_map(const.TARP_ADDRESS, const.TRAP_SIZE)
+
     def _trace_inst_callback(self, uc: Uc, address: int, size: int, _: Any):
         """Trace instruction."""
         for inst in self.cs.disasm_lite(uc.mem_read(address, size), 0):
@@ -133,6 +140,16 @@ class Infernum:
         self.logger.info(
             f"Symbol '{symbol.name}' called"
             + (f" from {self.get_location(ret_addr)}." if ret_addr else ".")
+        )
+
+    @staticmethod
+    def _missing_symbol_required_callback(*args):
+        """Raise a exception with information of missing symbol."""
+        user_data = args[-1]
+        symbol_name = user_data["symbol_name"]
+        raise EmulatorCrashedException(
+            f"Missing symbol '{symbol_name}' is required, "
+            f"you should load the library that contains it."
         )
 
     def find_symbol(self, symbol_name: str) -> Symbol:
@@ -177,6 +194,7 @@ class Infernum:
         symbol_or_addr: Union[str, int],
         callback: UC_HOOK_CODE_TYPE,
         user_data: Optional[dict] = None,
+        silenced: Optional[bool] = False,
     ):
         """Add hook to emulator.
 
@@ -188,17 +206,20 @@ class Infernum:
                 ``UC_HOOK_CODE`` in Unicorn.
             user_data: A ``dict`` that contains the data you want to pass to
                 callback.
+            silenced: If ``True``, do not print log.
         """
         if isinstance(symbol_or_addr, str):
             symbol = self.find_symbol(symbol_or_addr)
             hook_addr = symbol.address
-            self.logger.info(
-                f"Hook symbol '{symbol.name}' at {self.get_location(hook_addr)}."
-            )
+            if not silenced:
+                self.logger.info(
+                    f"Hook symbol '{symbol.name}' at {self.get_location(hook_addr)}."
+                )
 
         else:
             hook_addr = symbol_or_addr
-            self.logger.info(f"Hook address at {self.get_location(hook_addr)}.")
+            if not silenced:
+                self.logger.info(f"Hook address at {self.get_location(hook_addr)}.")
 
         if user_data is None:
             user_data = {}
@@ -226,8 +247,19 @@ class Infernum:
             try:
                 symbol = self.find_symbol(symbol_name)
                 reloc_addr = symbol.address
+
             except SymbolNotFoundException:
-                pass
+                # If the symbol is missing, let it jump to the trap address to
+                # raise an exception with useful information.
+                trap_addr = self._trap_address
+                self.write_int(self.module_address + relocation["r_offset"], trap_addr)
+                self.add_hook(
+                    trap_addr,
+                    self._missing_symbol_required_callback,
+                    user_data={"symbol_name": symbol_name},
+                    silenced=True,
+                )
+                self._trap_address += 4
 
         elif reloc_type == ENUM_RELOC_TYPE_AARCH64["R_AARCH64_RELATIVE"]:
             reloc_addr = self.module_address + relocation["r_addend"]
@@ -306,6 +338,7 @@ class Infernum:
                                 symbol.name,
                                 self._trace_symbol_call_callback,
                                 user_data={"symbol": symbol},
+                                silenced=True,
                             )
 
                         if self._symbol_hooks.get(symbol.name):
