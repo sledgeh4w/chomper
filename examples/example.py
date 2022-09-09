@@ -1,9 +1,6 @@
-import logging
 import os
 
 from infernum import Infernum
-
-logging.basicConfig(level=logging.DEBUG)
 
 BASE_PATH = os.path.abspath(os.path.dirname(__file__))
 
@@ -27,7 +24,7 @@ def main():
     # Call function
     result = emulator.call_symbol("crc32", a1, a2, a3)
 
-    logging.info(hex(result))
+    emulator.logger.info(hex(result))
 
 
 if __name__ == "__main__":
