@@ -42,7 +42,7 @@ emulator.write_bytes(a2, data)
 # Call function
 result = emulator.call_symbol("crc32", a1, a2, a3)
 
-print(hex(result))
+emulator.logger.info(hex(result))
 ```
 
 Trace instructions.
