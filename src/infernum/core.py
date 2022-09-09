@@ -23,7 +23,7 @@ else:
 
 
 class Infernum:
-    """Lightweight Android ELF emulation framework.
+    """Lightweight Android native library emulation framework.
 
     Args:
         trace_inst: If ``True``, trace all instructions and display
@@ -106,15 +106,15 @@ class Infernum:
         """Initialize default symbol hooks."""
         self._symbol_hooks.update(
             {
-                "malloc": hooks.hook_malloc,
+                "__ctype_get_mb_cur_max": hooks.hook_ctype_get_mb_cur_max,
+                "arc4random": hooks.hook_arc4random,
+                "clock_nanosleep": hooks.hook_clock_nanosleep,
                 "free": hooks.hook_free,
+                "getcwd": hooks.hook_getcwd,
                 "getpid": hooks.hook_getpid,
                 "gettid": hooks.hook_gettid,
-                "getcwd": hooks.hook_getcwd,
-                "arc4random": hooks.hook_arc4random,
+                "malloc": hooks.hook_malloc,
                 "nanosleep": hooks.hook_nanosleep,
-                "clock_nanosleep": hooks.hook_clock_nanosleep,
-                "__ctype_get_mb_cur_max": hooks.hook_ctype_get_mb_cur_max,
             }
         )
 
@@ -131,8 +131,8 @@ class Infernum:
         symbol = user_data["symbol"]
         ret_addr = self.uc.reg_read(arm64_const.UC_ARM64_REG_LR)
         self.logger.info(
-            f"Call symbol '{symbol.name}'"
-            + (f"from {self.get_location(ret_addr)}" if ret_addr else "")
+            f"Symbol '{symbol.name}' called"
+            + (f" from {self.get_location(ret_addr)}." if ret_addr else ".")
         )
 
     def find_symbol(self, symbol_name: str) -> Symbol:
@@ -193,7 +193,7 @@ class Infernum:
             symbol = self.find_symbol(symbol_or_addr)
             hook_addr = symbol.address
             self.logger.info(
-                f"Hook symbol {symbol.name} at {self.get_location(hook_addr)}."
+                f"Hook symbol '{symbol.name}' at {self.get_location(hook_addr)}."
             )
 
         else:
@@ -258,7 +258,7 @@ class Infernum:
         if elffile.structs.e_machine != "EM_AARCH64":
             raise ValueError("Infernum only supports arch ARM64 for now")
 
-        self.logger.info(f"Load module {module_name}.")
+        self.logger.info(f"Load module '{module_name}'.")
 
         # The memory range in which the module is loaded.
         low_addr = self.module_address
