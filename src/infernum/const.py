@@ -1,3 +1,7 @@
+# Supported arch
+ARCH_ARM = 1
+ARCH_ARM64 = 2
+
 # The address of thread local storage (TLS)
 TLS_ADDRESS = 0x10000
 TLS_SIZE = 0x400

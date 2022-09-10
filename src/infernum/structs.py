@@ -4,7 +4,7 @@ from typing import List, Optional
 
 @dataclass
 class Symbol:
-    """The symbol struct."""
+    """The symbol object."""
 
     address: int
     name: str
@@ -12,7 +12,7 @@ class Symbol:
 
 @dataclass
 class Module:
-    """The module struct."""
+    """The module object."""
 
     base: int
     size: int
@@ -22,30 +22,20 @@ class Module:
 
 @dataclass
 class Location:
-    """The location struct."""
+    """An address and the module containing it."""
 
     address: int
     module: Optional[Module]
 
     def __repr__(self):
         if not self.module:
-            return f"0x{self.address}"
+            return f"0x{self.address:x}"
         return f"0x{(self.address - self.module.base):x}@{self.module.name}"
 
 
 @dataclass
-class BackTrace:
-    """The back trace struct."""
-
-    locations: List[Location]
-
-    def __repr__(self):
-        return str(self.locations)
-
-
-@dataclass
 class Pool:
-    """The memory pool struct.`"""
+    """Relate to a black of memory mapped on Unicorn."""
 
     address: int
     size: int
@@ -58,3 +48,19 @@ class Pool:
     @property
     def block_size(self) -> int:
         return self.size // self.block_num
+
+
+@dataclass
+class Arch:
+    """The arch object."""
+
+    name: str
+    reg_size: int
+
+    reg_sp: int
+    reg_fp: int
+    reg_lr: int
+    reg_pc: int
+
+    reg_args: List[int]
+    reg_ret: int

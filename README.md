@@ -5,7 +5,7 @@
 ![PyPI - Python Version](https://img.shields.io/pypi/pyversions/infernum)
 [![GitHub license](https://img.shields.io/github/license/Sh4ww/infernum)](https://github.com/Sh4ww/infernum/blob/main/LICENSE)
 
-Infernum is a lightweight Android native library emulation framework. It is mainly used to emulate pure algorithm, so it will not provide JNI or file system support. It only supports arch ARM64 for now.
+Infernum is a lightweight Android native library emulation framework. It is mainly used to emulate pure algorithm, so it will not provide JNI or file system support. It supports arch ARM and ARM64.
 
 ## Requirements
 
@@ -23,9 +23,10 @@ Load modules and call functions.
 
 ```python
 from infernum import Infernum
+from infernum.const import ARCH_ARM64
 
 # Initialize emulator
-emulator = Infernum()
+emulator = Infernum(ARCH_ARM64)
 
 # Load modules
 emulator.load_module("lib64/libz.so")
@@ -49,9 +50,10 @@ Trace instructions.
 
 ```python
 from infernum import Infernum
+from infernum.const import ARCH_ARM64
 
 # Trace all instructions.
-emulator = Infernum(trace_inst=True)
+emulator = Infernum(ARCH_ARM64, trace_inst=True)
 
 # Trace instructions in this module.
 emulator.load_module("lib64/libz.so", trace_inst=True)
