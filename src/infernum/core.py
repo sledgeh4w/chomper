@@ -3,18 +3,29 @@ import os
 import sys
 from typing import Any, Dict, List, Optional, Tuple, Union
 
-from capstone import CS_ARCH_ARM64, CS_MODE_ARM, Cs
+from capstone import CS_ARCH_ARM, CS_ARCH_ARM64, CS_MODE_ARM, CS_MODE_THUMB, Cs
 from elftools.elf.dynamic import DynamicSegment
 from elftools.elf.elffile import ELFFile
-from elftools.elf.enums import ENUM_RELOC_TYPE_AARCH64
-from unicorn import UC_ARCH_ARM64, UC_HOOK_CODE, UC_MODE_ARM, Uc, UcError, arm64_const
+from elftools.elf.enums import ENUM_RELOC_TYPE_ARM, ENUM_RELOC_TYPE_AARCH64
+from elftools.elf.relocation import Relocation
+from unicorn import (
+    UC_ARCH_ARM,
+    UC_ARCH_ARM64,
+    UC_HOOK_CODE,
+    UC_MODE_ARM,
+    UC_MODE_THUMB,
+    Uc,
+    UcError,
+    arm64_const,
+)
 from unicorn.unicorn import UC_HOOK_CODE_TYPE
 
 from . import const, hooks
-from .exceptions import EmulatorCrashedException, SymbolNotFoundException
+from .arch import arch_arm, arch_arm64
+from .exceptions import EmulatorCrashedException, SymbolMissingException
 from .log import get_logger
 from .memory import MemoryManager
-from .structs import BackTrace, Location, Module, Symbol
+from .structs import Location, Module, Symbol
 from .utils import aligned
 
 if sys.version_info >= (3, 8):
@@ -27,30 +38,35 @@ class Infernum:
     """Lightweight Android native library emulation framework.
 
     Args:
-        logger: The logger.
-        trace_inst: If ``True``, trace all instructions and display
+        arch: The arch, support ARM/ARM64.
+        logger: The logger, if ``None``, use default logger.
+        enable_thumb: Whether to use THUMB mode. This param only available on
+            arch ARM.
+        trace_inst: Whether to trace all instructions and display
             disassemble results.
-        trace_symbol_calls: If ``True``, trace all symbol calls.
+        trace_symbol_calls: Whether to trace all symbol calls.
     """
 
     def __init__(
         self,
+        arch: int = const.ARCH_ARM64,
         logger: Optional[logging.Logger] = None,
+        enable_thumb: bool = True,
         trace_inst: bool = False,
         trace_symbol_calls: bool = True,
     ):
+        self.arch = arch_arm if arch == const.ARCH_ARM else arch_arm64
         self.logger = logger or get_logger(self.__class__.__name__)
-
-        self.uc = Uc(UC_ARCH_ARM64, UC_MODE_ARM)
-        self.cs = Cs(CS_ARCH_ARM64, CS_MODE_ARM)
-
-        self.memory_manager = MemoryManager(uc=self.uc, heap_address=const.HEAP_ADDRESS)
-
-        self.little_endian = True
-        self.register_size = 8
-
+        self.enable_thumb = enable_thumb
         self.trace_inst = trace_inst
         self.trace_symbol_calls = trace_symbol_calls
+
+        self.endian: Literal["little", "big"] = "little"
+
+        self.uc = self._create_uc()
+        self.cs = self._create_cs()
+
+        self.memory_manager = MemoryManager(uc=self.uc, heap_address=const.HEAP_ADDRESS)
 
         self.module_address = const.MODULE_ADDRESS
         self.modules: List[Module] = []
@@ -63,20 +79,75 @@ class Infernum:
 
         self._setup_emulator()
 
+    def _create_uc(self) -> Uc:
+        """Create Unicorn instance."""
+        arch = UC_ARCH_ARM if self.arch == arch_arm else UC_ARCH_ARM64
+        mode = (
+            UC_MODE_THUMB
+            if self.arch == arch_arm and self.enable_thumb
+            else UC_MODE_ARM
+        )
+        return Uc(arch, mode)
+
+    def _create_cs(self) -> Cs:
+        """Create Capstone instance."""
+        arch = CS_ARCH_ARM if self.arch == arch_arm else CS_ARCH_ARM64
+        mode = (
+            CS_MODE_THUMB
+            if self.arch == arch_arm and self.enable_thumb
+            else CS_MODE_ARM
+        )
+        return Cs(arch, mode)
+
+    def _init_symbol_hooks(self):
+        """Initialize default symbol hooks."""
+        _hooks = {
+            "malloc": hooks.hook_malloc,
+            "getcwd": hooks.hook_getcwd,
+            "getpid": hooks.hook_getpid,
+            "gettid": hooks.hook_gettid,
+            "free": hooks.hook_free,
+        }
+
+        if self.arch == arch_arm:
+            _hooks.update(
+                {
+                    "memcpy": hooks.hook_memcpy,
+                    "memset": hooks.hook_memset,
+                }
+            )
+
+        elif self.arch == arch_arm64:
+            _hooks.update(
+                {
+                    "__ctype_get_mb_cur_max": hooks.hook_ctype_get_mb_cur_max,
+                    "arc4random": hooks.hook_arc4random,
+                    "clock_nanosleep": hooks.hook_clock_nanosleep,
+                    "nanosleep": hooks.hook_nanosleep,
+                }
+            )
+
+        self._symbol_hooks.update(_hooks)
+
+    def _init_trap_memory(self):
+        """Initialize trap memory."""
+        self.uc.mem_map(const.TARP_ADDRESS, const.TRAP_SIZE)
+
     def _setup_stack(self):
         """Setup stack."""
         stack_addr = const.STACK_ADDRESS + const.STACK_SIZE // 2
         self.uc.mem_map(const.STACK_ADDRESS, const.STACK_SIZE)
-        self.uc.reg_write(arm64_const.UC_ARM64_REG_SP, stack_addr)
-        self.uc.reg_write(arm64_const.UC_ARM64_REG_FP, stack_addr)
+        self.uc.reg_write(self.arch.reg_sp, stack_addr)
+        self.uc.reg_write(self.arch.reg_fp, stack_addr)
 
     def _setup_thread_register(self):
         """Setup thread register.
 
         The thread register store the address of thread local storage (TLS).
         """
-        self.uc.mem_map(const.TLS_ADDRESS, const.TLS_SIZE)
-        self.uc.reg_write(arm64_const.UC_ARM64_REG_TPIDR_EL0, const.TLS_ADDRESS)
+        if self.arch == arch_arm64:
+            self.uc.mem_map(const.TLS_ADDRESS, const.TLS_SIZE)
+            self.uc.reg_write(arm64_const.UC_ARM64_REG_TPIDR_EL0, const.TLS_ADDRESS)
 
     def _setup_emulator(self):
         """Setup emulator."""
@@ -92,8 +163,8 @@ class Infernum:
 
         # Set the value of register LR to the stop address of the emulation,
         # so that when the function returns, it will jump to this address.
-        self.uc.reg_write(arm64_const.UC_ARM64_REG_LR, stop_addr)
-        self.uc.reg_write(arm64_const.UC_ARM64_REG_PC, address)
+        self.uc.reg_write(self.arch.reg_lr, stop_addr)
+        self.uc.reg_write(self.arch.reg_pc, address)
 
         try:
             self.logger.info(f"Start emulate at {self.get_location(address)}.")
@@ -101,7 +172,7 @@ class Infernum:
 
         except UcError as e:
             self.logger.error("Emulator crashed.")
-            address = self.uc.reg_read(arm64_const.UC_ARM64_REG_PC) - 4
+            address = self.uc.reg_read(self.arch.reg_pc) - 4
             inst = next(self.cs.disasm(self.read_bytes(address, 4), 0))
 
             # Check whether the last instruction is svc.
@@ -110,38 +181,20 @@ class Infernum:
                     f"Unhandled system call at {self.get_location(address)}"
                 )
 
-            raise EmulatorCrashedException("Unknown reasons") from e
-
-    def _init_symbol_hooks(self):
-        """Initialize default symbol hooks."""
-        self._symbol_hooks.update(
-            {
-                "__ctype_get_mb_cur_max": hooks.hook_ctype_get_mb_cur_max,
-                "arc4random": hooks.hook_arc4random,
-                "clock_nanosleep": hooks.hook_clock_nanosleep,
-                "free": hooks.hook_free,
-                "getcwd": hooks.hook_getcwd,
-                "getpid": hooks.hook_getpid,
-                "gettid": hooks.hook_gettid,
-                "malloc": hooks.hook_malloc,
-                "nanosleep": hooks.hook_nanosleep,
-            }
-        )
-
-    def _init_trap_memory(self):
-        """Initialize trap memory."""
-        self.uc.mem_map(const.TARP_ADDRESS, const.TRAP_SIZE)
+            raise EmulatorCrashedException("Unknown reason") from e
 
     def _trace_inst_callback(self, uc: Uc, address: int, size: int, _: Any):
         """Trace instruction."""
         for inst in self.cs.disasm_lite(uc.mem_read(address, size), 0):
-            self.logger.info(f"Trace at {self.get_location(address)}: {inst[-1]}.")
+            self.logger.info(
+                f"Trace at {self.get_location(address)}: {inst[-2]} {inst[-1]}."
+            )
 
     def _trace_symbol_call_callback(self, *args):
         """Trace symbol call."""
         user_data = args[-1]
         symbol = user_data["symbol"]
-        ret_addr = self.uc.reg_read(arm64_const.UC_ARM64_REG_LR)
+        ret_addr = self.uc.reg_read(self.arch.reg_lr)
         self.logger.info(
             f"Symbol '{symbol.name}' called"
             + (f" from {self.get_location(ret_addr)}." if ret_addr else ".")
@@ -149,7 +202,7 @@ class Infernum:
 
     @staticmethod
     def _missing_symbol_required_callback(*args):
-        """Raise a exception with information of missing symbol."""
+        """Raise an exception with information of missing symbol."""
         user_data = args[-1]
         symbol_name = user_data["symbol_name"]
         raise EmulatorCrashedException(
@@ -167,7 +220,7 @@ class Infernum:
             for symbol in module.symbols:
                 if symbol.name == symbol_name:
                     return symbol
-        raise SymbolNotFoundException(f"{symbol_name} not found")
+        raise SymbolMissingException(f"{symbol_name} not found")
 
     def locate_module(self, address: int) -> Optional[Module]:
         """Locate the module according to the address."""
@@ -180,19 +233,19 @@ class Infernum:
         """Get location for the address."""
         return Location(address=address, module=self.locate_module(address))
 
-    def get_back_trace(self) -> BackTrace:
+    def get_back_trace(self) -> List[Location]:
         """Get back trace of current function."""
-        lr_list = [self.uc.reg_read(arm64_const.UC_ARM64_REG_LR)]
-        fp = self.uc.reg_read(arm64_const.UC_ARM64_REG_FP)
+        addr_list = [self.uc.reg_read(self.arch.reg_lr)]
+        fp = self.uc.reg_read(self.arch.reg_fp)
 
         while True:
             lr = self.read_int(fp + 8)
             fp = self.read_int(fp)
             if not fp or not lr:
                 break
-            lr_list.append(lr)
+            addr_list.append(lr)
 
-        return BackTrace([self.get_location(lr - 4) for lr in lr_list if lr])
+        return [self.get_location(addr - 4) for addr in addr_list if addr]
 
     def add_hook(
         self,
@@ -233,16 +286,19 @@ class Infernum:
             UC_HOOK_CODE,
             callback,
             begin=hook_addr,
-            end=hook_addr,
+            end=hook_addr + 3,
             user_data={"emulator": self, **user_data},
         )
 
-    def _relocate_address(self, relocation: dict, segment: DynamicSegment):
+    def _relocate_address(self, relocation: Relocation, segment: DynamicSegment):
         """Relocate address in the relocation table."""
         reloc_type = relocation["r_info_type"]
         reloc_addr = None
 
         if reloc_type in (
+            ENUM_RELOC_TYPE_ARM["R_ARM_ABS32"],
+            ENUM_RELOC_TYPE_ARM["R_ARM_GLOB_DAT"],
+            ENUM_RELOC_TYPE_ARM["R_ARM_JUMP_SLOT"],
             ENUM_RELOC_TYPE_AARCH64["R_AARCH64_ABS64"],
             ENUM_RELOC_TYPE_AARCH64["R_AARCH64_GLOB_DAT"],
             ENUM_RELOC_TYPE_AARCH64["R_AARCH64_JUMP_SLOT"],
@@ -253,7 +309,7 @@ class Infernum:
                 symbol = self.find_symbol(symbol_name)
                 reloc_addr = symbol.address
 
-            except SymbolNotFoundException:
+            except SymbolMissingException:
                 # If the symbol is missing, let it jump to the trap address to
                 # raise an exception with useful information.
                 trap_addr = self._trap_address
@@ -266,8 +322,12 @@ class Infernum:
                 )
                 self._trap_address += 4
 
-        elif reloc_type == ENUM_RELOC_TYPE_AARCH64["R_AARCH64_RELATIVE"]:
-            reloc_addr = self.module_address + relocation["r_addend"]
+        elif reloc_type in (
+            ENUM_RELOC_TYPE_ARM["R_ARM_RELATIVE"],
+            ENUM_RELOC_TYPE_AARCH64["R_AARCH64_RELATIVE"],
+        ):
+            if relocation.is_RELA():
+                reloc_addr = self.module_address + relocation["r_addend"]
 
         if reloc_addr:
             self.write_int(self.module_address + relocation["r_offset"], reloc_addr)
@@ -291,9 +351,6 @@ class Infernum:
         """
         module_name = os.path.basename(module_file)
         elffile = ELFFile.load_from_path(module_file)
-
-        if elffile.structs.e_machine != "EM_AARCH64":
-            raise ValueError("Infernum only supports arch ARM64 for now")
 
         self.logger.info(f"Load module '{module_name}'.")
 
@@ -325,7 +382,7 @@ class Infernum:
         for segment in elffile.iter_segments(type="PT_DYNAMIC"):
             for symbol in segment.iter_symbols():
                 if (
-                    symbol.entry["st_info"]["bind"] == "STB_GLOBAL"
+                    symbol.entry["st_info"]["bind"] in ("STB_GLOBAL", "STB_WEAK")
                     and symbol.entry["st_shndx"] != "SHN_UNDEF"
                 ):
                     module.symbols.append(
@@ -362,6 +419,12 @@ class Infernum:
                 for relocation in relocation_table.iter_relocations():
                     self._relocate_address(relocation, segment)
 
+        if trace_inst or self.trace_inst:
+            # Trace instructions
+            self.uc.hook_add(
+                UC_HOOK_CODE, self._trace_inst_callback, begin=low_addr, end=high_addr
+            )
+
         # If the section `.init_array` exists.
         if (
             exec_init_array
@@ -369,18 +432,12 @@ class Infernum:
             and init_array_size is not None
         ):
             self.logger.info("Execute initialize functions.")
-            for offset in range(0, init_array_size, self.register_size):
+            for offset in range(0, init_array_size, self.arch.reg_size // 8):
                 init_func_addr = self.read_int(low_addr + init_array_addr + offset)
 
                 if init_func_addr:
                     # Execute the initialization functions.
                     self._start_emulate(init_func_addr)
-
-        if trace_inst or self.trace_inst:
-            # Trace instructions
-            self.uc.hook_add(
-                UC_HOOK_CODE, self._trace_inst_callback, begin=low_addr, end=high_addr
-            )
 
         self.module_address = aligned(high_addr, 1024 * 1024)
         return module
@@ -388,29 +445,22 @@ class Infernum:
     def _get_argument_holder(self, index: int) -> Tuple[bool, int]:
         """Get the register or address where the specified argument is stored.
 
-        On arch ARM64, the first eight parameters are stored in the register X0-X7,
-        and the rest are stored on the stack.
+        On arch ARM, the first four parameters are stored in the register R0-R3,
+        and the rest are stored on the stack. On arch ARM64, the first eight
+        parameters are stored in the register X0-X7, and the rest are stored on
+        the stack.
 
         Returns:
             A ``tuple`` contains a ``bool`` and an ``int``, the first member
             means whether the returned is a register and the second is
             the actual register or address.
         """
-        registers = [
-            arm64_const.UC_ARM64_REG_X0,
-            arm64_const.UC_ARM64_REG_X1,
-            arm64_const.UC_ARM64_REG_X2,
-            arm64_const.UC_ARM64_REG_X3,
-            arm64_const.UC_ARM64_REG_X4,
-            arm64_const.UC_ARM64_REG_X5,
-            arm64_const.UC_ARM64_REG_X6,
-            arm64_const.UC_ARM64_REG_X7,
-        ]
+        registers = self.arch.reg_args
 
         if index >= len(registers):
             # Read address from stack.
-            offset = (index - len(registers)) * self.register_size
-            address = self.uc.reg_read(arm64_const.UC_ARM64_REG_SP) - offset
+            offset = (index - len(registers)) * (self.arch.reg_size // 8)
+            address = self.uc.reg_read(self.arch.reg_sp) + offset
             return False, address
 
         return True, registers[index]
@@ -431,17 +481,15 @@ class Infernum:
 
     def get_retval(self) -> int:
         """Get return value."""
-        return self.uc.reg_read(arm64_const.UC_ARM64_REG_X0)
+        return self.uc.reg_read(self.arch.reg_ret)
 
     def set_retval(self, value: int):
         """Set return value."""
-        self.uc.reg_write(arm64_const.UC_ARM64_REG_X0, value)
+        self.uc.reg_write(self.arch.reg_ret, value)
 
     def jump_back(self):
         """Jump to the address of current function was called."""
-        self.uc.reg_write(
-            arm64_const.UC_ARM64_REG_PC, self.uc.reg_read(arm64_const.UC_ARM64_REG_LR)
-        )
+        self.uc.reg_write(self.arch.reg_pc, self.uc.reg_read(self.arch.reg_lr))
 
     def create_buffer(self, size: int) -> int:
         """Create a buffer with the size."""
@@ -462,23 +510,16 @@ class Infernum:
         address: int,
         value: int,
         size: Optional[int] = None,
-        little_endian: Optional[bool] = None,
+        endian: Optional[Literal["little", "big"]] = None,
     ):
         """Write an integer into the address."""
-        byteorder: Literal["little", "big"]
-
         if size is None:
-            size = self.register_size
+            size = self.arch.reg_size // 8
 
-        if little_endian is None:
-            little_endian = self.little_endian
+        if endian is None:
+            endian = self.endian
 
-        if little_endian:
-            byteorder = "little"
-        else:
-            byteorder = "big"
-
-        self.uc.mem_write(address, value.to_bytes(size, byteorder=byteorder))
+        self.uc.mem_write(address, value.to_bytes(size, byteorder=endian))
 
     def write_bytes(self, address: int, data: bytes):
         """Write bytes into the address."""
@@ -492,30 +533,20 @@ class Infernum:
         self,
         address: int,
         size: Optional[int] = None,
-        little_endian: Optional[bool] = None,
+        endian: Optional[Literal["little", "big"]] = None,
     ) -> int:
         """Read an integer from the address."""
-        byteorder: Literal["little", "big"]
-
         if size is None:
-            size = self.register_size
+            size = self.arch.reg_size // 8
 
-        if little_endian is None:
-            little_endian = self.little_endian
+        if endian is None:
+            endian = self.endian
 
-        if little_endian:
-            byteorder = "little"
-        else:
-            byteorder = "big"
+        return int.from_bytes(self.uc.mem_read(address, size), byteorder=endian)
 
-        return int.from_bytes(
-            self.uc.mem_read(address, size),
-            byteorder=byteorder,
-        )
-
-    def read_bytes(self, address: int, size: int) -> bytearray:
+    def read_bytes(self, address: int, size: int) -> bytes:
         """Read bytes from the address."""
-        return self.uc.mem_read(address, size)
+        return bytes(self.uc.mem_read(address, size))
 
     def read_string(self, address: int) -> str:
         """Read String from the address."""
@@ -535,10 +566,19 @@ class Infernum:
         """Call function with the symbol name."""
         symbol = self.find_symbol(symbol_name)
         address = symbol.address
+
+        # Adapt to THUMB mode.
+        if self.arch == arch_arm and self.enable_thumb:
+            address |= 1
+
         self._start_emulate(address, *args)
         return self.get_retval()
 
     def call_address(self, address, *args) -> int:
         """Call function at the address."""
+        # Adapt to THUMB mode.
+        if self.arch == arch_arm and self.enable_thumb:
+            address |= 1
+
         self._start_emulate(address, *args)
         return self.get_retval()

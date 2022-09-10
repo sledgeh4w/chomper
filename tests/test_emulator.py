@@ -54,8 +54,8 @@ def test_location_module(emulator, clib):
 
 def test_get_back_trace(emulator, tinylib):
     def hook_code(*_):
-        trace = emulator.get_back_trace()
-        assert len(trace.locations) != 0
+        locations = emulator.get_back_trace()
+        assert len(locations) != 0
 
     emulator.add_hook(tinylib.base + 0x2BA08, hook_code)
 

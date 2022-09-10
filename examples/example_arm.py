@@ -1,16 +1,17 @@
 import os
 
-from infernum import Infernum
+from src.infernum import Infernum
+from src.infernum.const import ARCH_ARM
 
 BASE_PATH = os.path.abspath(os.path.dirname(__file__))
 
 
 def main():
     # Initialize emulator
-    emulator = Infernum()
+    emulator = Infernum(ARCH_ARM, enable_thumb=False)
 
     # Load modules
-    emulator.load_module(f"{BASE_PATH}/lib64/libz.so")
+    emulator.load_module(f"{BASE_PATH}/lib/libz.so")
 
     # Construct arguments
     data = b"infernum"
