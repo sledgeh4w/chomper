@@ -6,9 +6,12 @@ ARCH_ARM64 = 2
 TLS_ADDRESS = 0x10000
 TLS_SIZE = 0x400
 
-# The address of trap
-TARP_ADDRESS = 0x20000
+# Jump trap
+TRAP_ADDRESS = 0x20000
 TRAP_SIZE = 0x10000
+
+# Temporary use
+TEMP_ADDRESS = 0x30000
 
 # The address of stack
 STACK_ADDRESS = 0x50000
