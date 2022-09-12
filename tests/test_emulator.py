@@ -332,8 +332,7 @@ def _test_clib(emu):
 #     _test_clib(arm64_emu)
 
 
-@pytest.mark.usefixtures("arm_zlib")
-@pytest.mark.usefixtures("arm_clib")
+@pytest.mark.usefixtures("arm_clib", "arm_zlib")
 def test_emulate_arm(arm_emu, arm_dusanwalib):
     # sample 1: sub_A588@libdusanwa.so
     data = b"infernum"
@@ -352,8 +351,7 @@ def test_emulate_arm(arm_emu, arm_dusanwalib):
     assert _zlib.crc32(result) == 2152630634
 
 
-@pytest.mark.usefixtures("arm64_zlib")
-@pytest.mark.usefixtures("arm64_clib")
+@pytest.mark.usefixtures("arm64_clib", "arm64_zlib")
 def test_emulate_arm64(arm64_emu, arm64_szstonelib, arm64_tinylib):
     # sample 1: sub_2F1C8@libszstone.so
     data = b"infernum"
