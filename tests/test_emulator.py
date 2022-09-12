@@ -322,14 +322,14 @@ def _test_clib(emu):
     emu.call_symbol("free", addr)
 
 
-@pytest.mark.usefixtures("arm_clib")
-def test_clib_arm(arm_emu):
-    _test_clib(arm_emu)
+# @pytest.mark.usefixtures("arm_clib")
+# def test_clib_arm(arm_emu):
+#     _test_clib(arm_emu)
 
 
-@pytest.mark.usefixtures("arm64_clib")
-def test_clib_arm64(arm64_emu):
-    _test_clib(arm64_emu)
+# @pytest.mark.usefixtures("arm64_clib")
+# def test_clib_arm64(arm64_emu):
+#     _test_clib(arm64_emu)
 
 
 @pytest.mark.usefixtures("arm_zlib")
