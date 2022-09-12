@@ -13,51 +13,51 @@ LIB_PATH = os.path.join(BASE_PATH, "..", "examples/lib")
 LIB64_PATH = os.path.join(BASE_PATH, "..", "examples/lib64")
 
 
-@pytest.fixture()
+@pytest.fixture
 def arm_emu():
     yield Infernum(arch=ARCH_ARM)
 
 
-@pytest.fixture()
+@pytest.fixture
 def arm_clib(arm_emu):
     yield arm_emu.load_module(os.path.join(LIB_PATH, "libc.so"))
 
 
-@pytest.fixture()
+@pytest.fixture
 def arm_zlib(arm_emu):
     yield arm_emu.load_module(os.path.join(LIB_PATH, "libz.so"))
 
 
-@pytest.fixture()
+@pytest.fixture
 def arm_dusanwalib(arm_emu):
     yield arm_emu.load_module(
         os.path.join(LIB_PATH, "libdusanwa.so"), exec_init_array=True
     )
 
 
-@pytest.fixture()
+@pytest.fixture
 def arm64_emu():
     yield Infernum(arch=ARCH_ARM64)
 
 
-@pytest.fixture()
+@pytest.fixture
 def arm64_clib(arm64_emu):
     yield arm64_emu.load_module(os.path.join(LIB64_PATH, "libc.so"))
 
 
-@pytest.fixture()
+@pytest.fixture
 def arm64_zlib(arm64_emu):
     yield arm64_emu.load_module(os.path.join(LIB64_PATH, "libz.so"))
 
 
-@pytest.fixture()
+@pytest.fixture
 def arm64_szstonelib(arm64_emu):
     yield arm64_emu.load_module(
         os.path.join(LIB64_PATH, "libszstone.so"), exec_init_array=True
     )
 
 
-@pytest.fixture()
+@pytest.fixture
 def arm64_tinylib(arm64_emu):
     yield arm64_emu.load_module(os.path.join(LIB64_PATH, "libtiny.so"))
 
