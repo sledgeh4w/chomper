@@ -42,6 +42,7 @@ class Infernum:
         logger: The logger, if ``None``, use default logger.
         enable_thumb: Whether to use THUMB mode. This param only available on
             arch ARM.
+        enable_vfp: Whether to enable vfp.
         trace_inst: Whether to trace all instructions and display
             disassemble results.
         trace_symbol_calls: Whether to trace all symbol calls.
@@ -52,12 +53,15 @@ class Infernum:
         arch: int = const.ARCH_ARM64,
         logger: Optional[logging.Logger] = None,
         enable_thumb: bool = True,
+        enable_vfp: bool = True,
         trace_inst: bool = False,
         trace_symbol_calls: bool = True,
     ):
         self.arch = arch_arm if arch == const.ARCH_ARM else arch_arm64
         self.logger = logger or get_logger(self.__class__.__name__)
+
         self.enable_thumb = enable_thumb
+        self.enable_vfp = enable_vfp
         self.trace_inst = trace_inst
         self.trace_symbol_calls = trace_symbol_calls
 
@@ -71,7 +75,7 @@ class Infernum:
         self.module_address = const.MODULE_ADDRESS
         self.modules: List[Module] = []
 
-        self._trap_address = const.TARP_ADDRESS
+        self._trap_address = const.TRAP_ADDRESS
         self._init_trap_memory()
 
         self._symbol_hooks: Dict[str, UC_HOOK_CODE_TYPE] = {}
@@ -102,6 +106,7 @@ class Infernum:
     def _init_symbol_hooks(self):
         """Initialize default symbol hooks."""
         _hooks = {
+            "__ctype_get_mb_cur_max": hooks.hook_ctype_get_mb_cur_max,
             "malloc": hooks.hook_malloc,
             "getcwd": hooks.hook_getcwd,
             "getpid": hooks.hook_getpid,
@@ -110,17 +115,11 @@ class Infernum:
         }
 
         if self.arch == arch_arm:
-            _hooks.update(
-                {
-                    "memcpy": hooks.hook_memcpy,
-                    "memset": hooks.hook_memset,
-                }
-            )
+            _hooks.update({})
 
         elif self.arch == arch_arm64:
             _hooks.update(
                 {
-                    "__ctype_get_mb_cur_max": hooks.hook_ctype_get_mb_cur_max,
                     "arc4random": hooks.hook_arc4random,
                     "clock_nanosleep": hooks.hook_clock_nanosleep,
                     "nanosleep": hooks.hook_nanosleep,
@@ -131,7 +130,7 @@ class Infernum:
 
     def _init_trap_memory(self):
         """Initialize trap memory."""
-        self.uc.mem_map(const.TARP_ADDRESS, const.TRAP_SIZE)
+        self.uc.mem_map(const.TRAP_ADDRESS, const.TRAP_SIZE)
 
     def _setup_stack(self):
         """Setup stack."""
@@ -149,10 +148,33 @@ class Infernum:
             self.uc.mem_map(const.TLS_ADDRESS, const.TLS_SIZE)
             self.uc.reg_write(arm64_const.UC_ARM64_REG_TPIDR_EL0, const.TLS_ADDRESS)
 
+    def _enable_vfp(self):
+        """Enable vfp.
+
+        See details:
+        https://github.com/unicorn-engine/unicorn/issues/446
+        """
+        inst_code = (
+            b"\x4f\xf4\x70\x00"  # mov.w r0, #0xf00000
+            b"\x01\xee\x50\x0f"  # mcr p15, #0x0, r0, c1, c0, #0x2
+            b"\xbf\xf3\x6f\x8f"  # isb sy
+            b"\x4f\xf0\x80\x43"  # mov.w r3, #0x40000000
+            b"\xe8\xee\x10\x3a"  # vmsr fpexc, r3
+        )
+
+        addr = const.TEMP_ADDRESS
+        self.uc.mem_map(const.TEMP_ADDRESS, aligned(len(inst_code), 1024))
+        self.uc.mem_write(addr, inst_code)
+        self.uc.emu_start(addr | 1, addr + len(inst_code))
+        self.uc.mem_unmap(const.TEMP_ADDRESS, aligned(len(inst_code), 1024))
+
     def _setup_emulator(self):
         """Setup emulator."""
         self._setup_stack()
         self._setup_thread_register()
+
+        if self.arch == arch_arm and self.enable_vfp:
+            self._enable_vfp()
 
     def _start_emulate(self, address, *args):
         """Start emulate at the specified address."""
@@ -282,11 +304,14 @@ class Infernum:
         if user_data is None:
             user_data = {}
 
+        if self.arch == arch_arm and self.enable_thumb:
+            hook_addr -= 1
+
         self.uc.hook_add(
             UC_HOOK_CODE,
             callback,
             begin=hook_addr,
-            end=hook_addr + 3,
+            end=hook_addr,
             user_data={"emulator": self, **user_data},
         )
 
