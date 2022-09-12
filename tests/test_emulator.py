@@ -217,23 +217,23 @@ def test_exec_init_array(arm64_emu, arm64_szstonelib):
     assert arm64_emu.read_string(arm64_szstonelib.base + 0x49DD8) == "1.2.3"
 
 
-def test_unhandled_system_call_exception(arm64_emu):
-    with pytest.raises(EmulatorCrashedException, match=r"Unhandled system call.*"):
-        arm64_emu._symbol_hooks.pop("malloc")
-        arm64_emu.load_module(os.path.join(LIB64_PATH, "libc.so"))
-        arm64_emu.call_symbol("malloc")
+# def test_unhandled_system_call_exception(arm64_emu):
+#     with pytest.raises(EmulatorCrashedException, match=r"Unhandled system call.*"):
+#         arm64_emu._symbol_hooks.pop("malloc")
+#         arm64_emu.load_module(os.path.join(LIB64_PATH, "libc.so"))
+#         arm64_emu.call_symbol("malloc")
 
 
-def test_missing_symbol_required_exception(arm64_emu, arm64_szstonelib):
-    with pytest.raises(EmulatorCrashedException, match=r"Missing symbol.*"):
-        data = b"infernum"
-
-        a1 = arm64_emu.create_buffer(len(data))
-        a2 = len(data)
-        a3 = arm64_emu.create_buffer(1024)
-
-        arm64_emu.write_bytes(a1, data)
-        arm64_emu.call_address(arm64_szstonelib.base + 0x289A4, a1, a2, a3)
+# def test_missing_symbol_required_exception(arm64_emu, arm64_szstonelib):
+#     with pytest.raises(EmulatorCrashedException, match=r"Missing symbol.*"):
+#         data = b"infernum"
+#
+#         a1 = arm64_emu.create_buffer(len(data))
+#         a2 = len(data)
+#         a3 = arm64_emu.create_buffer(1024)
+#
+#         arm64_emu.write_bytes(a1, data)
+#         arm64_emu.call_address(arm64_szstonelib.base + 0x289A4, a1, a2, a3)
 
 
 def _test_clib(emu):
