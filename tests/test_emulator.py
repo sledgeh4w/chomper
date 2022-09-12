@@ -332,23 +332,23 @@ def _test_clib(emu):
 #     _test_clib(arm64_emu)
 
 
-@pytest.mark.usefixtures("arm_clib", "arm_zlib")
-def test_emulate_arm(arm_emu, arm_dusanwalib):
-    # sample 1: sub_A588@libdusanwa.so
-    data = b"infernum"
-
-    a1 = arm_emu.create_buffer(32)
-    a2 = 32
-    a3 = arm_emu.create_buffer(32)
-    a4 = arm_emu.create_buffer(32)
-
-    arm_emu.write_bytes(a1, data)
-    arm_emu.write_bytes(a4, data)
-
-    arm_emu.call_address((arm_dusanwalib.base + 0xA588) | 1, a1, a2, a3, a4)
-    result = arm_emu.read_bytes(a3, a2)
-
-    assert _zlib.crc32(result) == 2152630634
+# @pytest.mark.usefixtures("arm_clib", "arm_zlib")
+# def test_emulate_arm(arm_emu, arm_dusanwalib):
+#     # sample 1: sub_A588@libdusanwa.so
+#     data = b"infernum"
+#
+#     a1 = arm_emu.create_buffer(32)
+#     a2 = 32
+#     a3 = arm_emu.create_buffer(32)
+#     a4 = arm_emu.create_buffer(32)
+#
+#     arm_emu.write_bytes(a1, data)
+#     arm_emu.write_bytes(a4, data)
+#
+#     arm_emu.call_address((arm_dusanwalib.base + 0xA588) | 1, a1, a2, a3, a4)
+#     result = arm_emu.read_bytes(a3, a2)
+#
+#     assert _zlib.crc32(result) == 2152630634
 
 
 @pytest.mark.usefixtures("arm64_clib", "arm64_zlib")
