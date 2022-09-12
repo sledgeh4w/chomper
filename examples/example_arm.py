@@ -1,7 +1,7 @@
 import os
 
-from src.infernum import Infernum
-from src.infernum.const import ARCH_ARM
+from infernum import Infernum
+from infernum.const import ARCH_ARM
 
 BASE_PATH = os.path.abspath(os.path.dirname(__file__))
 
