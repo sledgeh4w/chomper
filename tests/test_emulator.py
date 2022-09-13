@@ -5,7 +5,6 @@ import pytest
 
 from infernum import Infernum
 from infernum.const import ARCH_ARM, ARCH_ARM64
-
 from infernum.exceptions import EmulatorCrashedException
 
 BASE_PATH = os.path.abspath(os.path.dirname(__file__))
