@@ -60,6 +60,8 @@ class Infernum:
         self.arch = arch_arm if arch == const.ARCH_ARM else arch_arm64
         self.logger = logger or get_logger(self.__class__.__name__)
 
+        self.logger.info("Initialize emulator")
+
         self.enable_thumb = enable_thumb
         self.enable_vfp = enable_vfp
         self.trace_inst = trace_inst
