@@ -291,6 +291,10 @@ class Infernum:
         if isinstance(symbol_or_addr, str):
             symbol = self.find_symbol(symbol_or_addr)
             hook_addr = symbol.address
+
+            if self.arch == arch_arm and self.enable_thumb:
+                hook_addr -= 1
+
             if not silenced:
                 self.logger.info(
                     f"Hook symbol '{symbol.name}' at {self.get_location(hook_addr)}."
@@ -303,9 +307,6 @@ class Infernum:
 
         if user_data is None:
             user_data = {}
-
-        if self.arch == arch_arm and self.enable_thumb:
-            hook_addr -= 1
 
         self.uc.hook_add(
             UC_HOOK_CODE,
@@ -591,19 +592,10 @@ class Infernum:
         """Call function with the symbol name."""
         symbol = self.find_symbol(symbol_name)
         address = symbol.address
-
-        # Adapt to THUMB mode.
-        if self.arch == arch_arm and self.enable_thumb:
-            address |= 1
-
         self._start_emulate(address, *args)
         return self.get_retval()
 
     def call_address(self, address, *args) -> int:
         """Call function at the address."""
-        # Adapt to THUMB mode.
-        if self.arch == arch_arm and self.enable_thumb:
-            address |= 1
-
         self._start_emulate(address, *args)
         return self.get_retval()
