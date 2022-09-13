@@ -69,20 +69,26 @@ class Infernum:
 
         self.endian: Literal["little", "big"] = "little"
 
+        self.logger.info("Initialize unicorn")
         self.uc = self._create_uc()
+        self.logger.info("Initialize capstone")
         self.cs = self._create_cs()
 
+        self.logger.info("Initialize memory manger")
         self.memory_manager = MemoryManager(uc=self.uc, heap_address=const.HEAP_ADDRESS)
 
         self.module_address = const.MODULE_ADDRESS
         self.modules: List[Module] = []
 
         self._trap_address = const.TRAP_ADDRESS
+        self.logger.info("Initialize trap memory")
         self._init_trap_memory()
 
         self._symbol_hooks: Dict[str, UC_HOOK_CODE_TYPE] = {}
+        self.logger.info("Initialize symbol hooks")
         self._init_symbol_hooks()
 
+        self.logger.info("Setup emulator")
         self._setup_emulator()
 
     def _create_uc(self) -> Uc:
