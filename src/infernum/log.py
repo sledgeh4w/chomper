@@ -8,7 +8,7 @@ default_handler.setFormatter(
 
 
 def get_logger(name: Optional[str] = None, level: int = logging.INFO) -> logging.Logger:
-    """Get logger."""
+    """Get default logger."""
     logger = logging.getLogger(name)
     logger.setLevel(level)
     logger.addHandler(default_handler)

@@ -38,9 +38,9 @@ class Infernum:
     """Lightweight Android native library emulation framework.
 
     Args:
-        arch: The arch, support ARM/ARM64.
+        arch: The arch, support ARM and ARM64.
         logger: The logger, if ``None``, use default logger.
-        enable_thumb: Whether to use THUMB mode. This param only available on
+        on_thumb: Whether to use Thumb mode. This parameter only available on
             arch ARM.
         enable_vfp: Whether to enable vfp.
         trace_inst: Whether to trace all instructions and display
@@ -52,7 +52,7 @@ class Infernum:
         self,
         arch: int = const.ARCH_ARM64,
         logger: Optional[logging.Logger] = None,
-        enable_thumb: bool = True,
+        on_thumb: bool = True,
         enable_vfp: bool = True,
         trace_inst: bool = False,
         trace_symbol_calls: bool = True,
@@ -60,7 +60,7 @@ class Infernum:
         self.arch = arch_arm if arch == const.ARCH_ARM else arch_arm64
         self.logger = logger or get_logger(self.__class__.__name__)
 
-        self.enable_thumb = enable_thumb
+        self.on_thumb = on_thumb
         self.enable_vfp = enable_vfp
         self.trace_inst = trace_inst
         self.trace_symbol_calls = trace_symbol_calls
@@ -86,21 +86,13 @@ class Infernum:
     def _create_uc(self) -> Uc:
         """Create Unicorn instance."""
         arch = UC_ARCH_ARM if self.arch == arch_arm else UC_ARCH_ARM64
-        mode = (
-            UC_MODE_THUMB
-            if self.arch == arch_arm and self.enable_thumb
-            else UC_MODE_ARM
-        )
+        mode = UC_MODE_THUMB if self.arch == arch_arm and self.on_thumb else UC_MODE_ARM
         return Uc(arch, mode)
 
     def _create_cs(self) -> Cs:
         """Create Capstone instance."""
         arch = CS_ARCH_ARM if self.arch == arch_arm else CS_ARCH_ARM64
-        mode = (
-            CS_MODE_THUMB
-            if self.arch == arch_arm and self.enable_thumb
-            else CS_MODE_ARM
-        )
+        mode = CS_MODE_THUMB if self.arch == arch_arm and self.on_thumb else CS_MODE_ARM
         return Cs(arch, mode)
 
     def _init_symbol_hooks(self):
@@ -292,8 +284,8 @@ class Infernum:
             symbol = self.find_symbol(symbol_or_addr)
             hook_addr = symbol.address
 
-            if self.arch == arch_arm and self.enable_thumb:
-                hook_addr -= 1
+            if self.arch == arch_arm:
+                hook_addr = (hook_addr | 1) - 1
 
             if not silenced:
                 self.logger.info(
