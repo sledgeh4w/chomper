@@ -59,7 +59,7 @@ def hook_getcwd(emulator: "Infernum"):
 
 
 @intercept
-def hook_getpid(emulator):
+def hook_getpid(emulator: "Infernum"):
     """Intercept ``getpid`` of ``libc.so``."""
     emulator.set_retval(os.getpid())
 
