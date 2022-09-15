@@ -16,6 +16,7 @@ from unicorn import (
     UC_MODE_THUMB,
     Uc,
     UcError,
+    arm_const,
     arm64_const,
 )
 from unicorn.unicorn import UC_HOOK_CODE_TYPE
@@ -38,8 +39,8 @@ class Infernum:
     """Lightweight Android native library emulation framework.
 
     Args:
-        arch: The arch, support ARM and ARM64.
-        logger: The logger, if ``None``, use default logger.
+        arch: The arch. Support ARM and ARM64.
+        logger: The logger. If ``None``, use default logger.
         on_thumb: Whether to use Thumb mode. This parameter only available on
             arch ARM.
         enable_vfp: Whether to enable vfp.
@@ -135,9 +136,16 @@ class Infernum:
         """Setup thread register.
 
         The thread register store the address of thread local storage (TLS).
+        It only allocates a block of memory to TLS and does not really initialize.
         """
-        if self.arch == arch_arm64:
-            self.uc.mem_map(const.TLS_ADDRESS, const.TLS_SIZE)
+        self.uc.mem_map(const.TLS_ADDRESS, const.TLS_SIZE)
+
+        if self.arch == arch_arm:
+            self.uc.reg_write(
+                arm_const.UC_ARM_REG_CP_REG,
+                (15, 0, 0, 13, 0, 0, 3, const.TLS_ADDRESS),  # type: ignore
+            )
+        else:
             self.uc.reg_write(arm64_const.UC_ARM64_REG_TPIDR_EL0, const.TLS_ADDRESS)
 
     def _enable_vfp(self):
@@ -228,7 +236,7 @@ class Infernum:
         """Find symbol from loaded modules.
 
         Raises:
-            SymbolNotFoundException: If symbol not found.
+            SymbolMissingException: If symbol not found.
         """
         for module in self.modules:
             for symbol in module.symbols:
@@ -247,8 +255,8 @@ class Infernum:
         """Get location for the address."""
         return Location(address=address, module=self.locate_module(address))
 
-    def get_back_trace(self) -> List[Location]:
-        """Get back trace of current function."""
+    def backtrace(self) -> List[Location]:
+        """Back trace the call stack."""
         addr_list = [self.uc.reg_read(self.arch.reg_lr)]
         fp = self.uc.reg_read(self.arch.reg_fp)
 

@@ -79,7 +79,7 @@ def test_locate_module(arm64_emu, arm64_clib):
 
 def test_get_back_trace(arm64_emu, arm64_tinylib):
     def hook_code(*_):
-        locations = arm64_emu.get_back_trace()
+        locations = arm64_emu.backtrace()
         assert len(locations) != 0
 
     arm64_emu.add_hook(arm64_tinylib.base + 0x2BA08, hook_code)
