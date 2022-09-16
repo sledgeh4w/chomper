@@ -1,3 +1,10 @@
+## v0.1.0
+
+Released: 2022-09-17
+
+- Support to emulate library file on arch ARM.
+- Rename ``SymbolNotFoundException`` exception to ``SymbolMissingException``.
+
 ## v0.0.2
 
 Released: 2022-09-10
