@@ -73,13 +73,13 @@ class Infernum:
 
         self.memory_manager = MemoryManager(uc=self.uc, heap_address=const.HEAP_ADDRESS)
 
-        self.module_address = const.MODULE_ADDRESS
-        self.modules: List[Module] = []
-
+        self._module_address = const.MODULE_ADDRESS
         self._trap_address = const.TRAP_ADDRESS
-        self._init_trap_memory()
 
+        self.modules: List[Module] = []
         self._symbol_hooks: Dict[str, UC_HOOK_CODE_TYPE] = {}
+
+        self._init_trap_memory()
         self._init_symbol_hooks()
 
         self._setup_emulator()
@@ -161,8 +161,8 @@ class Infernum:
             b"\x4f\xf0\x80\x43"  # mov.w r3, #0x40000000
             b"\xe8\xee\x10\x3a"  # vmsr fpexc, r3
         )
-
         addr = const.TEMP_ADDRESS
+
         self.uc.mem_map(const.TEMP_ADDRESS, aligned(len(inst_code), 1024))
         self.uc.mem_write(addr, inst_code)
         self.uc.emu_start(addr | 1, addr + len(inst_code))
@@ -217,6 +217,7 @@ class Infernum:
         user_data = args[-1]
         symbol = user_data["symbol"]
         ret_addr = self.uc.reg_read(self.arch.reg_lr)
+
         self.logger.info(
             f"Symbol '{symbol.name}' called"
             + (f" from {self.get_location(ret_addr)}." if ret_addr else ".")
@@ -227,6 +228,7 @@ class Infernum:
         """Raise an exception with information of missing symbol."""
         user_data = args[-1]
         symbol_name = user_data["symbol_name"]
+
         raise EmulatorCrashedException(
             f"Missing symbol '{symbol_name}' is required, "
             f"you should load the library that contains it."
@@ -242,6 +244,7 @@ class Infernum:
             for symbol in module.symbols:
                 if symbol.name == symbol_name:
                     return symbol
+
         raise SymbolMissingException(f"{symbol_name} not found")
 
     def locate_module(self, address: int) -> Optional[Module]:
@@ -319,6 +322,7 @@ class Infernum:
     def _relocate_address(self, relocation: Relocation, segment: DynamicSegment):
         """Relocate address in the relocation table."""
         reloc_type = relocation["r_info_type"]
+        reloc_offset = self._module_address + relocation["r_offset"]
         reloc_addr = None
 
         if reloc_type in (
@@ -338,10 +342,9 @@ class Infernum:
             except SymbolMissingException:
                 # If the symbol is missing, let it jump to the trap address to
                 # raise an exception with useful information.
-                trap_addr = self._trap_address
-                self.write_int(self.module_address + relocation["r_offset"], trap_addr)
+                self.write_int(reloc_offset, self._trap_address)
                 self.add_hook(
-                    trap_addr,
+                    self._trap_address,
                     self._missing_symbol_required_callback,
                     user_data={"symbol_name": symbol_name},
                     silenced=True,
@@ -353,10 +356,10 @@ class Infernum:
             ENUM_RELOC_TYPE_AARCH64["R_AARCH64_RELATIVE"],
         ):
             if relocation.is_RELA():
-                reloc_addr = self.module_address + relocation["r_addend"]
+                reloc_addr = self._module_address + relocation["r_addend"]
 
         if reloc_addr:
-            self.write_int(self.module_address + relocation["r_offset"], reloc_addr)
+            self.write_int(reloc_offset, reloc_addr)
 
     def load_module(
         self,
@@ -381,7 +384,7 @@ class Infernum:
         self.logger.info(f"Load module '{module_name}'.")
 
         # The memory range in which the module is loaded.
-        low_addr = self.module_address
+        low_addr = self._module_address
         high_addr = 0
 
         module = Module(base=low_addr, size=0, name=module_name, symbols=[])
@@ -465,7 +468,7 @@ class Infernum:
                     # Execute the initialization functions.
                     self._start_emulate(init_func_addr)
 
-        self.module_address = aligned(high_addr, 1024 * 1024)
+        self._module_address = aligned(high_addr, 1024 * 1024)
         return module
 
     def _get_argument_holder(self, index: int) -> Tuple[bool, int]:

@@ -22,7 +22,7 @@ class Module:
 
 @dataclass
 class Location:
-    """An address and the module containing it."""
+    """The location object."""
 
     address: int
     module: Optional[Module]
@@ -30,12 +30,14 @@ class Location:
     def __repr__(self):
         if not self.module:
             return f"0x{self.address:x}"
-        return f"0x{(self.address - self.module.base):x}@{self.module.name}"
+
+        offset = self.address - self.module.base
+        return f"0x{offset:x}@{self.module.name}"
 
 
 @dataclass
 class Pool:
-    """Relate to a black of memory mapped on Unicorn."""
+    """The pool object."""
 
     address: int
     size: int
