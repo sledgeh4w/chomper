@@ -5,11 +5,12 @@
 ![PyPI - Python Version](https://img.shields.io/pypi/pyversions/infernum)
 [![GitHub license](https://img.shields.io/github/license/Sh4ww/infernum)](https://github.com/Sh4ww/infernum/blob/main/LICENSE)
 
-Infernum is a lightweight Android native library emulation framework. It is mainly used to emulate pure algorithm, so it will not provide JNI or file system support. It supports arch ARM and ARM64.
+Infernum is a lightweight Android native library emulation framework based on [Unicorn](https://github.com/unicorn-engine/unicorn). It is mainly used to execute the pure algorithm, so it will not provide JNI or file system support. It supports arch ARM and ARM64.
 
 ## Requirements
 
 - Python 3.7+
+- Unicorn 2.0.0+
 
 ## Installation
 
