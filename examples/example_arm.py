@@ -8,7 +8,7 @@ BASE_PATH = os.path.abspath(os.path.dirname(__file__))
 
 def main():
     # Initialize emulator
-    emulator = Infernum(ARCH_ARM, enable_thumb=False)
+    emulator = Infernum(ARCH_ARM, on_thumb=False)
 
     # Load modules
     emulator.load_module(f"{BASE_PATH}/lib/libz.so")
