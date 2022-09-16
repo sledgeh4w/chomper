@@ -4,7 +4,7 @@ from .structs import Arch
 
 # ARM
 arch_arm = Arch(
-    name="arm",
+    name="ARM",
     reg_size=32,
     reg_sp=arm_const.UC_ARM_REG_SP,
     reg_fp=arm_const.UC_ARM_REG_FP,
@@ -22,7 +22,7 @@ arch_arm = Arch(
 
 # ARM64
 arch_arm64 = Arch(
-    name="arm64",
+    name="ARM64",
     reg_size=64,
     reg_sp=arm64_const.UC_ARM64_REG_SP,
     reg_fp=arm64_const.UC_ARM64_REG_FP,
