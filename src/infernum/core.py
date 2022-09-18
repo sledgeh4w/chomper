@@ -278,7 +278,7 @@ class Infernum:
         callback: UC_HOOK_CODE_TYPE,
         user_data: Optional[dict] = None,
         silenced: Optional[bool] = False,
-    ):
+    ) -> int:
         """Add hook to emulator.
 
         Args:
@@ -311,13 +311,17 @@ class Infernum:
         if user_data is None:
             user_data = {}
 
-        self.uc.hook_add(
+        return self.uc.hook_add(
             UC_HOOK_CODE,
             callback,
             begin=hook_addr,
             end=hook_addr,
             user_data={"emulator": self, **user_data},
         )
+
+    def del_hook(self, h: int):
+        """Delete hook."""
+        self.uc.hook_del(h)
 
     def _relocate_address(self, relocation: Relocation, segment: DynamicSegment):
         """Relocate address in the relocation table."""
