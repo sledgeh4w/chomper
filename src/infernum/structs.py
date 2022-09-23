@@ -27,7 +27,8 @@ class Location:
     address: int
     module: Optional[Module]
 
-    def __repr__(self):
+    def __str__(self):
+        """Show as ``0x1000@libxxx.so`` or ``0x10000``."""
         if not self.module:
             return f"0x{self.address:x}"
 
