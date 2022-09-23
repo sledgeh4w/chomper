@@ -31,7 +31,8 @@ def arm_zlib(arm_emu):
 @pytest.fixture(scope="module")
 def arm_dusanwalib(arm_emu):
     yield arm_emu.load_module(
-        os.path.join(LIB_PATH, "libdusanwa.so"), exec_init_array=True
+        os.path.join(LIB_PATH, "com.shizhuang.duapp_v4.85.6_libdusanwa.so"),
+        exec_init_array=True,
     )
 
 
@@ -53,13 +54,16 @@ def arm64_zlib(arm64_emu):
 @pytest.fixture(scope="module")
 def arm64_szstonelib(arm64_emu):
     yield arm64_emu.load_module(
-        os.path.join(LIB64_PATH, "libszstone.so"), exec_init_array=True
+        os.path.join(LIB64_PATH, "com.shizhuang.duapp_v4.94.5_libszstone.so"),
+        exec_init_array=True,
     )
 
 
 @pytest.fixture(scope="module")
 def arm64_tinylib(arm64_emu):
-    yield arm64_emu.load_module(os.path.join(LIB64_PATH, "libtiny.so"))
+    yield arm64_emu.load_module(
+        os.path.join(LIB64_PATH, "com.xingin.xhs_v7.30.2.1_libtiny.so")
+    )
 
 
 @pytest.mark.usefixtures("arm64_clib")
@@ -228,7 +232,9 @@ def test_unhandled_system_call_exception():
 def test_missing_symbol_required_exception():
     with pytest.raises(EmulatorCrashedException, match=r"Missing symbol.*"):
         emulator = Infernum(arch=ARCH_ARM64)
-        szstonelib = emulator.load_module(os.path.join(LIB64_PATH, "libszstone.so"))
+        szstonelib = emulator.load_module(
+            os.path.join(LIB64_PATH, "com.shizhuang.duapp_v4.94.5_libszstone.so")
+        )
 
         data = b"infernum"
 
@@ -338,7 +344,7 @@ def test_clib_arm64(arm64_emu):
 
 @pytest.mark.usefixtures("arm_clib", "arm_zlib")
 def test_emulate_arm(arm_emu, arm_dusanwalib):
-    # sample 1: sub_A588@libdusanwa.so
+    # sample 1: sub_A588@com.shizhuang.duapp_v4.85.6_libdusanwa.so
     data = b"infernum"
 
     a1 = arm_emu.create_buffer(32)
@@ -357,7 +363,7 @@ def test_emulate_arm(arm_emu, arm_dusanwalib):
 
 @pytest.mark.usefixtures("arm64_clib", "arm64_zlib")
 def test_emulate_arm64(arm64_emu, arm64_szstonelib, arm64_tinylib):
-    # sample 1: sub_2F1C8@libszstone.so
+    # sample 1: sub_2F1C8@com.shizhuang.duapp_v4.94.5_libszstone.so
     data = b"infernum"
 
     a1 = arm64_emu.create_buffer(len(data))
@@ -371,7 +377,7 @@ def test_emulate_arm64(arm64_emu, arm64_szstonelib, arm64_tinylib):
 
     assert _zlib.crc32(result) == 588985915
 
-    # sample 2: sub_289A4@libtiny.so
+    # sample 2: sub_289A4@com.xingin.xhs_v7.30.2.1_libtiny.so
     data = b"infernum"
 
     a1 = arm64_emu.create_buffer(32)
