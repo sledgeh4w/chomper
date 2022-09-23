@@ -260,7 +260,7 @@ class Infernum:
 
     def backtrace(self) -> List[Location]:
         """Back trace the call stack."""
-        addr_list = [self.uc.reg_read(self.arch.reg_lr)]
+        call_stacks = [self.uc.reg_read(self.arch.reg_lr)]
         fp = self.uc.reg_read(self.arch.reg_fp)
 
         while True:
@@ -268,9 +268,9 @@ class Infernum:
             fp = self.read_int(fp)
             if not fp or not lr:
                 break
-            addr_list.append(lr)
+            call_stacks.append(lr)
 
-        return [self.get_location(addr - 4) for addr in addr_list if addr]
+        return [self.get_location(addr - 4) for addr in call_stacks if addr]
 
     def add_hook(
         self,
@@ -279,7 +279,7 @@ class Infernum:
         user_data: Optional[dict] = None,
         silenced: Optional[bool] = False,
     ) -> int:
-        """Add hook to emulator.
+        """Add hook to the emulator.
 
         Args:
             symbol_or_addr: The name of symbol or address to hook. If ``str``,
@@ -382,98 +382,103 @@ class Infernum:
                 disassemble results.
             trace_symbol_calls: If ``True``, trace symbol calls in this module.
         """
-        module_name = os.path.basename(module_file)
-        elffile = ELFFile.load_from_path(module_file)
+        with ELFFile.load_from_path(module_file) as elffile:
+            module_name = os.path.basename(module_file)
+            self.logger.info(f"Load module '{module_name}'.")
 
-        self.logger.info(f"Load module '{module_name}'.")
+            # The memory range in which the module is loaded.
+            low_addr = self._module_address
+            high_addr = 0
 
-        # The memory range in which the module is loaded.
-        low_addr = self._module_address
-        high_addr = 0
+            module = Module(base=low_addr, size=0, name=module_name, symbols=[])
+            self.modules.append(module)
 
-        module = Module(base=low_addr, size=0, name=module_name, symbols=[])
-        self.modules.append(module)
+            init_array_addr = None
+            init_array_size = None
 
-        init_array_addr = None
-        init_array_size = None
+            # Load segment of type `LOAD` into memory.
+            for segment in elffile.iter_segments(type="PT_LOAD"):
+                seg_addr = low_addr + segment.header.p_vaddr
 
-        # Load segment of type `LOAD` into memory.
-        for segment in elffile.iter_segments(type="PT_LOAD"):
-            seg_addr = low_addr + segment.header.p_vaddr
+                # Because of alignment, the actual mapped address range will be larger.
+                map_addr = aligned(seg_addr, 1024) - (1024 if seg_addr % 1024 else 0)
+                map_size = aligned(seg_addr - map_addr + segment.header.p_memsz, 1024)
 
-            # Because of alignment, the actual mapped address range will be larger.
-            map_addr = aligned(seg_addr, 1024) - (1024 if seg_addr % 1024 else 0)
-            map_size = aligned(seg_addr - map_addr + segment.header.p_memsz, 1024)
+                high_addr = max(high_addr, map_addr + map_size)
 
-            high_addr = max(high_addr, map_addr + map_size)
+                self.uc.mem_map(map_addr, map_size)
+                self.uc.mem_write(seg_addr, segment.data())
 
-            self.uc.mem_map(map_addr, map_size)
-            self.uc.mem_write(seg_addr, segment.data())
+            module.size = high_addr - low_addr
 
-        module.size = high_addr - low_addr
-
-        for segment in elffile.iter_segments(type="PT_DYNAMIC"):
-            for symbol in segment.iter_symbols():
-                if (
-                    symbol.entry["st_info"]["bind"] in ("STB_GLOBAL", "STB_WEAK")
-                    and symbol.entry["st_shndx"] != "SHN_UNDEF"
-                ):
-                    module.symbols.append(
-                        Symbol(
-                            address=module.base + symbol.entry["st_value"],
-                            name=symbol.name,
-                        )
-                    )
-
-                    # Hook symbol
-                    if symbol.entry["st_info"]["type"] == "STT_FUNC":
-                        # Trace
-                        if trace_symbol_calls or self.trace_symbol_calls:
-                            self.add_hook(
-                                symbol.name,
-                                self._trace_symbol_call_callback,
-                                user_data={"symbol": symbol},
-                                silenced=True,
+            for segment in elffile.iter_segments(type="PT_DYNAMIC"):
+                for symbol in segment.iter_symbols():
+                    if (
+                        symbol.entry["st_info"]["bind"] in ("STB_GLOBAL", "STB_WEAK")
+                        and symbol.entry["st_shndx"] != "SHN_UNDEF"
+                    ):
+                        module.symbols.append(
+                            Symbol(
+                                address=module.base + symbol.entry["st_value"],
+                                name=symbol.name,
                             )
+                        )
 
-                        if self._symbol_hooks.get(symbol.name):
-                            self.add_hook(symbol.name, self._symbol_hooks[symbol.name])
+                        # Hook symbol
+                        if symbol.entry["st_info"]["type"] == "STT_FUNC":
+                            # Trace
+                            if trace_symbol_calls or self.trace_symbol_calls:
+                                self.add_hook(
+                                    symbol.name,
+                                    self._trace_symbol_call_callback,
+                                    user_data={"symbol": symbol},
+                                    silenced=True,
+                                )
 
-            for tag in segment.iter_tags():
-                if tag.entry.d_tag == "DT_NEEDED":
-                    pass
-                elif tag.entry.d_tag == "DT_INIT_ARRAY":
-                    init_array_addr = tag.entry.d_val
-                elif tag.entry.d_tag == "DT_INIT_ARRAYSZ":
-                    init_array_size = tag.entry.d_val
+                            if self._symbol_hooks.get(symbol.name):
+                                self.add_hook(
+                                    symbol.name, self._symbol_hooks[symbol.name]
+                                )
 
-            # Process address relocation.
-            for relocation_table in segment.get_relocation_tables().values():
-                for relocation in relocation_table.iter_relocations():
-                    self._relocate_address(relocation, segment)
+                for tag in segment.iter_tags():
+                    if tag.entry.d_tag == "DT_INIT_ARRAY":
+                        init_array_addr = tag.entry.d_val
+                    elif tag.entry.d_tag == "DT_INIT_ARRAYSZ":
+                        init_array_size = tag.entry.d_val
+                    elif tag.entry.d_tag == "DT_NEEDED":
+                        pass
 
-        if trace_inst or self.trace_inst:
-            # Trace instructions
-            self.uc.hook_add(
-                UC_HOOK_CODE, self._trace_inst_callback, begin=low_addr, end=high_addr
-            )
+                # Process address relocation.
+                for relocation_table in segment.get_relocation_tables().values():
+                    for relocation in relocation_table.iter_relocations():
+                        self._relocate_address(relocation, segment)
 
-        # If the section `.init_array` exists.
-        if (
-            exec_init_array
-            and init_array_addr is not None
-            and init_array_size is not None
-        ):
-            self.logger.info("Execute initialize functions.")
-            for offset in range(0, init_array_size, self.arch.reg_size // 8):
-                init_func_addr = self.read_int(low_addr + init_array_addr + offset)
+            if trace_inst or self.trace_inst:
+                # Trace instructions
+                self.uc.hook_add(
+                    UC_HOOK_CODE,
+                    self._trace_inst_callback,
+                    begin=low_addr,
+                    end=high_addr,
+                )
 
-                if init_func_addr:
-                    # Execute the initialization functions.
-                    self._start_emulate(init_func_addr)
+            # If the section `.init_array` exists.
+            if (
+                exec_init_array
+                and init_array_addr is not None
+                and init_array_size is not None
+            ):
+                self.logger.info("Execute initialize functions.")
 
-        self._module_address = aligned(high_addr, 1024 * 1024)
-        return module
+                for offset in range(0, init_array_size, self.arch.reg_size // 8):
+                    init_func_addr = self.read_int(low_addr + init_array_addr + offset)
+
+                    if init_func_addr:
+                        # Execute the initialization functions.
+                        self._start_emulate(init_func_addr)
+
+            self._module_address = aligned(high_addr, 1024 * 1024)
+            return module
 
     def _get_argument_holder(self, index: int) -> Tuple[bool, int]:
         """Get the register or address where the specified argument is stored.
