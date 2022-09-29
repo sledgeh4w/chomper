@@ -1,67 +1,6 @@
-import os
-import zlib as _zlib
+import zlib
 
 import pytest
-
-from infernum import Infernum
-from infernum.const import ARCH_ARM, ARCH_ARM64
-from infernum.exceptions import EmulatorCrashedException
-
-BASE_PATH = os.path.abspath(os.path.dirname(__file__))
-
-LIB_PATH = os.path.join(BASE_PATH, "..", "examples/lib")
-LIB64_PATH = os.path.join(BASE_PATH, "..", "examples/lib64")
-
-
-@pytest.fixture(scope="module")
-def arm_emu():
-    yield Infernum(arch=ARCH_ARM)
-
-
-@pytest.fixture(scope="module")
-def arm_clib(arm_emu):
-    yield arm_emu.load_module(os.path.join(LIB_PATH, "libc.so"))
-
-
-@pytest.fixture(scope="module")
-def arm_zlib(arm_emu):
-    yield arm_emu.load_module(os.path.join(LIB_PATH, "libz.so"))
-
-
-@pytest.fixture(scope="module")
-def arm_sample1lib(arm_emu):
-    yield arm_emu.load_module(
-        os.path.join(LIB_PATH, "libsample1.so"),
-        exec_init_array=True,
-    )
-
-
-@pytest.fixture(scope="module")
-def arm64_emu():
-    yield Infernum(arch=ARCH_ARM64)
-
-
-@pytest.fixture(scope="module")
-def arm64_clib(arm64_emu):
-    yield arm64_emu.load_module(os.path.join(LIB64_PATH, "libc.so"))
-
-
-@pytest.fixture(scope="module")
-def arm64_zlib(arm64_emu):
-    yield arm64_emu.load_module(os.path.join(LIB64_PATH, "libz.so"))
-
-
-@pytest.fixture(scope="module")
-def arm64_sample1lib(arm64_emu):
-    yield arm64_emu.load_module(
-        os.path.join(LIB64_PATH, "libsample1.so"),
-        exec_init_array=True,
-    )
-
-
-@pytest.fixture(scope="module")
-def arm64_sample2lib(arm64_emu):
-    yield arm64_emu.load_module(os.path.join(LIB64_PATH, "libsample2.so"))
 
 
 @pytest.mark.usefixtures("arm64_clib")
@@ -219,30 +158,12 @@ def test_exec_init_array(arm64_emu, arm64_sample1lib):
     assert arm64_emu.read_string(arm64_sample1lib.base + 0x49DD8) == "1.2.3"
 
 
-def test_unhandled_system_call_exception():
-    with pytest.raises(EmulatorCrashedException, match=r"Unhandled system call.*"):
-        emulator = Infernum(arch=ARCH_ARM64)
-        emulator._symbol_hooks.pop("malloc")
-        emulator.load_module(os.path.join(LIB64_PATH, "libc.so"))
-        emulator.call_symbol("malloc")
+@pytest.mark.usefixtures("arm_clib")
+@pytest.mark.usefixtures("arm64_clib")
+@pytest.mark.parametrize("emu_name", ["arm_emu", "arm64_emu"])
+def test_clib(request, emu_name):
+    emu = request.getfixturevalue(emu_name)
 
-
-def test_missing_symbol_required_exception():
-    with pytest.raises(EmulatorCrashedException, match=r"Missing symbol.*"):
-        emulator = Infernum(arch=ARCH_ARM64)
-        szstonelib = emulator.load_module(os.path.join(LIB64_PATH, "libsample1.so"))
-
-        data = b"infernum"
-
-        a1 = emulator.create_buffer(len(data))
-        a2 = len(data)
-        a3 = emulator.create_buffer(1024)
-
-        emulator.write_bytes(a1, data)
-        emulator.call_address(szstonelib.base + 0x289A4, a1, a2, a3)
-
-
-def _test_clib(emu):
     # malloc
     size = 1024
     addr = emu.call_symbol("malloc", size)
@@ -328,16 +249,6 @@ def _test_clib(emu):
     emu.call_symbol("free", addr)
 
 
-@pytest.mark.usefixtures("arm_clib")
-def test_clib_arm(arm_emu):
-    _test_clib(arm_emu)
-
-
-@pytest.mark.usefixtures("arm64_clib")
-def test_clib_arm64(arm64_emu):
-    _test_clib(arm64_emu)
-
-
 @pytest.mark.usefixtures("arm_clib", "arm_zlib")
 def test_emulate_arm(arm_emu, arm_sample1lib):
     # sub_A588@libsample1.so
@@ -354,7 +265,7 @@ def test_emulate_arm(arm_emu, arm_sample1lib):
     arm_emu.call_address((arm_sample1lib.base + 0xA588) | 1, a1, a2, a3, a4)
     result = arm_emu.read_bytes(a3, a2)
 
-    assert _zlib.crc32(result) == 2152630634
+    assert zlib.crc32(result) == 2152630634
 
 
 @pytest.mark.usefixtures("arm64_clib", "arm64_zlib")
@@ -371,7 +282,7 @@ def test_emulate_arm64(arm64_emu, arm64_sample1lib, arm64_sample2lib):
     result_size = arm64_emu.call_address(arm64_sample1lib.base + 0x2F1C8, a1, a2, a3)
     result = arm64_emu.read_bytes(a3, result_size)
 
-    assert _zlib.crc32(result) == 588985915
+    assert zlib.crc32(result) == 588985915
 
     # sub_289A4@libsample2.so
     data = b"infernum"
@@ -386,4 +297,4 @@ def test_emulate_arm64(arm64_emu, arm64_sample1lib, arm64_sample2lib):
     arm64_emu.call_address(arm64_sample2lib.base + 0x289A4, a1, a2, a3)
     result = arm64_emu.read_bytes(a3, 32)
 
-    assert _zlib.crc32(result) == 2637469588
+    assert zlib.crc32(result) == 2637469588

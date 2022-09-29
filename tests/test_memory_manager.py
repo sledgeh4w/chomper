@@ -1,19 +1,9 @@
-import pytest
-
-from infernum import Infernum
-
-
-@pytest.fixture()
-def emulator():
-    yield Infernum()
-
-
-def test_alloc(emulator):
+def test_alloc(arm64_emu):
     for n in range(1, 17):
-        buffer = emulator.memory_manager.alloc(2**n)
-        emulator.read_bytes(buffer, 2**n)
+        buffer = arm64_emu.memory_manager.alloc(2**n)
+        arm64_emu.read_bytes(buffer, 2**n)
 
 
-def test_free(emulator):
-    buffer = emulator.memory_manager.alloc(1024)
-    emulator.memory_manager.free(buffer)
+def test_free(arm64_emu):
+    buffer = arm64_emu.memory_manager.alloc(1024)
+    arm64_emu.memory_manager.free(buffer)
