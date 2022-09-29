@@ -29,9 +29,9 @@ def arm_zlib(arm_emu):
 
 
 @pytest.fixture(scope="module")
-def arm_dusanwalib(arm_emu):
+def arm_sample1lib(arm_emu):
     yield arm_emu.load_module(
-        os.path.join(LIB_PATH, "com.shizhuang.duapp_v4.85.6_libdusanwa.so"),
+        os.path.join(LIB_PATH, "libsample1.so"),
         exec_init_array=True,
     )
 
@@ -52,18 +52,16 @@ def arm64_zlib(arm64_emu):
 
 
 @pytest.fixture(scope="module")
-def arm64_szstonelib(arm64_emu):
+def arm64_sample1lib(arm64_emu):
     yield arm64_emu.load_module(
-        os.path.join(LIB64_PATH, "com.shizhuang.duapp_v4.94.5_libszstone.so"),
+        os.path.join(LIB64_PATH, "libsample1.so"),
         exec_init_array=True,
     )
 
 
 @pytest.fixture(scope="module")
-def arm64_tinylib(arm64_emu):
-    yield arm64_emu.load_module(
-        os.path.join(LIB64_PATH, "com.xingin.xhs_v7.30.2.1_libtiny.so")
-    )
+def arm64_sample2lib(arm64_emu):
+    yield arm64_emu.load_module(os.path.join(LIB64_PATH, "libsample2.so"))
 
 
 @pytest.mark.usefixtures("arm64_clib")
@@ -81,18 +79,18 @@ def test_locate_module(arm64_emu, arm64_clib):
     assert module.name == "libc.so"
 
 
-def test_get_back_trace(arm64_emu, arm64_tinylib):
+def test_get_back_trace(arm64_emu, arm64_sample2lib):
     def hook_code(*_):
         locations = arm64_emu.backtrace()
         assert len(locations) != 0
 
-    arm64_emu.add_hook(arm64_tinylib.base + 0x2BA08, hook_code)
+    arm64_emu.add_hook(arm64_sample2lib.base + 0x2BA08, hook_code)
 
     a1 = arm64_emu.create_buffer(32)
     a2 = arm64_emu.create_buffer(32)
     a3 = arm64_emu.create_buffer(32)
 
-    arm64_emu.call_address(arm64_tinylib.base + 0x289A4, a1, a2, a3)
+    arm64_emu.call_address(arm64_sample2lib.base + 0x289A4, a1, a2, a3)
 
 
 @pytest.mark.usefixtures("arm64_zlib")
@@ -217,8 +215,8 @@ def test_call_address(arm64_emu):
     assert arm64_emu.read_string(result) == "1.2.8"
 
 
-def test_exec_init_array(arm64_emu, arm64_szstonelib):
-    assert arm64_emu.read_string(arm64_szstonelib.base + 0x49DD8) == "1.2.3"
+def test_exec_init_array(arm64_emu, arm64_sample1lib):
+    assert arm64_emu.read_string(arm64_sample1lib.base + 0x49DD8) == "1.2.3"
 
 
 def test_unhandled_system_call_exception():
@@ -232,9 +230,7 @@ def test_unhandled_system_call_exception():
 def test_missing_symbol_required_exception():
     with pytest.raises(EmulatorCrashedException, match=r"Missing symbol.*"):
         emulator = Infernum(arch=ARCH_ARM64)
-        szstonelib = emulator.load_module(
-            os.path.join(LIB64_PATH, "com.shizhuang.duapp_v4.94.5_libszstone.so")
-        )
+        szstonelib = emulator.load_module(os.path.join(LIB64_PATH, "libsample1.so"))
 
         data = b"infernum"
 
@@ -343,8 +339,8 @@ def test_clib_arm64(arm64_emu):
 
 
 @pytest.mark.usefixtures("arm_clib", "arm_zlib")
-def test_emulate_arm(arm_emu, arm_dusanwalib):
-    # sample 1: sub_A588@com.shizhuang.duapp_v4.85.6_libdusanwa.so
+def test_emulate_arm(arm_emu, arm_sample1lib):
+    # sub_A588@libsample1.so
     data = b"infernum"
 
     a1 = arm_emu.create_buffer(32)
@@ -355,15 +351,15 @@ def test_emulate_arm(arm_emu, arm_dusanwalib):
     arm_emu.write_bytes(a1, data)
     arm_emu.write_bytes(a4, data)
 
-    arm_emu.call_address((arm_dusanwalib.base + 0xA588) | 1, a1, a2, a3, a4)
+    arm_emu.call_address((arm_sample1lib.base + 0xA588) | 1, a1, a2, a3, a4)
     result = arm_emu.read_bytes(a3, a2)
 
     assert _zlib.crc32(result) == 2152630634
 
 
 @pytest.mark.usefixtures("arm64_clib", "arm64_zlib")
-def test_emulate_arm64(arm64_emu, arm64_szstonelib, arm64_tinylib):
-    # sample 1: sub_2F1C8@com.shizhuang.duapp_v4.94.5_libszstone.so
+def test_emulate_arm64(arm64_emu, arm64_sample1lib, arm64_sample2lib):
+    # sub_2F1C8@libsample1.so
     data = b"infernum"
 
     a1 = arm64_emu.create_buffer(len(data))
@@ -372,12 +368,12 @@ def test_emulate_arm64(arm64_emu, arm64_szstonelib, arm64_tinylib):
 
     arm64_emu.write_bytes(a1, data)
 
-    result_size = arm64_emu.call_address(arm64_szstonelib.base + 0x2F1C8, a1, a2, a3)
+    result_size = arm64_emu.call_address(arm64_sample1lib.base + 0x2F1C8, a1, a2, a3)
     result = arm64_emu.read_bytes(a3, result_size)
 
     assert _zlib.crc32(result) == 588985915
 
-    # sample 2: sub_289A4@com.xingin.xhs_v7.30.2.1_libtiny.so
+    # sub_289A4@libsample2.so
     data = b"infernum"
 
     a1 = arm64_emu.create_buffer(32)
@@ -387,7 +383,7 @@ def test_emulate_arm64(arm64_emu, arm64_szstonelib, arm64_tinylib):
     arm64_emu.write_bytes(a1, data * 4)
     arm64_emu.write_bytes(a2, data * 4)
 
-    arm64_emu.call_address(arm64_tinylib.base + 0x289A4, a1, a2, a3)
+    arm64_emu.call_address(arm64_sample2lib.base + 0x289A4, a1, a2, a3)
     result = arm64_emu.read_bytes(a3, 32)
 
     assert _zlib.crc32(result) == 2637469588
