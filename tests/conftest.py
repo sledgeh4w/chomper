@@ -12,51 +12,51 @@ lib64_path = os.path.join(base_path, "..", "examples/lib64")
 
 
 @pytest.fixture(scope="module")
-def arm_emu():
+def emu_arm():
     yield Infernum(arch=ARCH_ARM)
 
 
 @pytest.fixture(scope="module")
-def arm_clib(arm_emu):
-    yield arm_emu.load_module(os.path.join(lib_path, "libc.so"))
+def clib_arm(emu_arm):
+    yield emu_arm.load_module(os.path.join(lib_path, "libc.so"))
 
 
 @pytest.fixture(scope="module")
-def arm_zlib(arm_emu):
-    yield arm_emu.load_module(os.path.join(lib_path, "libz.so"))
+def zlib_arm(emu_arm):
+    yield emu_arm.load_module(os.path.join(lib_path, "libz.so"))
 
 
 @pytest.fixture(scope="module")
-def arm_sample1lib(arm_emu):
-    yield arm_emu.load_module(
+def sample1lib_arm(emu_arm):
+    yield emu_arm.load_module(
         module_file=os.path.join(lib_path, "libsample1.so"),
         exec_init_array=True,
     )
 
 
 @pytest.fixture(scope="module")
-def arm64_emu():
+def emu_arm64():
     yield Infernum(arch=ARCH_ARM64)
 
 
 @pytest.fixture(scope="module")
-def arm64_clib(arm64_emu):
-    yield arm64_emu.load_module(os.path.join(lib64_path, "libc.so"))
+def clib_arm64(emu_arm64):
+    yield emu_arm64.load_module(os.path.join(lib64_path, "libc.so"))
 
 
 @pytest.fixture(scope="module")
-def arm64_zlib(arm64_emu):
-    yield arm64_emu.load_module(os.path.join(lib64_path, "libz.so"))
+def zlib_arm64(emu_arm64):
+    yield emu_arm64.load_module(os.path.join(lib64_path, "libz.so"))
 
 
 @pytest.fixture(scope="module")
-def arm64_sample1lib(arm64_emu):
-    yield arm64_emu.load_module(
+def sample1lib_arm64(emu_arm64):
+    yield emu_arm64.load_module(
         module_file=os.path.join(lib64_path, "libsample1.so"),
         exec_init_array=True,
     )
 
 
 @pytest.fixture(scope="module")
-def arm64_sample2lib(arm64_emu):
-    yield arm64_emu.load_module(os.path.join(lib64_path, "libsample2.so"))
+def sample2lib_arm64(emu_arm64):
+    yield emu_arm64.load_module(os.path.join(lib64_path, "libsample2.so"))

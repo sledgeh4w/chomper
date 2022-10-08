@@ -13,7 +13,9 @@ def test_unhandled_system_call_exception():
     with pytest.raises(EmulatorCrashedException, match=r"Unhandled system call.*"):
         emulator = Infernum(arch=ARCH_ARM64)
         emulator._symbol_hooks.pop("malloc")
+
         emulator.load_module(os.path.join(lib64_path, "libc.so"))
+
         emulator.call_symbol("malloc")
 
 
