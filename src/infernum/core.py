@@ -88,12 +88,14 @@ class Infernum:
         """Create Unicorn instance."""
         arch = UC_ARCH_ARM if self.arch == arch_arm else UC_ARCH_ARM64
         mode = UC_MODE_THUMB if self.arch == arch_arm and self.on_thumb else UC_MODE_ARM
+
         return Uc(arch, mode)
 
     def _create_cs(self) -> Cs:
         """Create Capstone instance."""
         arch = CS_ARCH_ARM if self.arch == arch_arm else CS_ARCH_ARM64
         mode = CS_MODE_THUMB if self.arch == arch_arm and self.on_thumb else CS_MODE_ARM
+
         return Cs(arch, mode)
 
     def _init_symbol_hooks(self):
@@ -128,7 +130,9 @@ class Infernum:
     def _setup_stack(self):
         """Setup stack."""
         stack_addr = const.STACK_ADDRESS + const.STACK_SIZE // 2
+
         self.uc.mem_map(const.STACK_ADDRESS, const.STACK_SIZE)
+
         self.uc.reg_write(self.arch.reg_sp, stack_addr)
         self.uc.reg_write(self.arch.reg_fp, stack_addr)
 
@@ -165,7 +169,9 @@ class Infernum:
 
         self.uc.mem_map(const.TEMP_ADDRESS, aligned(len(inst_code), 1024))
         self.uc.mem_write(addr, inst_code)
+
         self.uc.emu_start(addr | 1, addr + len(inst_code))
+
         self.uc.mem_unmap(const.TEMP_ADDRESS, aligned(len(inst_code), 1024))
 
     def _setup_emulator(self):
@@ -252,6 +258,7 @@ class Infernum:
         for module in self.modules:
             if module.base <= address < module.base + module.size:
                 return module
+
         return None
 
     def get_location(self, address: int) -> Location:
@@ -478,6 +485,7 @@ class Infernum:
                         self._start_emulate(init_func_addr)
 
             self._module_address = aligned(high_addr, 1024 * 1024)
+
             return module
 
     def _get_argument_holder(self, index: int) -> Tuple[bool, int]:
@@ -506,16 +514,20 @@ class Infernum:
     def get_argument(self, index: int) -> int:
         """Get argument with the specified index."""
         is_reg, reg_or_addr = self._get_argument_holder(index)
+
         if is_reg:
             return self.uc.reg_read(reg_or_addr)
-        return self.read_int(reg_or_addr)
+        else:
+            return self.read_int(reg_or_addr)
 
     def set_argument(self, index: int, value: int):
         """Set argument with the specified index."""
         is_reg, reg_or_addr = self._get_argument_holder(index)
+
         if is_reg:
-            return self.uc.reg_write(reg_or_addr, value)
-        self.write_int(reg_or_addr, value)
+            self.uc.reg_write(reg_or_addr, value)
+        else:
+            self.write_int(reg_or_addr, value)
 
     def get_retval(self) -> int:
         """Get return value."""
@@ -537,6 +549,7 @@ class Infernum:
         """Create a buffer that is initialized to the string."""
         address = self.memory_manager.alloc(len(string) + 1)
         self.write_string(address, string)
+
         return address
 
     def free(self, address: int):
@@ -604,10 +617,13 @@ class Infernum:
         """Call function with the symbol name."""
         symbol = self.find_symbol(symbol_name)
         address = symbol.address
+
         self._start_emulate(address, *args)
+
         return self.get_retval()
 
     def call_address(self, address, *args) -> int:
         """Call function at the address."""
         self._start_emulate(address, *args)
+
         return self.get_retval()
