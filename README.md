@@ -18,7 +18,7 @@ Infernum is a lightweight Android native library emulation framework based on [U
 $ pip install infernum
 ```
 
-## Examples
+## Usage
 
 Load modules and call functions.
 
@@ -41,21 +41,68 @@ a3 = len(data)
 
 emulator.write_bytes(a2, data)
 
-# Call function
-result = emulator.call_symbol("crc32", a1, a2, a3)
+# Call function by symbol
+emulator.call_symbol("crc32", a1, a2, a3)
 
-emulator.logger.info(hex(result))
+# Call function by address
+symbol = emulator.find_symbol("crc32")
+emulator.call_address(symbol.address, a1, a2, a3)
+```
+
+Emulate arch ARM.
+
+```python
+from infernum import Infernum
+from infernum.const import ARCH_ARM
+
+emulator = Infernum(ARCH_ARM)
+```
+
+Read/Write data.
+
+```python
+# Create a buffer with the specified size
+v1 = emulator.create_buffer(64)
+# Create a buffer initialized to the specified string.
+v2 = emulator.create_string("infernum")
+
+# Write an int
+emulator.write_int(v1, 1)
+# Write bytes
+emulator.write_bytes(v1, b"infernum")
+# Write a string
+emulator.write_string(v1, "infernum")
+
+# Read an int
+emulator.read_int(v1)
+# Read bytes
+emulator.read_bytes(v1, 8)
+# Read a string
+emulator.read_string(v2)
+```
+
+Hook instructions.
+
+```python
+def hook_code(uc, address, size, user_data):
+    emu = user_data["emulator"]
+
+symbol = emulator.find_symbol("crc32")
+emulator.add_hook(symbol.address, hook_code)
 ```
 
 Trace instructions.
 
 ```python
-from infernum import Infernum
-from infernum.const import ARCH_ARM64
-
-# Trace all instructions.
+# Trace all instructions
 emulator = Infernum(ARCH_ARM64, trace_inst=True)
 
-# Trace instructions in this module.
+# Trace instructions in this module
 emulator.load_module("lib64/libz.so", trace_inst=True)
+```
+
+Execute initialization functions in section `.init_array`.
+
+```python
+emulator.load_module("lib64/libsample1.so", exec_init_array=True)
 ```
