@@ -7,8 +7,8 @@ from infernum.const import ARCH_ARM, ARCH_ARM64
 
 base_path = os.path.abspath(os.path.dirname(__file__))
 
-lib_path = os.path.join(base_path, "..", "examples/lib")
-lib64_path = os.path.join(base_path, "..", "examples/lib64")
+lib_path = os.path.join(base_path, "..", "samples/lib")
+lib64_path = os.path.join(base_path, "..", "samples/lib64")
 
 
 @pytest.fixture(scope="module")
