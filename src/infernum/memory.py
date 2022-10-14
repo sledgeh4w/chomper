@@ -44,6 +44,7 @@ class MemoryManager:
 
         self.uc.mem_map(pool.address, pool.size)
         self.heap_address += pool.size
+
         return pool
 
     def init_pools(self):
@@ -52,6 +53,7 @@ class MemoryManager:
         At the begging, some pools with different block sizes will be created.
         """
         block_sizes = [8 * 2**i for i in range(10)]
+
         for block_size in block_sizes:
             self.pools.append(self.create_pool(block_size))
 
@@ -59,6 +61,7 @@ class MemoryManager:
         """Alloc memory."""
         if size > self.minimum_pool_size:
             block_size = aligned(size, 1024)
+
         else:
             block_size = 8
             while block_size < size:

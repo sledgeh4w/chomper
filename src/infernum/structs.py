@@ -33,6 +33,7 @@ class Location:
             return f"0x{self.address:x}"
 
         offset = self.address - self.module.base
+
         return f"0x{offset:x}@{self.module.name}"
 
 
