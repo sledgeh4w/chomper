@@ -42,6 +42,7 @@ def hook_clock_nanosleep(emulator: "Infernum"):
 def hook_free(emulator: "Infernum"):
     """Intercept ``free`` of ``libc.so``."""
     addr = emulator.get_argument(0)
+
     emulator.memory_manager.free(addr)
 
 
@@ -50,10 +51,12 @@ def hook_getcwd(emulator: "Infernum"):
     """Intercept ``getcwd`` of ``libc.so``."""
     buf = emulator.get_argument(0)
     cwd = os.getcwd()
+
     if not buf:
         buf = emulator.create_string(cwd)
     else:
         emulator.write_string(buf, cwd)
+
     emulator.set_argument(0, buf)
     emulator.set_retval(buf)
 
@@ -75,6 +78,7 @@ def hook_malloc(emulator: "Infernum"):
     """Intercept ``malloc`` of ``libc.so``."""
     size = emulator.get_argument(0)
     addr = emulator.memory_manager.alloc(size)
+
     emulator.set_retval(addr)
 
 
@@ -84,6 +88,7 @@ def hook_memcpy(emulator: "Infernum"):
     dst = emulator.get_argument(0)
     src = emulator.get_argument(1)
     size = emulator.get_argument(2)
+
     emulator.write_bytes(dst, emulator.read_bytes(src, size))
     emulator.set_retval(dst)
 
@@ -94,6 +99,7 @@ def hook_memset(emulator: "Infernum"):
     addr = emulator.get_argument(0)
     char = emulator.get_argument(1)
     size = emulator.get_argument(2)
+
     emulator.write_bytes(addr, bytes([char for _ in range(size)]))
     emulator.set_retval(addr)
 
