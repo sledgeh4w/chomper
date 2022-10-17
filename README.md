@@ -5,7 +5,7 @@
 ![PyPI - Python Version](https://img.shields.io/pypi/pyversions/infernum)
 [![GitHub license](https://img.shields.io/github/license/Sh4ww/infernum)](https://github.com/Sh4ww/infernum/blob/main/LICENSE)
 
-Infernum is a lightweight Android native library emulation framework based on [Unicorn](https://github.com/unicorn-engine/unicorn). It is mainly used to execute the pure algorithm, so it will not provide JNI or file system support. It supports arch ARM and ARM64.
+Infernum is a lightweight Android native library emulation framework based on [Unicorn](https://github.com/unicorn-engine/unicorn). It is mainly used to perform algorithm, so it doesn't provide JNI or file system support. It supports arch ARM and ARM64.
 
 ## Requirements
 
@@ -35,18 +35,17 @@ emulator.load_module("lib64/libz.so")
 # Construct arguments
 data = b"infernum"
 
-a1 = 0
-a2 = emulator.create_buffer(len(data))
-a3 = len(data)
+v1 = emulator.create_buffer(len(data))
+v2 = len(data)
 
-emulator.write_bytes(a2, data)
+emulator.write_bytes(v1, data)
 
 # Call function by symbol
-emulator.call_symbol("crc32", a1, a2, a3)
+emulator.call_symbol("crc32", 0, v1, v2)
 
 # Call function by address
 symbol = emulator.find_symbol("crc32")
-emulator.call_address(symbol.address, a1, a2, a3)
+emulator.call_address(symbol.address, 0, v1, v2)
 ```
 
 Emulate arch ARM.
@@ -61,23 +60,18 @@ emulator = Infernum(ARCH_ARM)
 Read/Write data.
 
 ```python
-# Create a buffer with the specified size
+# Create buffer
 v1 = emulator.create_buffer(64)
-# Create a buffer initialized to the specified string.
 v2 = emulator.create_string("infernum")
 
-# Write an int
+# Write data
 emulator.write_int(v1, 1)
-# Write bytes
 emulator.write_bytes(v1, b"infernum")
-# Write a string
-emulator.write_string(v1, "infernum")
+emulator.write_string(v2, "infernum")
 
-# Read an int
+# Read data
 emulator.read_int(v1)
-# Read bytes
 emulator.read_bytes(v1, 8)
-# Read a string
 emulator.read_string(v2)
 ```
 
@@ -87,7 +81,7 @@ Hook instructions.
 def hook_code(uc, address, size, user_data):
     emu = user_data["emulator"]
 
-symbol = emulator.find_symbol("crc32")
+symbol = emulator.find_symbol("zlibVersion")
 emulator.add_hook(symbol.address, hook_code)
 ```
 
