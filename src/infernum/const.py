@@ -1,3 +1,14 @@
+import sys
+
+if sys.version_info >= (3, 8):
+    from typing import Literal
+else:
+    from typing_extensions import Literal
+
+# Endian type
+BIG_ENDIAN: Literal["big"] = "big"
+LITTLE_ENDIAN: Literal["little"] = "little"
+
 # Supported arch
 ARCH_ARM = 1
 ARCH_ARM64 = 2
@@ -6,7 +17,7 @@ ARCH_ARM64 = 2
 TLS_ADDRESS = 0x10000
 TLS_SIZE = 0x400
 
-# Jump trap
+# Trap area
 TRAP_ADDRESS = 0x20000
 TRAP_SIZE = 0x10000
 
@@ -23,4 +34,5 @@ MODULE_ADDRESS = 0x1000000
 # The address of heap
 HEAP_ADDRESS = 0x80000000
 
+# Minimum size of memory pool
 MINIMUM_POOL_SIZE = 8**5
