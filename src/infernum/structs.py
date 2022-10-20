@@ -38,8 +38,8 @@ class Location:
 
 
 @dataclass
-class Pool:
-    """The pool object."""
+class MemoryPool:
+    """The memory pool object."""
 
     address: int
     size: int

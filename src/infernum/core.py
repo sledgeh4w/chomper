@@ -66,7 +66,7 @@ class Infernum:
         self.trace_inst = trace_inst
         self.trace_symbol_calls = trace_symbol_calls
 
-        self.endian: Literal["little", "big"] = "little"
+        self.endian = const.LITTLE_ENDIAN
 
         self.uc = self._create_uc()
         self.cs = self._create_cs()
@@ -124,7 +124,7 @@ class Infernum:
         self._symbol_hooks.update(_hooks)
 
     def _init_trap_memory(self):
-        """Initialize trap memory."""
+        """Initialize trap area memory."""
         self.uc.mem_map(const.TRAP_ADDRESS, const.TRAP_SIZE)
 
     def _setup_stack(self):
@@ -326,9 +326,25 @@ class Infernum:
             user_data={"emulator": self, **user_data},
         )
 
-    def del_hook(self, h: int):
+    def del_hook(self, handle: int):
         """Delete hook."""
-        self.uc.hook_del(h)
+        self.uc.hook_del(handle)
+
+    def _set_jump_trap(
+        self,
+        address: int,
+        callback: UC_HOOK_CODE_TYPE,
+        user_data: Optional[dict] = None,
+    ):
+        """Modify jump address to the trap area and set callback."""
+        self.add_hook(
+            self._trap_address,
+            callback,
+            user_data=user_data,
+            silenced=True,
+        )
+        self.write_int(address, self._trap_address)
+        self._trap_address += 4
 
     def _relocate_address(self, relocation: Relocation, segment: DynamicSegment):
         """Relocate address in the relocation table."""
@@ -353,14 +369,11 @@ class Infernum:
             except SymbolMissingException:
                 # If the symbol is missing, let it jump to the trap address to
                 # raise an exception with useful information.
-                self.write_int(reloc_offset, self._trap_address)
-                self.add_hook(
-                    self._trap_address,
+                self._set_jump_trap(
+                    reloc_offset,
                     self._missing_symbol_required_callback,
                     user_data={"symbol_name": symbol_name},
-                    silenced=True,
                 )
-                self._trap_address += 4
 
         elif reloc_type in (
             ENUM_RELOC_TYPE_ARM["R_ARM_RELATIVE"],

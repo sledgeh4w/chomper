@@ -3,7 +3,7 @@ from typing import List
 from unicorn import Uc
 
 from .const import MINIMUM_POOL_SIZE
-from .structs import Pool
+from .structs import MemoryPool
 from .utils import aligned
 
 
@@ -26,21 +26,21 @@ class MemoryManager:
         self.heap_address = heap_address
 
         self.minimum_pool_size = MINIMUM_POOL_SIZE
-        self.pools: List[Pool] = []
+        self.pools: List[MemoryPool] = []
 
         self.init_pools()
 
-    def create_pool(self, block_size: int) -> Pool:
+    def create_pool(self, block_size: int) -> MemoryPool:
         """Create a pool."""
         if block_size <= self.minimum_pool_size:
-            pool = Pool(
+            pool = MemoryPool(
                 address=self.heap_address,
                 size=self.minimum_pool_size,
                 blocks=[0 for _ in range(self.minimum_pool_size // block_size)],
             )
 
         else:
-            pool = Pool(address=self.heap_address, size=block_size, blocks=[0])
+            pool = MemoryPool(address=self.heap_address, size=block_size, blocks=[0])
 
         self.uc.mem_map(pool.address, pool.size)
         self.heap_address += pool.size
