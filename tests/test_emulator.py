@@ -11,14 +11,14 @@ def test_find_symbol(emu_arm64):
     assert symbol.name == symbol_name
 
 
-def test_locate_module(emu_arm64, clib_arm64):
+def test_locate_addr(emu_arm64, clib_arm64):
     address = clib_arm64.base + 0x1000
-    module = emu_arm64.locate_module(address)
+    location = emu_arm64.locate_address(address)
 
-    assert module.name == "libc.so"
+    assert location.module.name == clib_arm64.name
 
 
-def test_get_back_trace(emu_arm64, sample2lib_arm64):
+def test_backtrace(emu_arm64, sample2lib_arm64):
     def hook_code(*_):
         locations = emu_arm64.backtrace()
         assert len(locations) != 0
@@ -70,26 +70,26 @@ def test_set_and_get_retval(emu_arm64):
 
 
 @pytest.mark.usefixtures("zlib_arm64")
-def test_jump_back(emu_arm64):
-    def hook_code_early(*_):
-        nonlocal trigger_early
-        trigger_early = True
-        emu_arm64.jump_back()
+def test_return_call(emu_arm64):
+    def hook_code_first(*_):
+        nonlocal first_trigger
+        first_trigger = True
+        emu_arm64.return_call()
 
-    def hook_code_late(*_):
-        nonlocal trigger_late
-        trigger_late = True
+    def hook_code_second(*_):
+        nonlocal second_trigger
+        second_trigger = True
 
     symbol = emu_arm64.find_symbol("zlibCompileFlags")
 
-    trigger_early = False
-    trigger_late = False
+    first_trigger = False
+    second_trigger = False
 
-    emu_arm64.add_hook(symbol.address, hook_code_early)
-    emu_arm64.add_hook(symbol.address + 4, hook_code_late)
+    emu_arm64.add_hook(symbol.address, hook_code_first)
+    emu_arm64.add_hook(symbol.address + 4, hook_code_second)
     emu_arm64.call_symbol(symbol.name)
 
-    assert trigger_early and not trigger_late
+    assert first_trigger and not second_trigger
 
 
 def test_crate_buffer(emu_arm64):
