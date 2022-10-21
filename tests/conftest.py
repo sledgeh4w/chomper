@@ -60,3 +60,13 @@ def sample1lib_arm64(emu_arm64):
 @pytest.fixture(scope="module")
 def sample2lib_arm64(emu_arm64):
     yield emu_arm64.load_module(os.path.join(lib64_path, "libsample2.so"))
+
+
+@pytest.fixture(scope="module")
+def sample_str():
+    yield "infernum"
+
+
+@pytest.fixture(scope="module")
+def sample_bytes(sample_str):
+    yield sample_str.encode("utf-8")
