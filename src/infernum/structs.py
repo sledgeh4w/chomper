@@ -8,6 +8,7 @@ class Symbol:
 
     address: int
     name: str
+    type: str
 
 
 @dataclass
