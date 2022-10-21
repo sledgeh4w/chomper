@@ -14,28 +14,27 @@ def intercept(f: Callable[["Infernum"], Any]) -> UC_HOOK_CODE_TYPE:
     @wraps(f)
     def decorator(*args):
         emulator = args[-1]["emulator"]
-        f(emulator)
-        emulator.jump_back()
+        emulator.return_call(f(emulator))
 
     return decorator
 
 
 @intercept
-def hook_ctype_get_mb_cur_max(emulator: "Infernum"):
+def hook_ctype_get_mb_cur_max(_):
     """Intercept ``__ctype_get_mb_cur_max`` of ``libc.so``."""
-    emulator.set_retval(1)
+    return 1
 
 
 @intercept
-def hook_arc4random(emulator: "Infernum"):
+def hook_arc4random(_):
     """Intercept ``arc4random`` of ``libc.so``."""
-    emulator.set_retval(random.randint(0, 0x100000000))
+    return random.randint(0, 0x100000000)
 
 
 @intercept
-def hook_clock_nanosleep(emulator: "Infernum"):
+def hook_clock_nanosleep(_):
     """Intercept ``clock_nanosleep`` of ``libc.so``."""
-    emulator.set_retval(0)
+    return 0
 
 
 @intercept
@@ -58,7 +57,8 @@ def hook_getcwd(emulator: "Infernum"):
         emulator.write_string(buf, cwd)
 
     emulator.set_argument(0, buf)
-    emulator.set_retval(buf)
+
+    return buf
 
 
 @intercept
@@ -79,7 +79,7 @@ def hook_malloc(emulator: "Infernum"):
     size = emulator.get_argument(0)
     addr = emulator.memory_manager.alloc(size)
 
-    emulator.set_retval(addr)
+    return addr
 
 
 @intercept
@@ -90,7 +90,8 @@ def hook_memcpy(emulator: "Infernum"):
     size = emulator.get_argument(2)
 
     emulator.write_bytes(dst, emulator.read_bytes(src, size))
-    emulator.set_retval(dst)
+
+    return dst
 
 
 @intercept
@@ -101,10 +102,11 @@ def hook_memset(emulator: "Infernum"):
     size = emulator.get_argument(2)
 
     emulator.write_bytes(addr, bytes([char for _ in range(size)]))
-    emulator.set_retval(addr)
+
+    return addr
 
 
 @intercept
-def hook_nanosleep(emulator: "Infernum"):
+def hook_nanosleep(_):
     """Intercept ``nanosleep`` of ``libc.so``."""
-    emulator.set_retval(0)
+    return 0

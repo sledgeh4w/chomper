@@ -68,16 +68,16 @@ class Infernum:
 
         self.endian = const.LITTLE_ENDIAN
 
+        self.modules: List[Module] = []
+
+        self._module_address = const.MODULE_ADDRESS
+        self._trap_address = const.TRAP_ADDRESS
+        self._symbol_hooks: Dict[str, UC_HOOK_CODE_TYPE] = {}
+
         self.uc = self._create_uc()
         self.cs = self._create_cs()
 
         self.memory_manager = MemoryManager(uc=self.uc, heap_address=const.HEAP_ADDRESS)
-
-        self._module_address = const.MODULE_ADDRESS
-        self._trap_address = const.TRAP_ADDRESS
-
-        self.modules: List[Module] = []
-        self._symbol_hooks: Dict[str, UC_HOOK_CODE_TYPE] = {}
 
         self._init_trap_memory()
         self._init_symbol_hooks()
@@ -195,7 +195,7 @@ class Infernum:
         self.uc.reg_write(self.arch.reg_pc, address)
 
         try:
-            self.logger.info(f"Start emulate at {self.get_location(address)}.")
+            self.logger.info(f"Start emulate at {self.locate_address(address)}.")
             self.uc.emu_start(address, stop_addr)
 
         except UcError as e:
@@ -206,7 +206,7 @@ class Infernum:
             # Check whether the last instruction is svc.
             if inst.mnemonic == "svc":
                 raise EmulatorCrashedException(
-                    f"Unhandled system call at {self.get_location(address)}"
+                    f"Unhandled system call at {self.locate_address(address)}"
                 )
 
             raise EmulatorCrashedException("Unknown reason") from e
@@ -215,7 +215,7 @@ class Infernum:
         """Trace instruction."""
         for inst in self.cs.disasm_lite(uc.mem_read(address, size), 0):
             self.logger.info(
-                f"Trace at {self.get_location(address)}: {inst[-2]} {inst[-1]}."
+                f"Trace at {self.locate_address(address)}: {inst[-2]} {inst[-1]}."
             )
 
     def _trace_symbol_call_callback(self, *args):
@@ -226,7 +226,7 @@ class Infernum:
 
         self.logger.info(
             f"Symbol '{symbol.name}' called"
-            + (f" from {self.get_location(ret_addr)}." if ret_addr else ".")
+            + (f" from {self.locate_address(ret_addr)}." if ret_addr else ".")
         )
 
     @staticmethod
@@ -253,21 +253,20 @@ class Infernum:
 
         raise SymbolMissingException(f"{symbol_name} not found")
 
-    def locate_module(self, address: int) -> Optional[Module]:
-        """Locate the module according to the address."""
+    def locate_address(self, address: int) -> Location:
+        """Locate which module this address is in."""
+        located_module = None
+
         for module in self.modules:
             if module.base <= address < module.base + module.size:
-                return module
+                located_module = module
+                break
 
-        return None
-
-    def get_location(self, address: int) -> Location:
-        """Get location for the address."""
-        return Location(address=address, module=self.locate_module(address))
+        return Location(address=address, module=located_module)
 
     def backtrace(self) -> List[Location]:
-        """Back trace the call stack."""
-        call_stacks = [self.uc.reg_read(self.arch.reg_lr)]
+        """Backtrace the call stack."""
+        call_stack = [self.uc.reg_read(self.arch.reg_lr)]
         fp = self.uc.reg_read(self.arch.reg_fp)
 
         while True:
@@ -275,9 +274,16 @@ class Infernum:
             fp = self.read_int(fp)
             if not fp or not lr:
                 break
-            call_stacks.append(lr)
+            call_stack.append(lr)
 
-        return [self.get_location(addr - 4) for addr in call_stacks if addr]
+        return [self.locate_address(addr - 4) for addr in call_stack if addr]
+
+    def return_call(self, retval: Optional[int] = None):
+        """Return current function call."""
+        if retval is not None:
+            self.set_retval(retval)
+
+        self.uc.reg_write(self.arch.reg_pc, self.uc.reg_read(self.arch.reg_lr))
 
     def add_hook(
         self,
@@ -307,13 +313,13 @@ class Infernum:
 
             if not silenced:
                 self.logger.info(
-                    f"Hook symbol '{symbol.name}' at {self.get_location(hook_addr)}."
+                    f"Hook symbol '{symbol.name}' at {self.locate_address(hook_addr)}."
                 )
 
         else:
             hook_addr = symbol_or_addr
             if not silenced:
-                self.logger.info(f"Hook address at {self.get_location(hook_addr)}.")
+                self.logger.info(f"Hook address at {self.locate_address(hook_addr)}.")
 
         if user_data is None:
             user_data = {}
@@ -330,21 +336,66 @@ class Infernum:
         """Delete hook."""
         self.uc.hook_del(handle)
 
-    def _set_jump_trap(
-        self,
-        address: int,
-        callback: UC_HOOK_CODE_TYPE,
-        user_data: Optional[dict] = None,
-    ):
-        """Modify jump address to the trap area and set callback."""
-        self.add_hook(
-            self._trap_address,
-            callback,
-            user_data=user_data,
-            silenced=True,
-        )
-        self.write_int(address, self._trap_address)
-        self._trap_address += 4
+    def _map_segments(self, elffile: ELFFile) -> Tuple[int, int]:
+        """Map segment of type ``LOAD`` into memory."""
+        base = self._module_address
+        boundary = 0
+
+        for segment in elffile.iter_segments(type="PT_LOAD"):
+            seg_addr = base + segment.header.p_vaddr
+
+            # Because of alignment, the actual mapped address range will be larger.
+            map_addr = aligned(seg_addr, 1024) - (1024 if seg_addr % 1024 else 0)
+            map_size = aligned(seg_addr - map_addr + segment.header.p_memsz, 1024)
+
+            self.uc.mem_map(map_addr, map_size)
+            self.uc.mem_write(seg_addr, segment.data())
+
+            boundary = max(boundary, map_addr + map_size)
+
+        return base, boundary - base
+
+    def _find_symbols(self, elffile: ELFFile) -> List[Symbol]:
+        """Find all symbols in the module."""
+        symbols = []
+
+        for segment in elffile.iter_segments(type="PT_DYNAMIC"):
+            for symbol in segment.iter_symbols():
+                if (
+                    symbol.entry["st_info"]["bind"] in ("STB_GLOBAL", "STB_WEAK")
+                    and symbol.entry["st_shndx"] != "SHN_UNDEF"
+                ):
+                    symbols.append(
+                        Symbol(
+                            address=self._module_address + symbol.entry["st_value"],
+                            name=symbol.name,
+                            type=symbol.entry["st_info"]["type"],
+                        )
+                    )
+
+        return symbols
+
+    def _exec_init_array(self, elffile: ELFFile, module: Module):
+        """Find and execute initialization functions in section ``.init_array``."""
+        init_array_addr = None
+        init_array_size = None
+
+        for segment in elffile.iter_segments(type="PT_DYNAMIC"):
+            for tag in segment.iter_tags():
+                if tag.entry.d_tag == "DT_INIT_ARRAY":
+                    init_array_addr = tag.entry.d_val
+                elif tag.entry.d_tag == "DT_INIT_ARRAYSZ":
+                    init_array_size = tag.entry.d_val
+
+        if init_array_addr is not None and init_array_size is not None:
+            self.logger.info("Execute initialize functions.")
+
+            for offset in range(0, init_array_size, self.arch.reg_size // 8):
+                init_func_addr = self.read_int(module.base + init_array_addr + offset)
+
+                if init_func_addr:
+                    # Execute the initialization functions.
+                    self._start_emulate(init_func_addr)
 
     def _relocate_address(self, relocation: Relocation, segment: DynamicSegment):
         """Relocate address in the relocation table."""
@@ -369,11 +420,14 @@ class Infernum:
             except SymbolMissingException:
                 # If the symbol is missing, let it jump to the trap address to
                 # raise an exception with useful information.
-                self._set_jump_trap(
-                    reloc_offset,
+                self.add_hook(
+                    self._trap_address,
                     self._missing_symbol_required_callback,
                     user_data={"symbol_name": symbol_name},
+                    silenced=True,
                 )
+                self.write_int(reloc_offset, self._trap_address)
+                self._trap_address += 4
 
         elif reloc_type in (
             ENUM_RELOC_TYPE_ARM["R_ARM_RELATIVE"],
@@ -384,6 +438,13 @@ class Infernum:
 
         if reloc_addr:
             self.write_int(reloc_offset, reloc_addr)
+
+    def _process_relocation(self, elffile: ELFFile):
+        """Process relocation tables."""
+        for segment in elffile.iter_segments(type="PT_DYNAMIC"):
+            for relocation_table in segment.get_relocation_tables().values():
+                for relocation in relocation_table.iter_relocations():
+                    self._relocate_address(relocation, segment)
 
     def load_module(
         self,
@@ -406,98 +467,45 @@ class Infernum:
             module_name = os.path.basename(module_file)
             self.logger.info(f"Load module '{module_name}'.")
 
-            # The memory range in which the module is loaded.
-            low_addr = self._module_address
-            high_addr = 0
+            # Map segments into memory.
+            base, size = self._map_segments(elffile)
+            symbols = self._find_symbols(elffile)
 
-            module = Module(base=low_addr, size=0, name=module_name, symbols=[])
+            module = Module(base=base, size=size, name=module_name, symbols=symbols)
             self.modules.append(module)
 
-            init_array_addr = None
-            init_array_size = None
-
-            # Load segment of type `LOAD` into memory.
-            for segment in elffile.iter_segments(type="PT_LOAD"):
-                seg_addr = low_addr + segment.header.p_vaddr
-
-                # Because of alignment, the actual mapped address range will be larger.
-                map_addr = aligned(seg_addr, 1024) - (1024 if seg_addr % 1024 else 0)
-                map_size = aligned(seg_addr - map_addr + segment.header.p_memsz, 1024)
-
-                high_addr = max(high_addr, map_addr + map_size)
-
-                self.uc.mem_map(map_addr, map_size)
-                self.uc.mem_write(seg_addr, segment.data())
-
-            module.size = high_addr - low_addr
-
-            for segment in elffile.iter_segments(type="PT_DYNAMIC"):
-                for symbol in segment.iter_symbols():
-                    if (
-                        symbol.entry["st_info"]["bind"] in ("STB_GLOBAL", "STB_WEAK")
-                        and symbol.entry["st_shndx"] != "SHN_UNDEF"
-                    ):
-                        module.symbols.append(
-                            Symbol(
-                                address=module.base + symbol.entry["st_value"],
-                                name=symbol.name,
-                            )
+            for symbol in symbols:
+                if symbol.type == "STT_FUNC":
+                    # Trace symbol call
+                    if trace_symbol_calls or self.trace_symbol_calls:
+                        self.add_hook(
+                            symbol.name,
+                            self._trace_symbol_call_callback,
+                            user_data={"symbol": symbol},
+                            silenced=True,
                         )
 
-                        # Hook symbol
-                        if symbol.entry["st_info"]["type"] == "STT_FUNC":
-                            # Trace
-                            if trace_symbol_calls or self.trace_symbol_calls:
-                                self.add_hook(
-                                    symbol.name,
-                                    self._trace_symbol_call_callback,
-                                    user_data={"symbol": symbol},
-                                    silenced=True,
-                                )
+                    # Hook symbol
+                    if self._symbol_hooks.get(symbol.name):
+                        self.add_hook(symbol.name, self._symbol_hooks[symbol.name])
 
-                            if self._symbol_hooks.get(symbol.name):
-                                self.add_hook(
-                                    symbol.name, self._symbol_hooks[symbol.name]
-                                )
-
-                for tag in segment.iter_tags():
-                    if tag.entry.d_tag == "DT_INIT_ARRAY":
-                        init_array_addr = tag.entry.d_val
-                    elif tag.entry.d_tag == "DT_INIT_ARRAYSZ":
-                        init_array_size = tag.entry.d_val
-                    elif tag.entry.d_tag == "DT_NEEDED":
-                        pass
-
-                # Process address relocation.
-                for relocation_table in segment.get_relocation_tables().values():
-                    for relocation in relocation_table.iter_relocations():
-                        self._relocate_address(relocation, segment)
+            # Process address relocation.
+            self._process_relocation(elffile)
 
             if trace_inst or self.trace_inst:
                 # Trace instructions
                 self.uc.hook_add(
                     UC_HOOK_CODE,
                     self._trace_inst_callback,
-                    begin=low_addr,
-                    end=high_addr,
+                    begin=module.base,
+                    end=module.base + module.size,
                 )
 
-            # If the section `.init_array` exists.
-            if (
-                exec_init_array
-                and init_array_addr is not None
-                and init_array_size is not None
-            ):
-                self.logger.info("Execute initialize functions.")
+            if exec_init_array:
+                # Execute initialization functions.
+                self._exec_init_array(elffile, module)
 
-                for offset in range(0, init_array_size, self.arch.reg_size // 8):
-                    init_func_addr = self.read_int(low_addr + init_array_addr + offset)
-
-                    if init_func_addr:
-                        # Execute the initialization functions.
-                        self._start_emulate(init_func_addr)
-
-            self._module_address = aligned(high_addr, 1024 * 1024)
+            self._module_address = aligned(module.base + module.size, 1024 * 1024)
 
             return module
 
@@ -549,10 +557,6 @@ class Infernum:
     def set_retval(self, value: int):
         """Set return value."""
         self.uc.reg_write(self.arch.reg_ret, value)
-
-    def jump_back(self):
-        """Jump to the address of current function was called."""
-        self.uc.reg_write(self.arch.reg_pc, self.uc.reg_read(self.arch.reg_lr))
 
     def create_buffer(self, size: int) -> int:
         """Create a buffer with the size."""
