@@ -4,7 +4,7 @@ __pycache__/
 *$py.class
 
 # C extensions
-#*.so
+*.so
 
 # Distribution / packaging
 .Python
@@ -14,8 +14,8 @@ dist/
 downloads/
 eggs/
 .eggs/
-#lib/
-#lib64/
+lib/
+lib64/
 parts/
 sdist/
 var/
@@ -127,3 +127,9 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+# Do not ignore sample library files
+!samples/lib
+!samples/lib64
+!samples/lib/*.so
+!samples/lib64/*.so
