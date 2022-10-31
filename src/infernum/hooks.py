@@ -2,7 +2,7 @@ import os
 import random
 import threading
 from functools import wraps
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any, Callable, Optional
 
 from unicorn.unicorn import UC_HOOK_CODE_TYPE
 
@@ -11,6 +11,8 @@ if TYPE_CHECKING:
 
 
 def intercept(f: Callable[["Infernum"], Any]) -> UC_HOOK_CODE_TYPE:
+    """Intercept function call."""
+
     @wraps(f)
     def decorator(*args):
         emulator = args[-1]["emulator"]
@@ -19,22 +21,20 @@ def intercept(f: Callable[["Infernum"], Any]) -> UC_HOOK_CODE_TYPE:
     return decorator
 
 
-@intercept
-def hook_ctype_get_mb_cur_max(_):
-    """Intercept ``__ctype_get_mb_cur_max`` of ``libc.so``."""
-    return 1
+def simply_return(retval: Optional[int] = None) -> UC_HOOK_CODE_TYPE:
+    """Simply return function call."""
+
+    @intercept
+    def decorator(_):
+        return retval
+
+    return decorator
 
 
 @intercept
 def hook_arc4random(_):
     """Intercept ``arc4random`` of ``libc.so``."""
     return random.randint(0, 0x100000000)
-
-
-@intercept
-def hook_clock_nanosleep(_):
-    """Intercept ``clock_nanosleep`` of ``libc.so``."""
-    return 0
 
 
 @intercept
@@ -104,9 +104,3 @@ def hook_memset(emulator: "Infernum"):
     emulator.write_bytes(addr, bytes([char for _ in range(size)]))
 
     return addr
-
-
-@intercept
-def hook_nanosleep(_):
-    """Intercept ``nanosleep`` of ``libc.so``."""
-    return 0

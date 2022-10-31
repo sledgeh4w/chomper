@@ -12,6 +12,16 @@ lib64_path = os.path.join(base_path, "..", "samples/lib64")
 
 
 @pytest.fixture(scope="module")
+def sample_str():
+    yield "infernum"
+
+
+@pytest.fixture(scope="module")
+def sample_bytes(sample_str):
+    yield sample_str.encode("utf-8")
+
+
+@pytest.fixture(scope="module")
 def emu_arm():
     yield Infernum(arch=ARCH_ARM)
 
@@ -27,9 +37,9 @@ def zlib_arm(emu_arm):
 
 
 @pytest.fixture(scope="module")
-def sample1lib_arm(emu_arm):
+def dusanwalib_v4856_arm(emu_arm):
     yield emu_arm.load_module(
-        module_file=os.path.join(lib_path, "libsample1.so"),
+        os.path.join(lib_path, "com.shizhuang.duapp_v4.85.6_libdusanwa.so"),
         exec_init_array=True,
     )
 
@@ -50,23 +60,15 @@ def zlib_arm64(emu_arm64):
 
 
 @pytest.fixture(scope="module")
-def sample1lib_arm64(emu_arm64):
+def szstonelib_v4945_arm64(emu_arm64):
     yield emu_arm64.load_module(
-        module_file=os.path.join(lib64_path, "libsample1.so"),
+        os.path.join(lib64_path, "com.shizhuang.duapp_v4.94.5_libszstone.so"),
         exec_init_array=True,
     )
 
 
 @pytest.fixture(scope="module")
-def sample2lib_arm64(emu_arm64):
-    yield emu_arm64.load_module(os.path.join(lib64_path, "libsample2.so"))
-
-
-@pytest.fixture(scope="module")
-def sample_str():
-    yield "infernum"
-
-
-@pytest.fixture(scope="module")
-def sample_bytes(sample_str):
-    yield sample_str.encode("utf-8")
+def tinylib_v73021_arm64(emu_arm64):
+    yield emu_arm64.load_module(
+        os.path.join(lib64_path, "com.xingin.xhs_v7.30.2.1_libtiny.so")
+    )

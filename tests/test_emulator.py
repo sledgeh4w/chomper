@@ -18,34 +18,34 @@ def test_locate_addr(emu_arm64, clib_arm64):
     assert location.module.name == clib_arm64.name
 
 
-def test_backtrace(emu_arm64, sample2lib_arm64):
+def test_backtrace(emu_arm64, tinylib_v73021_arm64):
     def hook_code(*_):
         locations = emu_arm64.backtrace()
         assert len(locations) != 0
 
-    emu_arm64.add_hook(sample2lib_arm64.base + 0x2BA08, hook_code)
+    emu_arm64.add_hook(tinylib_v73021_arm64.base + 0x2BA08, hook_code)
 
     a1 = emu_arm64.create_buffer(32)
     a2 = emu_arm64.create_buffer(32)
     a3 = emu_arm64.create_buffer(32)
 
-    emu_arm64.call_address(sample2lib_arm64.base + 0x289A4, a1, a2, a3)
+    emu_arm64.call_address(tinylib_v73021_arm64.base + 0x289A4, a1, a2, a3)
 
 
 @pytest.mark.usefixtures("zlib_arm64")
 def test_add_hook(emu_arm64):
     def hook_code(*_):
-        nonlocal trigger
-        trigger = True
+        nonlocal t1
+        t1 = True
 
     symbol = emu_arm64.find_symbol("zlibVersion")
 
-    trigger = False
+    t1 = False
 
     emu_arm64.add_hook(symbol.address, hook_code)
     emu_arm64.call_symbol(symbol.name)
 
-    assert trigger
+    assert t1
 
 
 @pytest.mark.usefixtures("zlib_arm64")
@@ -72,24 +72,24 @@ def test_set_and_get_retval(emu_arm64):
 @pytest.mark.usefixtures("zlib_arm64")
 def test_return_call(emu_arm64):
     def hook_code_first(*_):
-        nonlocal first_trigger
-        first_trigger = True
+        nonlocal t1
+        t1 = True
         emu_arm64.return_call()
 
     def hook_code_second(*_):
-        nonlocal second_trigger
-        second_trigger = True
+        nonlocal t2
+        t2 = True
 
     symbol = emu_arm64.find_symbol("zlibCompileFlags")
 
-    first_trigger = False
-    second_trigger = False
+    t1 = False
+    t2 = False
 
     emu_arm64.add_hook(symbol.address, hook_code_first)
     emu_arm64.add_hook(symbol.address + 4, hook_code_second)
     emu_arm64.call_symbol(symbol.name)
 
-    assert first_trigger and not second_trigger
+    assert t1 and not t2
 
 
 def test_crate_buffer(emu_arm64):
@@ -153,8 +153,8 @@ def test_call_address(emu_arm64):
     assert emu_arm64.read_string(result) == "1.2.8"
 
 
-def test_exec_init_array(emu_arm64, sample1lib_arm64):
-    assert emu_arm64.read_string(sample1lib_arm64.base + 0x49DD8) == "1.2.3"
+def test_exec_init_array(emu_arm64, szstonelib_v4945_arm64):
+    assert emu_arm64.read_string(szstonelib_v4945_arm64.base + 0x49DD8) == "1.2.3"
 
 
 @pytest.mark.usefixtures("clib_arm", "clib_arm64")
@@ -334,7 +334,7 @@ def test_clib_strlen(request, emu_name, sample_str):
 
 @pytest.mark.usefixtures("clib_arm", "clib_arm64")
 @pytest.mark.parametrize("emu_name", ["emu_arm", "emu_arm64"])
-def test_clib_sprint(request, emu_name, sample_str):
+def test_clib_sprintf(request, emu_name, sample_str):
     emu = request.getfixturevalue(emu_name)
 
     fmt = "%d%s"
@@ -350,8 +350,22 @@ def test_clib_sprint(request, emu_name, sample_str):
     assert result == f"{len(sample_str)}{sample_str}"
 
 
+@pytest.mark.usefixtures("clib_arm", "clib_arm64")
+@pytest.mark.parametrize("emu_name", ["emu_arm", "emu_arm64"])
+def test_clib_printf(request, emu_name, sample_str):
+    emu = request.getfixturevalue(emu_name)
+
+    fmt = "%d%s"
+
+    v1 = emu.create_string(fmt)
+    v2 = len(sample_str)
+    v3 = emu.create_string(sample_str)
+
+    emu.call_symbol("printf", v1, v2, v3)
+
+
 @pytest.mark.usefixtures("clib_arm", "zlib_arm")
-def test_emulate_arm_sample1(emu_arm, sample1lib_arm, sample_bytes):
+def test_emulate_dusanwalib_v4856_arm(emu_arm, dusanwalib_v4856_arm, sample_bytes):
     a1 = emu_arm.create_buffer(32)
     a2 = 32
     a3 = emu_arm.create_buffer(32)
@@ -360,15 +374,15 @@ def test_emulate_arm_sample1(emu_arm, sample1lib_arm, sample_bytes):
     emu_arm.write_bytes(a1, sample_bytes)
     emu_arm.write_bytes(a4, sample_bytes)
 
-    emu_arm.call_address((sample1lib_arm.base + 0xA588) | 1, a1, a2, a3, a4)
+    emu_arm.call_address((dusanwalib_v4856_arm.base + 0xA588) | 1, a1, a2, a3, a4)
     result = emu_arm.read_bytes(a3, a2)
 
     assert zlib.crc32(result) == 2152630634
 
 
 @pytest.mark.usefixtures("clib_arm64", "zlib_arm64")
-def test_emulate_arm64_sample1(
-    emu_arm64, sample1lib_arm64, sample2lib_arm64, sample_bytes
+def test_emulate_szstonelib_v4945_arm64(
+    emu_arm64, szstonelib_v4945_arm64, sample_bytes
 ):
     a1 = emu_arm64.create_buffer(len(sample_bytes))
     a2 = len(sample_bytes)
@@ -376,16 +390,16 @@ def test_emulate_arm64_sample1(
 
     emu_arm64.write_bytes(a1, sample_bytes)
 
-    result_size = emu_arm64.call_address(sample1lib_arm64.base + 0x2F1C8, a1, a2, a3)
+    result_size = emu_arm64.call_address(
+        szstonelib_v4945_arm64.base + 0x2F1C8, a1, a2, a3
+    )
     result = emu_arm64.read_bytes(a3, result_size)
 
     assert zlib.crc32(result) == 588985915
 
 
 @pytest.mark.usefixtures("clib_arm64", "zlib_arm64")
-def test_emulate_arm64_sample2(
-    emu_arm64, sample1lib_arm64, sample2lib_arm64, sample_bytes
-):
+def test_emulate_tinylib_v73021_arm64(emu_arm64, tinylib_v73021_arm64, sample_bytes):
     a1 = emu_arm64.create_buffer(32)
     a2 = emu_arm64.create_buffer(32)
     a3 = emu_arm64.create_buffer(32)
@@ -393,7 +407,7 @@ def test_emulate_arm64_sample2(
     emu_arm64.write_bytes(a1, sample_bytes * 4)
     emu_arm64.write_bytes(a2, sample_bytes * 4)
 
-    emu_arm64.call_address(sample2lib_arm64.base + 0x289A4, a1, a2, a3)
+    emu_arm64.call_address(tinylib_v73021_arm64.base + 0x289A4, a1, a2, a3)
     result = emu_arm64.read_bytes(a3, 32)
 
     assert zlib.crc32(result) == 2637469588
