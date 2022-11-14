@@ -70,19 +70,32 @@ class Infernum:
 
         self.modules: List[Module] = []
 
-        self._module_address = const.MODULE_ADDRESS
-        self._trap_address = const.TRAP_ADDRESS
-        self._symbol_hooks: Dict[str, UC_HOOK_CODE_TYPE] = {}
-
         self.uc = self._create_uc()
         self.cs = self._create_cs()
 
         self.memory_manager = MemoryManager(uc=self.uc, heap_address=const.HEAP_ADDRESS)
 
+        self._traps: List[int] = []
         self._init_trap_memory()
+
+        self._symbol_hooks: Dict[str, UC_HOOK_CODE_TYPE] = {}
         self._init_symbol_hooks()
 
         self._setup_emulator()
+
+    @property
+    def _module_address_offset(self) -> int:
+        """Get offset address of modules."""
+        if self.modules:
+            return aligned(self.modules[-1].base + self.modules[-1].size, 1024 * 1024)
+        return const.MODULE_ADDRESS
+
+    @property
+    def _trap_address_offset(self) -> int:
+        """Get offset address of traps."""
+        if self._traps:
+            return const.TRAP_ADDRESS + len(self._traps) * 4
+        return const.TRAP_ADDRESS
 
     def _create_uc(self) -> Uc:
         """Create Unicorn instance."""
@@ -340,7 +353,7 @@ class Infernum:
 
     def _map_segments(self, elffile: ELFFile) -> Tuple[int, int]:
         """Map segment of type ``LOAD`` into memory."""
-        base = self._module_address
+        base = self._module_address_offset
         boundary = 0
 
         for segment in elffile.iter_segments(type="PT_LOAD"):
@@ -357,8 +370,8 @@ class Infernum:
 
         return base, boundary - base
 
-    def _find_symbols(self, elffile: ELFFile) -> List[Symbol]:
-        """Find all symbols in the module."""
+    def _get_symbols(self, elffile: ELFFile) -> List[Symbol]:
+        """Get all symbols in the module."""
         symbols = []
 
         for segment in elffile.iter_segments(type="PT_DYNAMIC"):
@@ -369,7 +382,8 @@ class Infernum:
                 ):
                     symbols.append(
                         Symbol(
-                            address=self._module_address + symbol.entry["st_value"],
+                            address=self._module_address_offset
+                            + symbol.entry["st_value"],
                             name=symbol.name,
                             type=symbol.entry["st_info"]["type"],
                         )
@@ -399,10 +413,12 @@ class Infernum:
                     # Execute the initialization functions.
                     self._start_emulate(init_func_addr)
 
-    def _relocate_address(self, relocation: Relocation, segment: DynamicSegment):
+    def _relocate_address(
+        self, module_base: int, relocation: Relocation, segment: DynamicSegment
+    ):
         """Relocate address in the relocation table."""
         reloc_type = relocation["r_info_type"]
-        reloc_offset = self._module_address + relocation["r_offset"]
+        reloc_offset = module_base + relocation["r_offset"]
         reloc_addr = None
 
         if reloc_type in (
@@ -423,30 +439,30 @@ class Infernum:
                 # If the symbol is missing, let it jump to the trap address to
                 # raise an exception with useful information.
                 self.add_hook(
-                    self._trap_address,
+                    self._trap_address_offset,
                     self._missing_symbol_required_callback,
                     user_data={"symbol_name": symbol_name},
                     silenced=True,
                 )
-                self.write_int(reloc_offset, self._trap_address)
-                self._trap_address += 4
+                self.write_int(reloc_offset, self._trap_address_offset)
+                self._traps.append(self._trap_address_offset)
 
         elif reloc_type in (
             ENUM_RELOC_TYPE_ARM["R_ARM_RELATIVE"],
             ENUM_RELOC_TYPE_AARCH64["R_AARCH64_RELATIVE"],
         ):
             if relocation.is_RELA():
-                reloc_addr = self._module_address + relocation["r_addend"]
+                reloc_addr = module_base + relocation["r_addend"]
 
         if reloc_addr:
             self.write_int(reloc_offset, reloc_addr)
 
-    def _process_relocation(self, elffile: ELFFile):
+    def _process_relocation(self, elffile: ELFFile, module_base: int):
         """Process relocation tables."""
         for segment in elffile.iter_segments(type="PT_DYNAMIC"):
             for relocation_table in segment.get_relocation_tables().values():
                 for relocation in relocation_table.iter_relocations():
-                    self._relocate_address(relocation, segment)
+                    self._relocate_address(module_base, relocation, segment)
 
     def load_module(
         self,
@@ -471,7 +487,7 @@ class Infernum:
 
             # Map segments into memory.
             base, size = self._map_segments(elffile)
-            symbols = self._find_symbols(elffile)
+            symbols = self._get_symbols(elffile)
 
             module = Module(base=base, size=size, name=module_name, symbols=symbols)
             self.modules.append(module)
@@ -492,7 +508,7 @@ class Infernum:
                         self.add_hook(symbol.name, self._symbol_hooks[symbol.name])
 
             # Process address relocation.
-            self._process_relocation(elffile)
+            self._process_relocation(elffile, base)
 
             if trace_inst or self.trace_inst:
                 # Trace instructions
@@ -506,8 +522,6 @@ class Infernum:
             if exec_init_array:
                 # Execute initialization functions.
                 self._exec_init_array(elffile, module)
-
-            self._module_address = aligned(module.base + module.size, 1024 * 1024)
 
             return module
 
