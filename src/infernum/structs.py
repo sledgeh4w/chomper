@@ -4,8 +4,6 @@ from typing import List, Optional
 
 @dataclass
 class Symbol:
-    """The symbol object."""
-
     address: int
     name: str
     type: str
@@ -13,7 +11,6 @@ class Symbol:
 
 @dataclass
 class Module:
-    """The module object."""
 
     base: int
     size: int
@@ -23,8 +20,6 @@ class Module:
 
 @dataclass
 class Location:
-    """The location object."""
-
     address: int
     module: Optional[Module]
 
@@ -40,8 +35,6 @@ class Location:
 
 @dataclass
 class MemoryPool:
-    """The memory pool object."""
-
     address: int
     size: int
     blocks: List[int]
@@ -57,8 +50,6 @@ class MemoryPool:
 
 @dataclass
 class Arch:
-    """The arch object."""
-
     name: str
     reg_size: int
 
