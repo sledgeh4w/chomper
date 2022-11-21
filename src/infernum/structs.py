@@ -1,5 +1,7 @@
 from dataclasses import dataclass
-from typing import List, Optional
+from typing import Dict, List, Optional
+
+from unicorn.unicorn import UC_HOOK_CODE_TYPE
 
 
 @dataclass
@@ -60,3 +62,5 @@ class Arch:
 
     reg_args: List[int]
     reg_ret: int
+
+    symbol_hooks: Dict[str, UC_HOOK_CODE_TYPE]
