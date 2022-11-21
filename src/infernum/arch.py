@@ -1,4 +1,6 @@
 from unicorn import arm_const, arm64_const
+
+from . import hooks
 from .structs import Arch
 
 
@@ -17,6 +19,14 @@ arch_arm = Arch(
         arm_const.UC_ARM_REG_R3,
     ],
     reg_ret=arm_const.UC_ARM_REG_R0,
+    symbol_hooks={
+        "__ctype_get_mb_cur_max": hooks.simply_return(1),
+        "malloc": hooks.hook_malloc,
+        "free": hooks.hook_free,
+        "getcwd": hooks.hook_getcwd,
+        "getpid": hooks.hook_getpid,
+        "gettid": hooks.hook_gettid,
+    },
 )
 
 
@@ -39,4 +49,12 @@ arch_arm64 = Arch(
         arm64_const.UC_ARM64_REG_X7,
     ],
     reg_ret=arm64_const.UC_ARM64_REG_X0,
+    symbol_hooks={
+        **arch_arm.symbol_hooks,
+        "arc4random": hooks.hook_arc4random,
+        "clock_nanosleep": hooks.simply_return(0),
+        "nanosleep": hooks.simply_return(0),
+        "pthread_mutex_lock": hooks.simply_return(),
+        "pthread_mutex_unlock": hooks.simply_return(),
+    },
 )
