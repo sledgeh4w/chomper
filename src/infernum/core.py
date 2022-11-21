@@ -21,7 +21,7 @@ from unicorn import (
 )
 from unicorn.unicorn import UC_HOOK_CODE_TYPE
 
-from . import const, hooks
+from . import const
 from .arch import arch_arm, arch_arm64
 from .exceptions import EmulatorCrashedException, SymbolMissingException
 from .log import get_logger
@@ -113,30 +113,7 @@ class Infernum:
 
     def _init_symbol_hooks(self):
         """Initialize default symbol hooks."""
-        _hooks = {
-            "__ctype_get_mb_cur_max": hooks.simply_return(1),
-            "malloc": hooks.hook_malloc,
-            "free": hooks.hook_free,
-            "getcwd": hooks.hook_getcwd,
-            "getpid": hooks.hook_getpid,
-            "gettid": hooks.hook_gettid,
-        }
-
-        if self.arch == arch_arm:
-            _hooks.update({})
-
-        elif self.arch == arch_arm64:
-            _hooks.update(
-                {
-                    "arc4random": hooks.hook_arc4random,
-                    "clock_nanosleep": hooks.simply_return(0),
-                    "nanosleep": hooks.simply_return(0),
-                    "pthread_mutex_lock": hooks.simply_return(),
-                    "pthread_mutex_unlock": hooks.simply_return(),
-                }
-            )
-
-        self._symbol_hooks.update(_hooks)
+        self._symbol_hooks.update(self.arch.symbol_hooks)
 
     def _init_trap_memory(self):
         """Initialize trap area memory."""
