@@ -1,9 +1,10 @@
 ## v0.1.1
 
-Released: -
+Released: 2022-11-21
 
 - Make ``add_hook`` return from ``hook_add`` of ``Unicorn`` and add ``del_hook`` method for ``Infernum``.
-- Close library file after loading.
+- Close the library file after loading.
+- Move default symbol hooks to ``arch`` module.
 
 ## v0.1.0
 
