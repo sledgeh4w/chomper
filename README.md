@@ -1,11 +1,11 @@
-# Infernum
+# Chomper
 
 [![build](https://github.com/Sh4ww/infernum/actions/workflows/tests.yml/badge.svg)](https://github.com/Sh4ww/infernum/actions/workflows/tests.yml)
 ![PyPI](https://img.shields.io/pypi/v/infernum)
 ![PyPI - Python Version](https://img.shields.io/pypi/pyversions/infernum)
 [![GitHub license](https://img.shields.io/github/license/Sh4ww/infernum)](https://github.com/Sh4ww/infernum/blob/main/LICENSE)
 
-Infernum is a lightweight Android native library emulation framework based on [Unicorn](https://github.com/unicorn-engine/unicorn). It is mainly used to execute the encryption algorithm, so it doesn't provide JNI or file system support. It supports arch ARM and ARM64.
+Chomper is a lightweight Android native library emulation framework based on [Unicorn](https://github.com/unicorn-engine/unicorn). It is mainly used to execute the encryption algorithm, so it doesn't provide JNI or file system support. It supports arch ARM and ARM64.
 
 ## Requirements
 
@@ -15,7 +15,7 @@ Infernum is a lightweight Android native library emulation framework based on [U
 ## Installation
 
 ```
-$ pip install infernum
+$ pip install chomper
 ```
 
 ## Usage
@@ -23,17 +23,17 @@ $ pip install infernum
 Load modules and call functions.
 
 ```python
-from infernum import Infernum
-from infernum.const import ARCH_ARM64
+from chomper import Chomper
+from chomper.const import ARCH_ARM64
 
 # Initialize emulator
-emulator = Infernum(ARCH_ARM64)
+emulator = Chomper(ARCH_ARM64)
 
 # Load modules
 emulator.load_module("lib64/libz.so")
 
 # Construct arguments
-data = b"infernum"
+data = b"chomper"
 
 v1 = emulator.create_buffer(len(data))
 v2 = len(data)
@@ -51,10 +51,10 @@ emulator.call_address(symbol.address, 0, v1, v2)
 Emulate arch ARM.
 
 ```python
-from infernum import Infernum
-from infernum.const import ARCH_ARM
+from chomper import Chomper
+from chomper.const import ARCH_ARM
 
-emulator = Infernum(ARCH_ARM)
+emulator = Chomper(ARCH_ARM)
 ```
 
 Read/Write data.
@@ -62,12 +62,12 @@ Read/Write data.
 ```python
 # Create buffer
 v1 = emulator.create_buffer(64)
-v2 = emulator.create_string("infernum")
+v2 = emulator.create_string("chomper")
 
 # Write data
 emulator.write_int(v1, 1)
-emulator.write_bytes(v1, b"infernum")
-emulator.write_string(v2, "infernum")
+emulator.write_bytes(v1, b"chomper")
+emulator.write_string(v2, "chomper")
 
 # Read data
 emulator.read_int(v1)
@@ -89,7 +89,7 @@ Trace instructions.
 
 ```python
 # Trace all instructions
-emulator = Infernum(ARCH_ARM64, trace_inst=True)
+emulator = Chomper(ARCH_ARM64, trace_inst=True)
 
 # Trace instructions in this module
 emulator.load_module("lib64/libz.so", trace_inst=True)

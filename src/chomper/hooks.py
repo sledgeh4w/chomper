@@ -7,10 +7,10 @@ from typing import TYPE_CHECKING, Any, Callable, Optional
 from unicorn.unicorn import UC_HOOK_CODE_TYPE
 
 if TYPE_CHECKING:
-    from .core import Infernum
+    from .core import Chomper
 
 
-def intercept(f: Callable[["Infernum"], Any]) -> UC_HOOK_CODE_TYPE:
+def intercept(f: Callable[["Chomper"], Any]) -> UC_HOOK_CODE_TYPE:
     """Intercept function call."""
 
     @wraps(f)
@@ -38,7 +38,7 @@ def hook_arc4random(_):
 
 
 @intercept
-def hook_free(emulator: "Infernum"):
+def hook_free(emulator: "Chomper"):
     """Intercept ``free`` of ``libc.so``."""
     addr = emulator.get_argument(0)
 
@@ -46,7 +46,7 @@ def hook_free(emulator: "Infernum"):
 
 
 @intercept
-def hook_getcwd(emulator: "Infernum"):
+def hook_getcwd(emulator: "Chomper"):
     """Intercept ``getcwd`` of ``libc.so``."""
     buf = emulator.get_argument(0)
     cwd = os.getcwd()
@@ -62,19 +62,19 @@ def hook_getcwd(emulator: "Infernum"):
 
 
 @intercept
-def hook_getpid(emulator: "Infernum"):
+def hook_getpid(emulator: "Chomper"):
     """Intercept ``getpid`` of ``libc.so``."""
     emulator.set_retval(os.getpid())
 
 
 @intercept
-def hook_gettid(emulator: "Infernum"):
+def hook_gettid(emulator: "Chomper"):
     """Intercept ``gettid`` of ``libc.so``."""
     emulator.set_retval(threading.get_ident())
 
 
 @intercept
-def hook_malloc(emulator: "Infernum"):
+def hook_malloc(emulator: "Chomper"):
     """Intercept ``malloc`` of ``libc.so``."""
     size = emulator.get_argument(0)
     addr = emulator.memory_manager.alloc(size)
@@ -83,7 +83,7 @@ def hook_malloc(emulator: "Infernum"):
 
 
 @intercept
-def hook_memcpy(emulator: "Infernum"):
+def hook_memcpy(emulator: "Chomper"):
     """Intercept ``memcpy`` of ``libc.so``."""
     dst = emulator.get_argument(0)
     src = emulator.get_argument(1)
@@ -95,7 +95,7 @@ def hook_memcpy(emulator: "Infernum"):
 
 
 @intercept
-def hook_memset(emulator: "Infernum"):
+def hook_memset(emulator: "Chomper"):
     """Intercept ``memset`` of ``libc.so``."""
     addr = emulator.get_argument(0)
     char = emulator.get_argument(1)

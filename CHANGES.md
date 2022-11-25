@@ -2,7 +2,7 @@
 
 Released: 2022-11-21
 
-- Make ``add_hook`` return from ``hook_add`` of ``Unicorn`` and add ``del_hook`` method for ``Infernum``.
+- Make ``add_hook`` return from ``hook_add`` of ``Unicorn`` and add ``del_hook`` method for ``Chomper``.
 - Close the library file after loading.
 - Move default symbol hooks to ``arch`` module.
 
@@ -20,8 +20,8 @@ Released: 2022-09-10
 - Add ``user_data`` param for ``add_hook`` to customize params of callback.
 - Support trace symbol calls by using ``trace_symbol_calls`` param.
 - Raise ``EmulatorCrashedException`` with prompt message when missing symbol is required.
-- Add a default logger for ``Infernum``.
-- Add ``free`` method for ``Infernum``.
+- Add a default logger for ``Chomper``.
+- Add ``free`` method for ``Chomper``.
 
 ## v0.0.1
 

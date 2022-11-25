@@ -35,7 +35,7 @@ else:
     from typing_extensions import Literal
 
 
-class Infernum:
+class Chomper:
     """Lightweight Android native library emulation framework.
 
     Args:
