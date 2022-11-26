@@ -1,9 +1,9 @@
 # Chomper
 
-[![build](https://github.com/Sh4ww/infernum/actions/workflows/tests.yml/badge.svg)](https://github.com/Sh4ww/infernum/actions/workflows/tests.yml)
-![PyPI](https://img.shields.io/pypi/v/infernum)
-![PyPI - Python Version](https://img.shields.io/pypi/pyversions/infernum)
-[![GitHub license](https://img.shields.io/github/license/Sh4ww/infernum)](https://github.com/Sh4ww/infernum/blob/main/LICENSE)
+[![build](https://github.com/sh4w1/chomper/actions/workflows/tests.yml/badge.svg)](https://github.com/sh4w1/chomper/actions/workflows/tests.yml)
+![PyPI](https://img.shields.io/pypi/v/chomper)
+![PyPI - Python Version](https://img.shields.io/pypi/pyversions/chomper)
+[![GitHub license](https://img.shields.io/github/license/sh4w1/chomper)](https://github.com/sh4w1/chomper/blob/main/LICENSE)
 
 Chomper is a lightweight Android native library emulation framework based on [Unicorn](https://github.com/unicorn-engine/unicorn). It is mainly used to execute the encryption algorithm, so it doesn't provide JNI or file system support. It supports arch ARM and ARM64.
 
