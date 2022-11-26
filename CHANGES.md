@@ -1,3 +1,9 @@
+## v0.2.0
+
+Released: 2022-11-26
+
+- Rename project to Chomper.
+
 ## v0.1.1
 
 Released: 2022-11-21
