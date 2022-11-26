@@ -130,7 +130,7 @@ def test_write_and_read_bytes(emu_arm64, sample_bytes):
 
 def test_write_and_read_string(emu_arm64):
     buffer = emu_arm64.create_buffer(1024)
-    string = "infernum"
+    string = "chomper"
 
     emu_arm64.write_string(buffer, string)
     result = emu_arm64.read_string(buffer)

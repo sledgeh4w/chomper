@@ -2,8 +2,8 @@ import os
 
 import pytest
 
-from infernum import Infernum
-from infernum.const import ARCH_ARM, ARCH_ARM64
+from chomper import Chomper
+from chomper.const import ARCH_ARM, ARCH_ARM64
 
 base_path = os.path.abspath(os.path.dirname(__file__))
 
@@ -23,7 +23,7 @@ def sample_bytes(sample_str):
 
 @pytest.fixture(scope="module")
 def emu_arm():
-    yield Infernum(arch=ARCH_ARM)
+    yield Chomper(arch=ARCH_ARM)
 
 
 @pytest.fixture(scope="module")
@@ -46,7 +46,7 @@ def dusanwalib_v4856_arm(emu_arm):
 
 @pytest.fixture(scope="module")
 def emu_arm64():
-    yield Infernum(arch=ARCH_ARM64)
+    yield Chomper(arch=ARCH_ARM64)
 
 
 @pytest.fixture(scope="module")
