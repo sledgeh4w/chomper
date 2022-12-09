@@ -30,7 +30,7 @@ from chomper.const import ARCH_ARM64
 emulator = Chomper(ARCH_ARM64)
 
 # Load modules
-emulator.load_module("lib64/libz.so")
+emulator.load_module("arm64/libz.so")
 
 # Construct arguments
 data = b"chomper"
@@ -92,11 +92,11 @@ Trace instructions.
 emulator = Chomper(ARCH_ARM64, trace_inst=True)
 
 # Trace instructions in this module
-emulator.load_module("lib64/libz.so", trace_inst=True)
+emulator.load_module("arm64/libz.so", trace_inst=True)
 ```
 
 Execute initialization functions in section `.init_array`.
 
 ```python
-emulator.load_module("lib64/libsample1.so", exec_init_array=True)
+emulator.load_module("arm64/com.shizhuang.duapp/4.94.5/libszstone.so", exec_init_array=True)
 ```

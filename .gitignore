@@ -129,7 +129,5 @@ dmypy.json
 .pyre/
 
 # Don't ignore sample library files
-!tests/samples/lib/
-!tests/samples/lib64/
-!tests/samples/lib/*.so
-!tests/samples/lib64/*.so
+!tests/samples/arm/**/*.so
+!tests/samples/arm64/**/*.so
