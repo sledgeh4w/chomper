@@ -2,7 +2,7 @@ import os
 
 import pytest
 
-from .conftest import lib64_path
+from .conftest import arm64_path
 
 from chomper import Chomper
 from chomper.const import ARCH_ARM64
@@ -14,7 +14,7 @@ def test_unhandled_system_call_exception():
         emulator = Chomper(arch=ARCH_ARM64)
         emulator._symbol_hooks.pop("malloc")
 
-        emulator.load_module(os.path.join(lib64_path, "libc.so"))
+        emulator.load_module(os.path.join(arm64_path, "libc.so"))
 
         emulator.call_symbol("malloc")
 
@@ -23,7 +23,7 @@ def test_missing_symbol_required_exception(sample_bytes):
     with pytest.raises(EmulatorCrashedException, match=r"Missing symbol.*"):
         emulator = Chomper(arch=ARCH_ARM64)
         szstonelib = emulator.load_module(
-            os.path.join(lib64_path, "com.shizhuang.duapp_v4.94.5_libszstone.so")
+            os.path.join(arm64_path, "com.shizhuang.duapp", "4.94.5", "libszstone.so")
         )
 
         a1 = emulator.create_buffer(len(sample_bytes))
