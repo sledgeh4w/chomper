@@ -7,8 +7,8 @@ from chomper.const import ARCH_ARM, ARCH_ARM64
 
 base_path = os.path.abspath(os.path.dirname(__file__))
 
-arm_path = os.path.join(base_path, "../examples/lib/arm")
-arm64_path = os.path.join(base_path, "../examples/lib/arm64")
+arm_path = os.path.join(base_path, "../examples/arm")
+arm64_path = os.path.join(base_path, "../examples/arm64")
 
 
 @pytest.fixture(scope="module")
