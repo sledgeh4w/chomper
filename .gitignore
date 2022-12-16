@@ -129,5 +129,4 @@ dmypy.json
 .pyre/
 
 # Don't ignore example library files
-!examples/lib
-!examples/lib/**/*.so
+!examples/**/*.so
