@@ -178,7 +178,7 @@ class Chomper:
         """Start emulate at the specified address."""
         stop_addr = 0
 
-        self.set_arguments(args)
+        self.set_arguments(*args)
 
         # Set the value of register LR to the stop address of the emulation,
         # so that when the function returns, it will jump to this address.
@@ -549,9 +549,9 @@ class Chomper:
         else:
             self.write_int(reg_or_addr, value)
 
-    def set_arguments(self, values):
+    def set_arguments(self, *args):
         """Set multiple arguments at once."""
-        for index, value in enumerate(values):
+        for index, value in enumerate(args):
             self.set_argument(index, value)
 
     def get_retval(self) -> int:
