@@ -13,7 +13,6 @@ class Symbol:
 
 @dataclass
 class Module:
-
     base: int
     size: int
     name: str
