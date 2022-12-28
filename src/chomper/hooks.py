@@ -21,8 +21,8 @@ def intercept(f: Callable[["Chomper"], Any]) -> UC_HOOK_CODE_TYPE:
     return decorator
 
 
-def simply_return(retval: Optional[int] = None) -> UC_HOOK_CODE_TYPE:
-    """Simply return function call."""
+def intercept_and_return(retval: Optional[int] = None) -> UC_HOOK_CODE_TYPE:
+    """Directly return the call."""
 
     @intercept
     def decorator(_):
@@ -85,10 +85,7 @@ def hook_malloc(emulator: "Chomper"):
 @intercept
 def hook_memcpy(emulator: "Chomper"):
     """Intercept ``memcpy`` of ``libc.so``."""
-    dst = emulator.get_argument(0)
-    src = emulator.get_argument(1)
-    size = emulator.get_argument(2)
-
+    dst, src, size = emulator.get_arguments(3)
     emulator.write_bytes(dst, emulator.read_bytes(src, size))
 
     return dst
@@ -97,10 +94,7 @@ def hook_memcpy(emulator: "Chomper"):
 @intercept
 def hook_memset(emulator: "Chomper"):
     """Intercept ``memset`` of ``libc.so``."""
-    addr = emulator.get_argument(0)
-    char = emulator.get_argument(1)
-    size = emulator.get_argument(2)
-
+    addr, char, size = emulator.get_arguments(3)
     emulator.write_bytes(addr, bytes([char for _ in range(size)]))
 
     return addr

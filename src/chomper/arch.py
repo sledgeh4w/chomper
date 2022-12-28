@@ -20,7 +20,7 @@ arch_arm = Arch(
     ],
     reg_ret=arm_const.UC_ARM_REG_R0,
     symbol_hooks={
-        "__ctype_get_mb_cur_max": hooks.simply_return(1),
+        "__ctype_get_mb_cur_max": hooks.intercept_and_return(1),
         "malloc": hooks.hook_malloc,
         "free": hooks.hook_free,
         "getcwd": hooks.hook_getcwd,
@@ -52,9 +52,9 @@ arch_arm64 = Arch(
     symbol_hooks={
         **arch_arm.symbol_hooks,
         "arc4random": hooks.hook_arc4random,
-        "clock_nanosleep": hooks.simply_return(0),
-        "nanosleep": hooks.simply_return(0),
-        "pthread_mutex_lock": hooks.simply_return(),
-        "pthread_mutex_unlock": hooks.simply_return(),
+        "clock_nanosleep": hooks.intercept_and_return(0),
+        "nanosleep": hooks.intercept_and_return(0),
+        "pthread_mutex_lock": hooks.intercept_and_return(),
+        "pthread_mutex_unlock": hooks.intercept_and_return(),
     },
 )
