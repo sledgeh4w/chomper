@@ -43,10 +43,10 @@ class Chomper:
         logger: The logger. If ``None``, use default logger.
         on_thumb: Whether to use Thumb mode. This parameter only available on
             arch ARM.
-        enable_vfp: Whether to enable vfp.
-        trace_inst: Whether to trace all instructions and display
+        enable_vfp: If ``True``, enable vfp.
+        trace_inst: If ``True``, trace all instructions and display
             disassemble results.
-        trace_symbol_calls: Whether to trace all symbol calls.
+        trace_symbol_calls: If ``True``, trace all symbol calls.
     """
 
     def __init__(
@@ -85,16 +85,16 @@ class Chomper:
 
     @property
     def _module_address_offset(self) -> int:
-        """Get offset address of modules."""
         if self.modules:
             return aligned(self.modules[-1].base + self.modules[-1].size, 1024 * 1024)
+
         return const.MODULE_ADDRESS
 
     @property
     def _trap_address_offset(self) -> int:
-        """Get offset address of traps."""
         if self._traps:
             return const.TRAP_ADDRESS + len(self._traps) * 4
+
         return const.TRAP_ADDRESS
 
     def _create_uc(self) -> Uc:
@@ -176,10 +176,9 @@ class Chomper:
 
     def _start_emulate(self, address, *args):
         """Start emulate at the specified address."""
-        for index, value in enumerate(args):
-            self.set_argument(index, value)
-
         stop_addr = 0
+
+        self.set_arguments(*args)
 
         # Set the value of register LR to the stop address of the emulation,
         # so that when the function returns, it will jump to this address.
@@ -264,8 +263,10 @@ class Chomper:
         while True:
             lr = self.read_int(fp + 8)
             fp = self.read_int(fp)
+
             if not fp or not lr:
                 break
+
             call_stack.append(lr)
 
         return [self.locate_address(addr - 4) for addr in call_stack if addr]
@@ -347,8 +348,8 @@ class Chomper:
 
         return base, boundary - base
 
-    def _get_symbols(self, elffile: ELFFile) -> List[Symbol]:
-        """Get all symbols in the module."""
+    def _get_export_symbols(self, elffile: ELFFile) -> List[Symbol]:
+        """Get all export symbols in the module."""
         symbols = []
 
         for segment in elffile.iter_segments(type="PT_DYNAMIC"):
@@ -377,6 +378,7 @@ class Chomper:
             for tag in segment.iter_tags():
                 if tag.entry.d_tag == "DT_INIT_ARRAY":
                     init_array_addr = tag.entry.d_val
+
                 elif tag.entry.d_tag == "DT_INIT_ARRAYSZ":
                     init_array_size = tag.entry.d_val
 
@@ -464,7 +466,7 @@ class Chomper:
 
             # Map segments into memory.
             base, size = self._map_segments(elffile)
-            symbols = self._get_symbols(elffile)
+            symbols = self._get_export_symbols(elffile)
 
             module = Module(base=base, size=size, name=module_name, symbols=symbols)
             self.modules.append(module)
@@ -534,6 +536,10 @@ class Chomper:
         else:
             return self.read_int(reg_or_addr)
 
+    def get_arguments(self, num: int):
+        """Get multiple arguments at once."""
+        return tuple([self.get_argument(n) for n in range(num)])
+
     def set_argument(self, index: int, value: int):
         """Set argument with the specified index."""
         is_reg, reg_or_addr = self._get_argument_holder(index)
@@ -542,6 +548,11 @@ class Chomper:
             self.uc.reg_write(reg_or_addr, value)
         else:
             self.write_int(reg_or_addr, value)
+
+    def set_arguments(self, *args):
+        """Set multiple arguments at once."""
+        for index, value in enumerate(args):
+            self.set_argument(index, value)
 
     def get_retval(self) -> int:
         """Get return value."""
@@ -618,6 +629,7 @@ class Chomper:
             byte = self.read_bytes(address + offset, 1)
             if byte == b"\x00":
                 break
+
             data += byte
             offset += 1
 
