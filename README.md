@@ -5,7 +5,7 @@
 ![PyPI - Python Version](https://img.shields.io/pypi/pyversions/chomper)
 [![GitHub license](https://img.shields.io/github/license/sh4w1/chomper)](https://github.com/sh4w1/chomper/blob/main/LICENSE)
 
-Chomper is a lightweight Android native library emulation framework based on [Unicorn](https://github.com/unicorn-engine/unicorn). It is mainly used to execute the encryption algorithm, so it doesn't provide JNI or file system support. It supports arch ARM and ARM64.
+Chomper is a lightweight Android native library emulation framework based on [Unicorn](https://github.com/unicorn-engine/unicorn). It is mainly used to simulate encryption algorithms, so it doesn't provide JNI or file system support. It supports architecture ARM and ARM64.
 
 ## Requirements
 
