@@ -98,5 +98,5 @@ emulator.load_module("arm64/libz.so", trace_inst=True)
 Execute initialization functions in section `.init_array`.
 
 ```python
-emulator.load_module("arm64/com.shizhuang.duapp/4.94.5/libszstone.so", exec_init_array=True)
+emulator.load_module("arm64/libszstone.so", exec_init_array=True)
 ```
