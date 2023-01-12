@@ -2,7 +2,6 @@ from typing import List
 
 from unicorn import Uc
 
-from .const import MINIMUM_POOL_SIZE
 from .structs import MemoryPool
 from .utils import aligned
 
@@ -19,13 +18,14 @@ class MemoryManager:
     Args:
         uc: The Unicorn object.
         heap_address: Base address of mapped memory.
+        minimum_pool_size: Minimum size of pool.
     """
 
-    def __init__(self, uc: Uc, heap_address: int):
+    def __init__(self, uc: Uc, heap_address: int, minimum_pool_size: int):
         self.uc = uc
         self.heap_address = heap_address
+        self.minimum_pool_size = minimum_pool_size
 
-        self.minimum_pool_size = MINIMUM_POOL_SIZE
         self.pools: List[MemoryPool] = []
 
         self.init_pools()
