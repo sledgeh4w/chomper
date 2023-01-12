@@ -73,10 +73,11 @@ class Chomper:
         self.uc = self._create_uc()
         self.cs = self._create_cs()
 
-        self.memory_manager = MemoryManager(uc=self.uc, heap_address=const.HEAP_ADDRESS)
-
-        self._traps: List[int] = []
-        self._init_trap_memory()
+        self.memory_manager = MemoryManager(
+            uc=self.uc,
+            heap_address=const.HEAP_ADDRESS,
+            minimum_pool_size=const.MINIMUM_POOL_SIZE,
+        )
 
         self._symbol_hooks: Dict[str, UC_HOOK_CODE_TYPE] = {}
         self._init_symbol_hooks()
@@ -89,13 +90,6 @@ class Chomper:
             return aligned(self.modules[-1].base + self.modules[-1].size, 1024 * 1024)
 
         return const.MODULE_ADDRESS
-
-    @property
-    def _trap_address_offset(self) -> int:
-        if self._traps:
-            return const.TRAP_ADDRESS + len(self._traps) * 4
-
-        return const.TRAP_ADDRESS
 
     def _create_uc(self) -> Uc:
         """Create Unicorn instance."""
@@ -114,10 +108,6 @@ class Chomper:
     def _init_symbol_hooks(self):
         """Initialize default symbol hooks."""
         self._symbol_hooks.update(self.arch.symbol_hooks)
-
-    def _init_trap_memory(self):
-        """Initialize trap area memory."""
-        self.uc.mem_map(const.TRAP_ADDRESS, const.TRAP_SIZE)
 
     def _setup_stack(self):
         """Setup stack."""
@@ -157,14 +147,12 @@ class Chomper:
             b"\x4f\xf0\x80\x43"  # mov.w r3, #0x40000000
             b"\xe8\xee\x10\x3a"  # vmsr fpexc, r3
         )
-        addr = const.TEMP_ADDRESS
+        addr = self.create_buffer(1024)
 
-        self.uc.mem_map(const.TEMP_ADDRESS, aligned(len(inst_code), 1024))
         self.uc.mem_write(addr, inst_code)
-
         self.uc.emu_start(addr | 1, addr + len(inst_code))
 
-        self.uc.mem_unmap(const.TEMP_ADDRESS, aligned(len(inst_code), 1024))
+        self.free(addr)
 
     def _setup_emulator(self):
         """Setup emulator."""
@@ -417,14 +405,15 @@ class Chomper:
             except SymbolMissingException:
                 # If the symbol is missing, let it jump to the trap address to
                 # raise an exception with useful information.
+                hook_addr = self.create_buffer(4)
+
                 self.add_hook(
-                    self._trap_address_offset,
+                    hook_addr,
                     self._missing_symbol_required_callback,
                     user_data={"symbol_name": symbol_name},
                     silenced=True,
                 )
-                self.write_int(reloc_offset, self._trap_address_offset)
-                self._traps.append(self._trap_address_offset)
+                self.write_int(reloc_offset, hook_addr)
 
         elif reloc_type in (
             ENUM_RELOC_TYPE_ARM["R_ARM_RELATIVE"],
