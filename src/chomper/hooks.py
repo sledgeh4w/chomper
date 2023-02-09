@@ -2,7 +2,7 @@ import os
 import random
 import threading
 from functools import wraps
-from typing import TYPE_CHECKING, Any, Callable, Optional
+from typing import TYPE_CHECKING, Any, Callable
 
 from unicorn.unicorn import UC_HOOK_CODE_TYPE
 
@@ -21,33 +21,23 @@ def intercept(f: Callable[["Chomper"], Any]) -> UC_HOOK_CODE_TYPE:
     return decorator
 
 
-def intercept_and_return(retval: Optional[int] = None) -> UC_HOOK_CODE_TYPE:
-    """Directly return the call."""
-
-    @intercept
-    def decorator(_):
-        return retval
-
-    return decorator
-
-
 @intercept
 def hook_arc4random(_):
-    """Intercept ``arc4random`` of ``libc.so``."""
+    """Intercept `arc4random` of `libc.so`."""
     return random.randint(0, 0x100000000)
 
 
 @intercept
 def hook_free(emulator: "Chomper"):
-    """Intercept ``free`` of ``libc.so``."""
+    """Intercept `free` of `libc.so`."""
     addr = emulator.get_argument(0)
 
     emulator.memory_manager.free(addr)
 
 
 @intercept
-def hook_getcwd(emulator: "Chomper"):
-    """Intercept ``getcwd`` of ``libc.so``."""
+def hook_getcwd(emulator: "Chomper") -> int:
+    """Intercept `getcwd` of `libc.so`."""
     buf = emulator.get_argument(0)
     cwd = os.getcwd()
 
@@ -63,19 +53,19 @@ def hook_getcwd(emulator: "Chomper"):
 
 @intercept
 def hook_getpid(emulator: "Chomper"):
-    """Intercept ``getpid`` of ``libc.so``."""
+    """Intercept `getpid` of `libc.so`."""
     emulator.set_retval(os.getpid())
 
 
 @intercept
 def hook_gettid(emulator: "Chomper"):
-    """Intercept ``gettid`` of ``libc.so``."""
+    """Intercept `gettid` of `libc.so`."""
     emulator.set_retval(threading.get_ident())
 
 
 @intercept
-def hook_malloc(emulator: "Chomper"):
-    """Intercept ``malloc`` of ``libc.so``."""
+def hook_malloc(emulator: "Chomper") -> int:
+    """Intercept `malloc` of `libc.so`."""
     size = emulator.get_argument(0)
     addr = emulator.memory_manager.alloc(size)
 
@@ -83,8 +73,8 @@ def hook_malloc(emulator: "Chomper"):
 
 
 @intercept
-def hook_memcpy(emulator: "Chomper"):
-    """Intercept ``memcpy`` of ``libc.so``."""
+def hook_memcpy(emulator: "Chomper") -> int:
+    """Intercept `memcpy` of `libc.so`."""
     dst, src, size = emulator.get_arguments(3)
     emulator.write_bytes(dst, emulator.read_bytes(src, size))
 
@@ -92,9 +82,48 @@ def hook_memcpy(emulator: "Chomper"):
 
 
 @intercept
-def hook_memset(emulator: "Chomper"):
-    """Intercept ``memset`` of ``libc.so``."""
+def hook_memset(emulator: "Chomper") -> int:
+    """Intercept `memset` of `libc.so`."""
     addr, char, size = emulator.get_arguments(3)
     emulator.write_bytes(addr, bytes([char for _ in range(size)]))
 
     return addr
+
+
+@intercept
+def hook_ctype_get_mb_cur_max(_) -> int:
+    """Intercept `__ctype_get_mb_cur_max` of `libc.so`."""
+    return 1
+
+
+@intercept
+def hook_nanosleep(_) -> int:
+    """Intercept `nanosleep` and `clock_nanosleep` of `libc.so`."""
+    return 0
+
+
+@intercept
+def hook_pthread_mutex_lock(_):
+    """Intercept `pthread_mutex_lock` of `libc.so`."""
+    return
+
+
+@intercept
+def hook_pthread_mutex_unlock(_):
+    """Intercept `pthread_mutex_unlock` of `libc.so`."""
+    return
+
+
+default_symbol_hooks = {
+    "__ctype_get_mb_cur_max": hook_ctype_get_mb_cur_max,
+    "arc4random": hook_arc4random,
+    "clock_nanosleep": hook_nanosleep,
+    "free": hook_free,
+    "getcwd": hook_getcwd,
+    "getpid": hook_getpid,
+    "gettid": hook_gettid,
+    "malloc": hook_malloc,
+    "nanosleep": hook_nanosleep,
+    "pthread_mutex_lock": hook_pthread_mutex_lock,
+    "pthread_mutex_unlock": hook_pthread_mutex_unlock,
+}

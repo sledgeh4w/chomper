@@ -1,12 +1,12 @@
 import logging
 import os
 import sys
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import List, Optional, Tuple, Union
 
 from capstone import CS_ARCH_ARM, CS_ARCH_ARM64, CS_MODE_ARM, CS_MODE_THUMB, Cs
 from elftools.elf.dynamic import DynamicSegment
 from elftools.elf.elffile import ELFFile
-from elftools.elf.enums import ENUM_RELOC_TYPE_ARM, ENUM_RELOC_TYPE_AARCH64
+from elftools.elf.enums import ENUM_RELOC_TYPE_AARCH64, ENUM_RELOC_TYPE_ARM
 from elftools.elf.relocation import Relocation
 from unicorn import (
     UC_ARCH_ARM,
@@ -16,14 +16,15 @@ from unicorn import (
     UC_MODE_THUMB,
     Uc,
     UcError,
-    arm_const,
     arm64_const,
+    arm_const,
 )
 from unicorn.unicorn import UC_HOOK_CODE_TYPE
 
 from . import const
-from .arch import arch_arm, arch_arm64
+from .arch import Arch, arch_arm, arch_arm64
 from .exceptions import EmulatorCrashedException, SymbolMissingException
+from .hooks import default_symbol_hooks
 from .log import get_logger
 from .memory import MemoryManager
 from .structs import Location, Module, Symbol
@@ -38,16 +39,21 @@ else:
 class Chomper:
     """Lightweight Android native library emulation framework.
 
+    The framework focused on emulation of native encryption function,
+    so it doesn't provide support for JNI and file system.
+
     Args:
-        arch: The arch. Support ARM and ARM64.
-        logger: The logger. If ``None``, use default logger.
-        on_thumb: Whether to use Thumb mode. This parameter only available on
-            arch ARM.
-        enable_vfp: If ``True``, enable vfp.
-        trace_inst: If ``True``, trace all instructions and display
-            disassemble results.
-        trace_symbol_calls: If ``True``, trace all symbol calls.
+        arch: The architecture to emulate, support ARM and ARM64.
+        logger: The logger to print log.
+        on_thumb: Emulate instructions on Thumb mode.
+        enable_vfp: Enable VFP extension of ARM.
+        trace_instr: Print log when any instruction is executed. The emulator will
+            call disassembler in real time to display the assembly instructions,
+            so this will slow down the emulation.
+        trace_symbol_calls: Print log when any symbol is called.
     """
+
+    arch: Arch
 
     def __init__(
         self,
@@ -55,34 +61,39 @@ class Chomper:
         logger: Optional[logging.Logger] = None,
         on_thumb: bool = True,
         enable_vfp: bool = True,
-        trace_inst: bool = False,
+        trace_instr: bool = False,
         trace_symbol_calls: bool = True,
     ):
-        self.arch = arch_arm if arch == const.ARCH_ARM else arch_arm64
+        if arch == const.ARCH_ARM:
+            self.arch = arch_arm
+        elif arch == const.ARCH_ARM64:
+            self.arch = arch_arm64
+        else:
+            raise ValueError("Invalid argument arch")
+
         self.logger = logger or get_logger(self.__class__.__name__)
 
-        self.on_thumb = on_thumb
-        self.enable_vfp = enable_vfp
-        self.trace_inst = trace_inst
-        self.trace_symbol_calls = trace_symbol_calls
+        self._trace_ins = trace_instr
+        self._trace_symbol_calls = trace_symbol_calls
 
         self.endian = const.LITTLE_ENDIAN
 
         self.modules: List[Module] = []
 
-        self.uc = self._create_uc()
-        self.cs = self._create_cs()
+        # There are some underlying functions in libc that cannot be emulated,
+        # so they need to be hooked to skip execution.
+        self._symbol_hooks = default_symbol_hooks.copy()
+
+        self.uc = self._create_uc(on_thumb=on_thumb)
+        self.cs = self._create_cs(on_thumb=on_thumb)
 
         self.memory_manager = MemoryManager(
             uc=self.uc,
-            heap_address=const.HEAP_ADDRESS,
+            address=const.HEAP_ADDRESS,
             minimum_pool_size=const.MINIMUM_POOL_SIZE,
         )
 
-        self._symbol_hooks: Dict[str, UC_HOOK_CODE_TYPE] = {}
-        self._init_symbol_hooks()
-
-        self._setup_emulator()
+        self._setup_emulator(enable_vfp=enable_vfp)
 
     @property
     def _module_address_offset(self) -> int:
@@ -91,23 +102,19 @@ class Chomper:
 
         return const.MODULE_ADDRESS
 
-    def _create_uc(self) -> Uc:
+    def _create_uc(self, on_thumb: bool = True) -> Uc:
         """Create Unicorn instance."""
         arch = UC_ARCH_ARM if self.arch == arch_arm else UC_ARCH_ARM64
-        mode = UC_MODE_THUMB if self.arch == arch_arm and self.on_thumb else UC_MODE_ARM
+        mode = UC_MODE_THUMB if self.arch == arch_arm and on_thumb else UC_MODE_ARM
 
         return Uc(arch, mode)
 
-    def _create_cs(self) -> Cs:
+    def _create_cs(self, on_thumb: bool = True) -> Cs:
         """Create Capstone instance."""
         arch = CS_ARCH_ARM if self.arch == arch_arm else CS_ARCH_ARM64
-        mode = CS_MODE_THUMB if self.arch == arch_arm and self.on_thumb else CS_MODE_ARM
+        mode = CS_MODE_THUMB if self.arch == arch_arm and on_thumb else CS_MODE_ARM
 
         return Cs(arch, mode)
-
-    def _init_symbol_hooks(self):
-        """Initialize default symbol hooks."""
-        self._symbol_hooks.update(self.arch.symbol_hooks)
 
     def _setup_stack(self):
         """Setup stack."""
@@ -115,14 +122,16 @@ class Chomper:
 
         self.uc.mem_map(const.STACK_ADDRESS, const.STACK_SIZE)
 
-        self.uc.reg_write(self.arch.reg_sp, stack_addr)
-        self.uc.reg_write(self.arch.reg_fp, stack_addr)
+        self.uc.reg_write(self.arch.stack_reg, stack_addr)
+        self.uc.reg_write(self.arch.frame_reg, stack_addr)
 
     def _setup_thread_register(self):
         """Setup thread register.
 
         The thread register store the address of thread local storage (TLS).
-        It only allocates a block of memory to TLS and does not really initialize.
+
+        The function only allocates a block of memory to TLS and doesn't really
+        initialize.
         """
         self.uc.mem_map(const.TLS_ADDRESS, const.TLS_SIZE)
 
@@ -131,7 +140,7 @@ class Chomper:
                 arm_const.UC_ARM_REG_CP_REG,
                 (15, 0, 0, 13, 0, 0, 3, const.TLS_ADDRESS),  # type: ignore
             )
-        else:
+        elif self.arch == arch_arm64:
             self.uc.reg_write(arm64_const.UC_ARM64_REG_TPIDR_EL0, const.TLS_ADDRESS)
 
     def _enable_vfp(self):
@@ -154,15 +163,15 @@ class Chomper:
 
         self.free(addr)
 
-    def _setup_emulator(self):
+    def _setup_emulator(self, enable_vfp: bool = True):
         """Setup emulator."""
         self._setup_stack()
         self._setup_thread_register()
 
-        if self.arch == arch_arm and self.enable_vfp:
+        if self.arch == arch_arm and enable_vfp:
             self._enable_vfp()
 
-    def _start_emulate(self, address, *args):
+    def _start_emulate(self, address: int, *args: int):
         """Start emulate at the specified address."""
         stop_addr = 0
 
@@ -170,8 +179,8 @@ class Chomper:
 
         # Set the value of register LR to the stop address of the emulation,
         # so that when the function returns, it will jump to this address.
-        self.uc.reg_write(self.arch.reg_lr, stop_addr)
-        self.uc.reg_write(self.arch.reg_pc, address)
+        self.uc.reg_write(self.arch.ret_reg, stop_addr)
+        self.uc.reg_write(self.arch.instr_reg, address)
 
         try:
             self.logger.info(f"Start emulate at {self.locate_address(address)}.")
@@ -179,7 +188,7 @@ class Chomper:
 
         except UcError as e:
             self.logger.error("Emulator crashed.")
-            address = self.uc.reg_read(self.arch.reg_pc) - 4
+            address = self.uc.reg_read(self.arch.instr_reg) - 4
             inst = next(self.cs.disasm(self.read_bytes(address, 4), 0))
 
             # Check whether the last instruction is svc.
@@ -190,7 +199,7 @@ class Chomper:
 
             raise EmulatorCrashedException("Unknown reason") from e
 
-    def _trace_inst_callback(self, uc: Uc, address: int, size: int, _: Any):
+    def _trace_ins_callback(self, uc: Uc, address: int, size: int, _: dict):
         """Trace instruction."""
         for inst in self.cs.disasm_lite(uc.mem_read(address, size), 0):
             self.logger.info(
@@ -201,7 +210,7 @@ class Chomper:
         """Trace symbol call."""
         user_data = args[-1]
         symbol = user_data["symbol"]
-        ret_addr = self.uc.reg_read(self.arch.reg_lr)
+        ret_addr = self.uc.reg_read(self.arch.ret_reg)
 
         self.logger.info(
             f"Symbol '{symbol.name}' called"
@@ -245,8 +254,8 @@ class Chomper:
 
     def backtrace(self) -> List[Location]:
         """Backtrace the call stack."""
-        call_stack = [self.uc.reg_read(self.arch.reg_lr)]
-        fp = self.uc.reg_read(self.arch.reg_fp)
+        call_stack = [self.uc.reg_read(self.arch.ret_reg)]
+        fp = self.uc.reg_read(self.arch.frame_reg)
 
         while True:
             lr = self.read_int(fp + 8)
@@ -264,7 +273,7 @@ class Chomper:
         if retval is not None:
             self.set_retval(retval)
 
-        self.uc.reg_write(self.arch.reg_pc, self.uc.reg_read(self.arch.reg_lr))
+        self.uc.reg_write(self.arch.instr_reg, self.uc.reg_read(self.arch.ret_reg))
 
     def add_hook(
         self,
@@ -276,14 +285,18 @@ class Chomper:
         """Add hook to the emulator.
 
         Args:
-            symbol_or_addr: The name of symbol or address to hook. If ``str``,
-                this function will look for this symbol from loaded modules and
-                take its value as the hook address.
-            callback: The callback function, same as callback of type
-                ``UC_HOOK_CODE`` in Unicorn.
-            user_data: A ``dict`` that contains the data you want to pass to
-                callback.
-            silenced: If ``True``, do not print log.
+            symbol_or_addr: The symbol name or the address to hook. If this is ``str``,
+                the function will look up symbol from loaded modules and use its
+                address to hook.
+            callback: The callback function, same as callback of type ``UC_HOOK_CODE``
+                in unicorn.
+            user_data: A ``dict`` that contains the data you want to pass to the
+                callback function. The ``Chomper`` instance will also be passed in
+                as an emulator field.
+            silenced: Don't print log.
+
+        Raises:
+            SymbolMissingException: If symbol not found.
         """
         if isinstance(symbol_or_addr, str):
             symbol = self.find_symbol(symbol_or_addr)
@@ -318,7 +331,7 @@ class Chomper:
         self.uc.hook_del(handle)
 
     def _map_segments(self, elffile: ELFFile) -> Tuple[int, int]:
-        """Map segment of type ``LOAD`` into memory."""
+        """Map segment of type `LOAD` into memory."""
         base = self._module_address_offset
         boundary = 0
 
@@ -358,7 +371,7 @@ class Chomper:
         return symbols
 
     def _exec_init_array(self, elffile: ELFFile, module: Module):
-        """Find and execute initialization functions in section ``.init_array``."""
+        """Find and execute initialization functions in section `.init_array`."""
         init_array_addr = None
         init_array_size = None
 
@@ -403,8 +416,8 @@ class Chomper:
                 reloc_addr = symbol.address
 
             except SymbolMissingException:
-                # If the symbol is missing, let it jump to the trap address to
-                # raise an exception with useful information.
+                # If the symbol is missing, let it jump to a specified address and
+                # the address has hooked to raise an exception with useful information.
                 hook_addr = self.create_buffer(4)
 
                 self.add_hook(
@@ -436,18 +449,19 @@ class Chomper:
         self,
         module_file: str,
         exec_init_array: bool = False,
-        trace_inst: bool = False,
+        trace_instr: bool = False,
         trace_symbol_calls: bool = False,
     ) -> Module:
         """Load ELF library file from path.
 
         Args:
             module_file: The path of file to be loaded.
-            exec_init_array: If ``True``, execute initialization functions recorded
-                in the section ``.init_array``.
-            trace_inst: If ``True``, trace instructions in this module and display
-                disassemble results.
-            trace_symbol_calls: If ``True``, trace symbol calls in this module.
+            exec_init_array: Execute initialization functions recorded in the section
+                `.init_array` after the module loaded.
+            trace_instr: Print log when the instructions in this module are executed.
+                The emulator will call disassembler in real time to display the
+                assembly instructions, so this will slow down the emulation.
+            trace_symbol_calls: Print log when the symbols in this module are called.
         """
         with ELFFile.load_from_path(module_file) as elffile:
             module_name = os.path.basename(module_file)
@@ -463,7 +477,7 @@ class Chomper:
             for symbol in symbols:
                 if symbol.type == "STT_FUNC":
                     # Trace symbol call
-                    if trace_symbol_calls or self.trace_symbol_calls:
+                    if trace_symbol_calls or self._trace_symbol_calls:
                         self.add_hook(
                             symbol.name,
                             self._trace_symbol_call_callback,
@@ -478,11 +492,11 @@ class Chomper:
             # Process address relocation.
             self._process_relocation(elffile, base)
 
-            if trace_inst or self.trace_inst:
+            if trace_instr or self._trace_ins:
                 # Trace instructions
                 self.uc.hook_add(
                     UC_HOOK_CODE,
-                    self._trace_inst_callback,
+                    self._trace_ins_callback,
                     begin=module.base,
                     end=module.base + module.size,
                 )
@@ -496,22 +510,21 @@ class Chomper:
     def _get_argument_holder(self, index: int) -> Tuple[bool, int]:
         """Get the register or address where the specified argument is stored.
 
-        On arch ARM, the first four parameters are stored in the register R0-R3,
-        and the rest are stored on the stack. On arch ARM64, the first eight
-        parameters are stored in the register X0-X7, and the rest are stored on
-        the stack.
+        On arch ARM, the first four parameters are stored in the register R0-R3, and
+        the rest are stored on the stack. On arch ARM64, the first eight parameters
+        are stored in the register X0-X7, and the rest are stored on the stack.
 
         Returns:
-            A ``tuple`` contains a ``bool`` and an ``int``, the first member
-            means whether the returned is a register and the second is
-            the actual register or address.
+            A ``tuple`` contains a ``bool`` and an ``int``, the first member means
+            whether the returned is a register and the second is the actual register
+            or address.
         """
-        registers = self.arch.reg_args
+        registers = self.arch.arg_regs
 
         if index >= len(registers):
             # Read address from stack.
             offset = (index - len(registers)) * (self.arch.reg_size // 8)
-            address = self.uc.reg_read(self.arch.reg_sp) + offset
+            address = self.uc.reg_read(self.arch.stack_reg) + offset
             return False, address
 
         return True, registers[index]
@@ -525,7 +538,7 @@ class Chomper:
         else:
             return self.read_int(reg_or_addr)
 
-    def get_arguments(self, num: int):
+    def get_arguments(self, num: int) -> Tuple[int, ...]:
         """Get multiple arguments at once."""
         return tuple([self.get_argument(n) for n in range(num)])
 
@@ -538,18 +551,18 @@ class Chomper:
         else:
             self.write_int(reg_or_addr, value)
 
-    def set_arguments(self, *args):
+    def set_arguments(self, *args: int):
         """Set multiple arguments at once."""
         for index, value in enumerate(args):
             self.set_argument(index, value)
 
     def get_retval(self) -> int:
         """Get return value."""
-        return self.uc.reg_read(self.arch.reg_ret)
+        return self.uc.reg_read(self.arch.retval_reg)
 
     def set_retval(self, value: int):
         """Set return value."""
-        self.uc.reg_write(self.arch.reg_ret, value)
+        self.uc.reg_write(self.arch.retval_reg, value)
 
     def create_buffer(self, size: int) -> int:
         """Create a buffer with the size."""
@@ -624,7 +637,7 @@ class Chomper:
 
         return data.decode("utf-8")
 
-    def call_symbol(self, symbol_name, *args) -> int:
+    def call_symbol(self, symbol_name: str, *args: int) -> int:
         """Call function with the symbol name."""
         symbol = self.find_symbol(symbol_name)
         address = symbol.address
@@ -633,7 +646,7 @@ class Chomper:
 
         return self.get_retval()
 
-    def call_address(self, address, *args) -> int:
+    def call_address(self, address: int, *args: int) -> int:
         """Call function at the address."""
         self._start_emulate(address, *args)
 
