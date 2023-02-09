@@ -12,18 +12,18 @@ class MemoryManager:
     Each mapped memory is treated as a pool, and each pool contains one or more
     blocks of equal size. When allocating, it will first iterate pools to find
     one with enough block size, and then return an unused block. If the requested
-    size is greater than ``minimum_pool_size``, it will create a poll with only
+    size is greater than `minimum_pool_size`, it will create a poll with only
     one block and enough size.
 
     Args:
-        uc: The Unicorn object.
-        heap_address: Base address of mapped memory.
+        uc: The Unicorn instance.
+        address: Base address of mapped memory.
         minimum_pool_size: Minimum size of pool.
     """
 
-    def __init__(self, uc: Uc, heap_address: int, minimum_pool_size: int):
+    def __init__(self, uc: Uc, address: int, minimum_pool_size: int):
         self.uc = uc
-        self.heap_address = heap_address
+        self.address = address
         self.minimum_pool_size = minimum_pool_size
 
         self.pools: List[MemoryPool] = []
@@ -34,16 +34,16 @@ class MemoryManager:
         """Create a pool."""
         if block_size <= self.minimum_pool_size:
             pool = MemoryPool(
-                address=self.heap_address,
+                address=self.address,
                 size=self.minimum_pool_size,
                 blocks=[0 for _ in range(self.minimum_pool_size // block_size)],
             )
 
         else:
-            pool = MemoryPool(address=self.heap_address, size=block_size, blocks=[0])
+            pool = MemoryPool(address=self.address, size=block_size, blocks=[0])
 
         self.uc.mem_map(pool.address, pool.size)
-        self.heap_address += pool.size
+        self.address += pool.size
 
         return pool
 
