@@ -1,3 +1,45 @@
 [build-system]
 requires = ["setuptools>=42"]
 build-backend = "setuptools.build_meta"
+
+[project]
+name = "chomper"
+description = "A lightweight Android native library emulation framework for executing encryption functions."
+readme = "README.md"
+license = { text = "MIT" }
+authors = [
+    { name = "Sh4w", email = "sh4w0911@gmail.com" },
+]
+classifiers = [
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.7",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+]
+requires-python = ">=3.7"
+dependencies = [
+    "pyelftools >= 0.29",
+    "unicorn >= 2.0.0",
+    "capstone >= 4.0",
+]
+dynamic = ["version"]
+
+[tool.setuptools.dynamic]
+version = { attr = "chomper.__version__" }
+
+[tool.mypy]
+files = ["src/chomper"]
+python_version = "3.7"
+show_error_codes = true
+allow_redefinition = true
+no_implicit_optional = true
+local_partial_types = true
+strict_equality = true
+warn_redundant_casts = true
+warn_unused_configs = true
+warn_unused_ignores = false
+ignore_missing_imports = true
