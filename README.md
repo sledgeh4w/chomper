@@ -1,11 +1,11 @@
 # Chomper
 
-[![build](https://github.com/sh4w1/chomper/actions/workflows/tests.yml/badge.svg)](https://github.com/sh4w1/chomper/actions/workflows/tests.yml)
+[![build](https://github.com/sledgeh4w/chomper/actions/workflows/tests.yml/badge.svg)](https://github.com/sledgeh4w/chomper/actions/workflows/tests.yml)
 ![PyPI](https://img.shields.io/pypi/v/chomper)
 ![PyPI - Python Version](https://img.shields.io/pypi/pyversions/chomper)
-[![GitHub license](https://img.shields.io/github/license/sh4w1/chomper)](https://github.com/sh4w1/chomper/blob/main/LICENSE)
+[![GitHub license](https://img.shields.io/github/license/sledgeh4w/chomper)](https://github.com/sledgeh4w/chomper/blob/main/LICENSE)
 
-Chomper is a lightweight Android native library emulation framework based on [Unicorn](https://github.com/unicorn-engine/unicorn). It is mainly used to execute encryption functions, so it doesn't provide JNI or file system support. It supports architecture ARM and ARM64.
+Chomper is a lightweight Android native library emulation framework based on [Unicorn](https://github.com/unicorn-engine/unicorn). It focused on performing encryption or decryption, so it doesn't provide support for JNI and file system. It supports architecture ARM and ARM64.
 
 ## Requirements
 
@@ -89,14 +89,14 @@ Trace instructions.
 
 ```python
 # Trace all instructions
-emulator = Chomper(ARCH_ARM64, trace_inst=True)
+emulator = Chomper(ARCH_ARM64, trace_instr=True)
 
 # Trace instructions in this module
-emulator.load_module("arm64/libz.so", trace_inst=True)
+emulator.load_module("examples/arm64/libz.so", trace_instr=True)
 ```
 
 Execute initialization functions in section `.init_array`.
 
 ```python
-emulator.load_module("arm64/libszstone.so", exec_init_array=True)
+emulator.load_module("examples/arm64/libszstone.so", exec_init_array=True)
 ```
