@@ -128,5 +128,5 @@ dmypy.json
 # Pyre type checker
 .pyre/
 
-# Don't ignore example library files
+# Exclude example library files
 !examples/**/*.so
