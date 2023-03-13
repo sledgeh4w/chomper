@@ -5,18 +5,7 @@ from unicorn import arm64_const, arm_const
 
 
 class Arch(ABC):
-    """Adapt to multiple architectures.
-
-    Args:
-        name: The name of architecture.
-        reg_size: The size of register (bits).
-        instr_reg: Register for storing instruction pointer.
-        ret_reg: Register for storing return address.
-        frame_reg: Register for storing frame pointer.
-        stack_reg: Register for storing stack pointer.
-        arg_regs: A ``list`` of registers containing stored parameters in order.
-        retval_reg: Register for storing return value.
-    """
+    """Adapt to multiple architectures."""
 
     def __init__(
         self,

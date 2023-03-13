@@ -253,22 +253,22 @@ class Chomper:
         return Location(address=address, module=located_module)
 
     def backtrace(self) -> List[Location]:
-        """Backtrace the call stack."""
+        """Backtrace call stack."""
         call_stack = [self.uc.reg_read(self.arch.ret_reg)]
-        fp = self.uc.reg_read(self.arch.frame_reg)
+        frame = self.uc.reg_read(self.arch.frame_reg)
 
         while True:
-            lr = self.read_int(fp + 8)
-            fp = self.read_int(fp)
+            addr = self.read_int(frame + 8)
+            frame = self.read_int(frame)
 
-            if not fp or not lr:
+            if not frame or not addr:
                 break
 
-            call_stack.append(lr)
+            call_stack.append(addr)
 
         return [self.locate_address(addr - 4) for addr in call_stack if addr]
 
-    def return_call(self, retval: Optional[int] = None):
+    def return_(self, retval: Optional[int] = None):
         """Return current function call."""
         if retval is not None:
             self.set_retval(retval)

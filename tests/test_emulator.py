@@ -35,17 +35,15 @@ def test_backtrace(emu_arm64, tinylib_v73021_arm64):
 @pytest.mark.usefixtures("zlib_arm64")
 def test_add_hook(emu_arm64):
     def hook_code(*_):
-        nonlocal t1
-        t1 = True
+        user_data["hooked"] = True
 
     symbol = emu_arm64.find_symbol("zlibVersion")
+    user_data = {}
 
-    t1 = False
-
-    emu_arm64.add_hook(symbol.address, hook_code)
+    emu_arm64.add_hook(symbol.address, hook_code, user_data=user_data)
     emu_arm64.call_symbol(symbol.name)
 
-    assert t1
+    assert user_data.get("hooked")
 
 
 @pytest.mark.usefixtures("zlib_arm64")
@@ -70,26 +68,17 @@ def test_set_and_get_retval(emu_arm64):
 
 
 @pytest.mark.usefixtures("zlib_arm64")
-def test_return_call(emu_arm64):
-    def hook_code_first(*_):
-        nonlocal t1
-        t1 = True
-        emu_arm64.return_call()
-
-    def hook_code_second(*_):
-        nonlocal t2
-        t2 = True
+def test_return(emu_arm64):
+    def hook_code(*_):
+        emu_arm64.return_(retval)
 
     symbol = emu_arm64.find_symbol("zlibCompileFlags")
+    retval = 105
 
-    t1 = False
-    t2 = False
+    emu_arm64.add_hook(symbol.address, hook_code)
+    result = emu_arm64.call_symbol(symbol.name)
 
-    emu_arm64.add_hook(symbol.address, hook_code_first)
-    emu_arm64.add_hook(symbol.address + 4, hook_code_second)
-    emu_arm64.call_symbol(symbol.name)
-
-    assert t1 and not t2
+    assert result == retval
 
 
 def test_crate_buffer(emu_arm64):

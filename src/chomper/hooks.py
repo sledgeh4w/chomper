@@ -16,7 +16,7 @@ def intercept(f: Callable[["Chomper"], Any]) -> UC_HOOK_CODE_TYPE:
     @wraps(f)
     def decorator(*args):
         emulator = args[-1]["emulator"]
-        emulator.return_call(f(emulator))
+        emulator.return_(f(emulator))
 
     return decorator
 
@@ -32,7 +32,7 @@ def hook_free(emulator: "Chomper"):
     """Intercept `free` of `libc.so`."""
     addr = emulator.get_argument(0)
 
-    emulator.memory_manager.free(addr)
+    emulator.free(addr)
 
 
 @intercept
