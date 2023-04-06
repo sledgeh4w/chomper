@@ -8,7 +8,7 @@ description = "A lightweight Android native library emulation framework for exec
 readme = "README.md"
 license = { text = "MIT" }
 authors = [
-    { name = "Sh4w", email = "sh4w0911@gmail.com" },
+    { name = "Sh4w", email = "sledgeh4w@gmail.com" },
 ]
 classifiers = [
     "License :: OSI Approved :: MIT License",
