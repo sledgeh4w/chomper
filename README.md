@@ -30,22 +30,16 @@ from chomper.const import ARCH_ARM64
 emulator = Chomper(ARCH_ARM64)
 
 # Load modules
-emulator.load_module("arm64/libz.so")
+emulator.load_module("examples/arm64/libz.so")
 
 # Construct arguments
 data = b"chomper"
 
-v1 = emulator.create_buffer(len(data))
-v2 = len(data)
+addr = emulator.alloc(data)
+size = len(data)
 
-emulator.write_bytes(v1, data)
-
-# Call function by symbol
-emulator.call_symbol("crc32", 0, v1, v2)
-
-# Call function by address
-symbol = emulator.find_symbol("crc32")
-emulator.call_address(symbol.address, 0, v1, v2)
+# Call function
+emulator.call_symbol("crc32", 0, addr, size)
 ```
 
 Emulate arch ARM.
@@ -60,18 +54,16 @@ emulator = Chomper(ARCH_ARM)
 Read/Write data.
 
 ```python
-# Create buffer
-v1 = emulator.create_buffer(64)
-v2 = emulator.create_string("chomper")
+v1 = emulator.alloc(64)
+v2 = emulator.alloc_string("chomper")
 
-# Write data
 emulator.write_int(v1, 1)
-emulator.write_bytes(v1, b"chomper")
-emulator.write_string(v2, "chomper")
-
-# Read data
 emulator.read_int(v1)
+
+emulator.write_bytes(v1, b"chomper")
 emulator.read_bytes(v1, 8)
+
+emulator.write_string(v2, "chomper")
 emulator.read_string(v2)
 ```
 
