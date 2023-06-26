@@ -38,7 +38,7 @@ def zlib_arm(emu_arm):
 
 @pytest.fixture(scope="module")
 def dusanwalib_v4856_arm(emu_arm):
-    """com.shizhuang.duapp 4.85.6"""
+    """From com.shizhuang.duapp 4.85.6"""
     yield emu_arm.load_module(
         os.path.join(arm_path, "libdusanwa.so"),
         exec_init_array=True,
@@ -62,7 +62,7 @@ def zlib_arm64(emu_arm64):
 
 @pytest.fixture(scope="module")
 def szstonelib_v4945_arm64(emu_arm64):
-    """com.shizhuang.duapp 4.94.5"""
+    """From com.shizhuang.duapp 4.94.5"""
     yield emu_arm64.load_module(
         os.path.join(arm64_path, "libszstone.so"),
         exec_init_array=True,
@@ -71,5 +71,5 @@ def szstonelib_v4945_arm64(emu_arm64):
 
 @pytest.fixture(scope="module")
 def tinylib_v73021_arm64(emu_arm64):
-    """com.xingin.xhs 7.30.2.1"""
+    """From com.xingin.xhs 7.30.2.1"""
     yield emu_arm64.load_module(os.path.join(arm64_path, "libtiny.so"))

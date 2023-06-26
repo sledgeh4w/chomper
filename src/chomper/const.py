@@ -10,8 +10,11 @@ BIG_ENDIAN: Literal["big"] = "big"
 LITTLE_ENDIAN: Literal["little"] = "little"
 
 # Supported arch
-ARCH_ARM = 1
-ARCH_ARM64 = 2
+ARCH_ARM = 0
+ARCH_ARM64 = 1
+
+MODE_ARM = 0
+MODE_THUMB = 1
 
 # The address of thread local storage (TLS)
 TLS_ADDRESS = 0x10000
