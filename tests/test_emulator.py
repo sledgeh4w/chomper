@@ -11,7 +11,7 @@ def test_find_symbol(emu_arm64):
     assert symbol.name == symbol_name
 
 
-def test_locate_addr(emu_arm64, clib_arm64):
+def test_locate_address(emu_arm64, clib_arm64):
     address = clib_arm64.base + 0x1000
     location = emu_arm64.locate_address(address)
 
@@ -25,9 +25,9 @@ def test_backtrace(emu_arm64, tinylib_v73021_arm64):
 
     emu_arm64.add_hook(tinylib_v73021_arm64.base + 0x2BA08, hook_code)
 
-    a1 = emu_arm64.create_buffer(32)
-    a2 = emu_arm64.create_buffer(32)
-    a3 = emu_arm64.create_buffer(32)
+    a1 = emu_arm64.alloc(32)
+    a2 = emu_arm64.alloc(32)
+    a3 = emu_arm64.alloc(32)
 
     emu_arm64.call_address(tinylib_v73021_arm64.base + 0x289A4, a1, a2, a3)
 
@@ -67,39 +67,25 @@ def test_set_and_get_retval(emu_arm64):
     assert result == retval
 
 
-@pytest.mark.usefixtures("zlib_arm64")
-def test_return(emu_arm64):
-    def hook_code(*_):
-        emu_arm64.return_(retval)
-
-    symbol = emu_arm64.find_symbol("zlibCompileFlags")
-    retval = 105
-
-    emu_arm64.add_hook(symbol.address, hook_code)
-    result = emu_arm64.call_symbol(symbol.name)
-
-    assert result == retval
-
-
-def test_crate_buffer(emu_arm64):
-    result = emu_arm64.create_buffer(1024)
+def test_alloc(emu_arm64):
+    result = emu_arm64.alloc(1024)
 
     assert result is not None
 
 
-def test_create_string(emu_arm64, sample_str):
-    result = emu_arm64.create_string(sample_str)
+def test_alloc_string(emu_arm64, sample_str):
+    result = emu_arm64.alloc_string(sample_str)
 
     assert result is not None
 
 
 def test_free(emu_arm64):
-    buffer = emu_arm64.create_buffer(1024)
+    buffer = emu_arm64.alloc(1024)
     emu_arm64.free(buffer)
 
 
 def test_write_and_read_int(emu_arm64):
-    buffer = emu_arm64.create_buffer(1024)
+    buffer = emu_arm64.alloc(1024)
     value = 105
 
     emu_arm64.write_int(buffer, value)
@@ -109,7 +95,7 @@ def test_write_and_read_int(emu_arm64):
 
 
 def test_write_and_read_bytes(emu_arm64, sample_bytes):
-    buffer = emu_arm64.create_buffer(1024)
+    buffer = emu_arm64.alloc(1024)
 
     emu_arm64.write_bytes(buffer, sample_bytes)
     result = emu_arm64.read_bytes(buffer, len(sample_bytes))
@@ -118,7 +104,7 @@ def test_write_and_read_bytes(emu_arm64, sample_bytes):
 
 
 def test_write_and_read_string(emu_arm64, sample_str):
-    buffer = emu_arm64.create_buffer(1024)
+    buffer = emu_arm64.alloc(1024)
 
     emu_arm64.write_string(buffer, sample_str)
     result = emu_arm64.read_string(buffer)
@@ -169,8 +155,8 @@ def test_clib_free(request, emu_name):
 def test_clib_memcpy(request, emu_name, sample_str):
     emu = request.getfixturevalue(emu_name)
 
-    v1 = emu.create_buffer(16)
-    v2 = emu.create_string(sample_str)
+    v1 = emu.alloc(16)
+    v2 = emu.alloc_string(sample_str)
 
     emu.call_symbol("memcpy", v1, v2, len(sample_str) + 1)
     result = emu.read_string(v1)
@@ -183,9 +169,9 @@ def test_clib_memcpy(request, emu_name, sample_str):
 def test_clib_memcmp(request, emu_name, sample_str):
     emu = request.getfixturevalue(emu_name)
 
-    v1 = emu.create_string(sample_str)
-    v2 = emu.create_string(sample_str)
-    v3 = emu.create_string(sample_str[::-1])
+    v1 = emu.alloc_string(sample_str)
+    v2 = emu.alloc_string(sample_str)
+    v3 = emu.alloc_string(sample_str[::-1])
 
     result = emu.call_symbol("memcmp", v1, v2, len(sample_str))
 
@@ -203,7 +189,7 @@ def test_clib_memset(request, emu_name, sample_str):
 
     size = len(sample_str)
 
-    v1 = emu.create_string(sample_str)
+    v1 = emu.alloc_string(sample_str)
 
     emu.call_symbol("memset", v1, 0, size)
     result = emu.read_bytes(v1, size)
@@ -216,8 +202,8 @@ def test_clib_memset(request, emu_name, sample_str):
 def test_clib_strncpy(request, emu_name, sample_str):
     emu = request.getfixturevalue(emu_name)
 
-    v1 = emu.create_buffer(16)
-    v2 = emu.create_string(sample_str)
+    v1 = emu.alloc(16)
+    v2 = emu.alloc_string(sample_str)
     v3 = 5
 
     emu.call_symbol("strncpy", v1, v2, v3)
@@ -231,8 +217,8 @@ def test_clib_strncpy(request, emu_name, sample_str):
 def test_clib_strncmp(request, emu_name, sample_str):
     emu = request.getfixturevalue(emu_name)
 
-    v1 = emu.create_string(sample_str)
-    v2 = emu.create_string(sample_str[:-1] + " ")
+    v1 = emu.alloc_string(sample_str)
+    v2 = emu.alloc_string(sample_str[:-1] + " ")
 
     result = emu.call_symbol("strncmp", v1, v2, len(sample_str) - 1)
 
@@ -248,8 +234,8 @@ def test_clib_strncmp(request, emu_name, sample_str):
 def test_clib_strncat(request, emu_name, sample_str):
     emu = request.getfixturevalue(emu_name)
 
-    v1 = emu.create_buffer(32)
-    v2 = emu.create_string(sample_str)
+    v1 = emu.alloc(32)
+    v2 = emu.alloc_string(sample_str)
     v3 = 5
 
     emu.write_string(v1, sample_str)
@@ -265,8 +251,8 @@ def test_clib_strncat(request, emu_name, sample_str):
 def test_clib_strcpy(request, emu_name, sample_str):
     emu = request.getfixturevalue(emu_name)
 
-    v1 = emu.create_buffer(16)
-    v2 = emu.create_string(sample_str)
+    v1 = emu.alloc(16)
+    v2 = emu.alloc_string(sample_str)
 
     emu.call_symbol("strcpy", v1, v2)
     result = emu.read_string(v1)
@@ -279,9 +265,9 @@ def test_clib_strcpy(request, emu_name, sample_str):
 def test_clib_strcmp(request, emu_name, sample_str):
     emu = request.getfixturevalue(emu_name)
 
-    v1 = emu.create_string(sample_str)
-    v2 = emu.create_string(sample_str)
-    v3 = emu.create_string(sample_str[:-1] + " ")
+    v1 = emu.alloc_string(sample_str)
+    v2 = emu.alloc_string(sample_str)
+    v3 = emu.alloc_string(sample_str[:-1] + " ")
 
     result = emu.call_symbol("strcmp", v1, v2)
 
@@ -297,8 +283,8 @@ def test_clib_strcmp(request, emu_name, sample_str):
 def test_clib_strcat(request, emu_name, sample_str):
     emu = request.getfixturevalue(emu_name)
 
-    v1 = emu.create_buffer(32)
-    v2 = emu.create_string(sample_str)
+    v1 = emu.alloc(32)
+    v2 = emu.alloc_string(sample_str)
 
     emu.write_string(v1, sample_str)
 
@@ -313,7 +299,7 @@ def test_clib_strcat(request, emu_name, sample_str):
 def test_clib_strlen(request, emu_name, sample_str):
     emu = request.getfixturevalue(emu_name)
 
-    v1 = emu.create_string(sample_str)
+    v1 = emu.alloc_string(sample_str)
 
     result = emu.call_symbol("strlen", v1)
 
@@ -327,10 +313,10 @@ def test_clib_sprintf(request, emu_name, sample_str):
 
     fmt = "%d%s"
 
-    v1 = emu.create_buffer(16)
-    v2 = emu.create_string(fmt)
+    v1 = emu.alloc(16)
+    v2 = emu.alloc_string(fmt)
     v3 = len(sample_str)
-    v4 = emu.create_string(sample_str)
+    v4 = emu.alloc_string(sample_str)
 
     emu.call_symbol("sprintf", v1, v2, v3, v4)
     result = emu.read_string(v1)
@@ -345,19 +331,19 @@ def test_clib_printf(request, emu_name, sample_str):
 
     fmt = "%d%s"
 
-    v1 = emu.create_string(fmt)
+    v1 = emu.alloc_string(fmt)
     v2 = len(sample_str)
-    v3 = emu.create_string(sample_str)
+    v3 = emu.alloc_string(sample_str)
 
     emu.call_symbol("printf", v1, v2, v3)
 
 
 @pytest.mark.usefixtures("clib_arm", "zlib_arm")
 def test_emulate_dusanwalib_v4856_arm(emu_arm, dusanwalib_v4856_arm, sample_bytes):
-    a1 = emu_arm.create_buffer(32)
+    a1 = emu_arm.alloc(32)
     a2 = 32
-    a3 = emu_arm.create_buffer(32)
-    a4 = emu_arm.create_buffer(32)
+    a3 = emu_arm.alloc(32)
+    a4 = emu_arm.alloc(32)
 
     emu_arm.write_bytes(a1, sample_bytes)
     emu_arm.write_bytes(a4, sample_bytes)
@@ -372,9 +358,9 @@ def test_emulate_dusanwalib_v4856_arm(emu_arm, dusanwalib_v4856_arm, sample_byte
 def test_emulate_szstonelib_v4945_arm64(
     emu_arm64, szstonelib_v4945_arm64, sample_bytes
 ):
-    a1 = emu_arm64.create_buffer(len(sample_bytes))
+    a1 = emu_arm64.alloc(len(sample_bytes))
     a2 = len(sample_bytes)
-    a3 = emu_arm64.create_buffer(1024)
+    a3 = emu_arm64.alloc(1024)
 
     emu_arm64.write_bytes(a1, sample_bytes)
 
@@ -388,9 +374,9 @@ def test_emulate_szstonelib_v4945_arm64(
 
 @pytest.mark.usefixtures("clib_arm64", "zlib_arm64")
 def test_emulate_tinylib_v73021_arm64(emu_arm64, tinylib_v73021_arm64, sample_bytes):
-    a1 = emu_arm64.create_buffer(32)
-    a2 = emu_arm64.create_buffer(32)
-    a3 = emu_arm64.create_buffer(32)
+    a1 = emu_arm64.alloc(32)
+    a2 = emu_arm64.alloc(32)
+    a3 = emu_arm64.alloc(32)
 
     emu_arm64.write_bytes(a1, sample_bytes * 4)
     emu_arm64.write_bytes(a2, sample_bytes * 4)

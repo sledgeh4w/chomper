@@ -16,7 +16,15 @@ def intercept(f: Callable[["Chomper"], Any]) -> UC_HOOK_CODE_TYPE:
     @wraps(f)
     def decorator(*args):
         emulator = args[-1]["emulator"]
-        emulator.return_(f(emulator))
+        retval = f(emulator)
+
+        if isinstance(retval, int):
+            emulator.set_retval(retval)
+
+        emulator.uc.reg_write(
+            emulator.arch.instr_reg,
+            emulator.uc.reg_read(emulator.arch.ret_reg),
+        )
 
     return decorator
 
@@ -42,7 +50,7 @@ def hook_getcwd(emulator: "Chomper") -> int:
     cwd = os.getcwd()
 
     if not buf:
-        buf = emulator.create_string(cwd)
+        buf = emulator.alloc_string(cwd)
     else:
         emulator.write_string(buf, cwd)
 
@@ -67,7 +75,7 @@ def hook_gettid(emulator: "Chomper"):
 def hook_malloc(emulator: "Chomper") -> int:
     """Intercept `malloc` of `libc.so`."""
     size = emulator.get_argument(0)
-    addr = emulator.memory_manager.alloc(size)
+    addr = emulator.alloc(size)
 
     return addr
 

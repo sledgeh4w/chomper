@@ -44,8 +44,9 @@ class Chomper:
 
     Args:
         arch: The architecture to emulate, support ARM and ARM64.
+        mode: The emulation mode.
         logger: The logger to print log.
-        on_thumb: Emulate instructions on Thumb mode.
+        byteorder: Default byteorder to use.
         enable_vfp: Enable VFP extension of ARM.
         trace_instr: Print log when any instruction is executed. The emulator will
             call disassembler in real time to display the assembly instructions,
@@ -58,8 +59,9 @@ class Chomper:
     def __init__(
         self,
         arch: int = const.ARCH_ARM64,
+        mode: int = const.MODE_ARM,
         logger: Optional[logging.Logger] = None,
-        on_thumb: bool = True,
+        byteorder: Literal["little", "big"] = const.LITTLE_ENDIAN,
         enable_vfp: bool = True,
         trace_instr: bool = False,
         trace_symbol_calls: bool = True,
@@ -71,23 +73,22 @@ class Chomper:
         else:
             raise ValueError("Invalid argument arch")
 
+        self.uc = self._create_uc(arch, mode)
+        self.cs = self._create_cs(arch, mode)
+
         self.logger = logger or get_logger(self.__class__.__name__)
 
-        self._trace_ins = trace_instr
+        self._byteorder = byteorder
+        self._trace_instr = trace_instr
         self._trace_symbol_calls = trace_symbol_calls
 
-        self.endian = const.LITTLE_ENDIAN
-
-        self.modules: List[Module] = []
+        self._modules: List[Module] = []
 
         # There are some underlying functions in libc that cannot be emulated,
         # so they need to be hooked to skip execution.
         self._symbol_hooks = default_symbol_hooks.copy()
 
-        self.uc = self._create_uc(on_thumb=on_thumb)
-        self.cs = self._create_cs(on_thumb=on_thumb)
-
-        self.memory_manager = MemoryManager(
+        self._memory_manager = MemoryManager(
             uc=self.uc,
             address=const.HEAP_ADDRESS,
             minimum_pool_size=const.MINIMUM_POOL_SIZE,
@@ -97,22 +98,24 @@ class Chomper:
 
     @property
     def _module_address_offset(self) -> int:
-        if self.modules:
-            return aligned(self.modules[-1].base + self.modules[-1].size, 1024 * 1024)
+        if self._modules:
+            return aligned(self._modules[-1].base + self._modules[-1].size, 1024 * 1024)
 
         return const.MODULE_ADDRESS
 
-    def _create_uc(self, on_thumb: bool = True) -> Uc:
+    @staticmethod
+    def _create_uc(arch: int, mode: int) -> Uc:
         """Create Unicorn instance."""
-        arch = UC_ARCH_ARM if self.arch == arch_arm else UC_ARCH_ARM64
-        mode = UC_MODE_THUMB if self.arch == arch_arm and on_thumb else UC_MODE_ARM
+        arch = UC_ARCH_ARM if arch == const.ARCH_ARM else UC_ARCH_ARM64
+        mode = UC_MODE_THUMB if mode == const.MODE_THUMB else UC_MODE_ARM
 
         return Uc(arch, mode)
 
-    def _create_cs(self, on_thumb: bool = True) -> Cs:
+    @staticmethod
+    def _create_cs(arch: int, mode: int) -> Cs:
         """Create Capstone instance."""
-        arch = CS_ARCH_ARM if self.arch == arch_arm else CS_ARCH_ARM64
-        mode = CS_MODE_THUMB if self.arch == arch_arm and on_thumb else CS_MODE_ARM
+        arch = CS_ARCH_ARM if arch == const.ARCH_ARM else CS_ARCH_ARM64
+        mode = CS_MODE_THUMB if mode == const.MODE_THUMB else CS_MODE_ARM
 
         return Cs(arch, mode)
 
@@ -156,7 +159,7 @@ class Chomper:
             b"\x4f\xf0\x80\x43"  # mov.w r3, #0x40000000
             b"\xe8\xee\x10\x3a"  # vmsr fpexc, r3
         )
-        addr = self.create_buffer(1024)
+        addr = self.alloc(1024)
 
         self.uc.mem_write(addr, inst_code)
         self.uc.emu_start(addr | 1, addr + len(inst_code))
@@ -199,7 +202,7 @@ class Chomper:
 
             raise EmulatorCrashedException("Unknown reason") from e
 
-    def _trace_ins_callback(self, uc: Uc, address: int, size: int, _: dict):
+    def _trace_instr_callback(self, uc: Uc, address: int, size: int, _: dict):
         """Trace instruction."""
         for inst in self.cs.disasm_lite(uc.mem_read(address, size), 0):
             self.logger.info(
@@ -234,7 +237,7 @@ class Chomper:
         Raises:
             SymbolMissingException: If symbol not found.
         """
-        for module in self.modules:
+        for module in self._modules:
             for symbol in module.symbols:
                 if symbol.name == symbol_name:
                     return symbol
@@ -245,7 +248,7 @@ class Chomper:
         """Locate which module this address is in."""
         located_module = None
 
-        for module in self.modules:
+        for module in self._modules:
             if module.base <= address < module.base + module.size:
                 located_module = module
                 break
@@ -256,8 +259,9 @@ class Chomper:
         """Backtrace call stack."""
         call_stack = [self.uc.reg_read(self.arch.ret_reg)]
         frame = self.uc.reg_read(self.arch.frame_reg)
+        limit = 16
 
-        while True:
+        for _ in range(limit - 1):
             addr = self.read_int(frame + 8)
             frame = self.read_int(frame)
 
@@ -267,13 +271,6 @@ class Chomper:
             call_stack.append(addr)
 
         return [self.locate_address(addr - 4) for addr in call_stack if addr]
-
-    def return_(self, retval: Optional[int] = None):
-        """Return current function call."""
-        if retval is not None:
-            self.set_retval(retval)
-
-        self.uc.reg_write(self.arch.instr_reg, self.uc.reg_read(self.arch.ret_reg))
 
     def add_hook(
         self,
@@ -418,7 +415,7 @@ class Chomper:
             except SymbolMissingException:
                 # If the symbol is missing, let it jump to a specified address and
                 # the address has hooked to raise an exception with useful information.
-                hook_addr = self.create_buffer(4)
+                hook_addr = self.alloc(4)
 
                 self.add_hook(
                     hook_addr,
@@ -472,7 +469,7 @@ class Chomper:
             symbols = self._get_export_symbols(elffile)
 
             module = Module(base=base, size=size, name=module_name, symbols=symbols)
-            self.modules.append(module)
+            self._modules.append(module)
 
             for symbol in symbols:
                 if symbol.type == "STT_FUNC":
@@ -492,11 +489,11 @@ class Chomper:
             # Process address relocation.
             self._process_relocation(elffile, base)
 
-            if trace_instr or self._trace_ins:
+            if trace_instr or self._trace_instr:
                 # Trace instructions
                 self.uc.hook_add(
                     UC_HOOK_CODE,
-                    self._trace_ins_callback,
+                    self._trace_instr_callback,
                     begin=module.base,
                     end=module.base + module.size,
                 )
@@ -564,36 +561,33 @@ class Chomper:
         """Set return value."""
         self.uc.reg_write(self.arch.retval_reg, value)
 
-    def create_buffer(self, size: int) -> int:
-        """Create a buffer with the size."""
-        return self.memory_manager.alloc(size)
+    def alloc(self, size: int) -> int:
+        """Alloc memory."""
+        return self._memory_manager.alloc(size)
 
-    def create_string(self, string: str) -> int:
-        """Create a buffer that is initialized to the string."""
-        address = self.memory_manager.alloc(len(string) + 1)
+    def alloc_string(self, string: str) -> int:
+        """Alloc memory that is initialized to the string."""
+        address = self._memory_manager.alloc(len(string) + 1)
         self.write_string(address, string)
 
         return address
 
     def free(self, address: int):
         """Free memory."""
-        self.memory_manager.free(address)
+        self._memory_manager.free(address)
 
     def write_int(
         self,
         address: int,
         value: int,
         size: Optional[int] = None,
-        endian: Optional[Literal["little", "big"]] = None,
+        byteorder: Optional[Literal["little", "big"]] = None,
     ):
         """Write an integer into the address."""
-        if size is None:
-            size = self.arch.reg_size // 8
+        size = size or self.arch.reg_size // 8
+        byteorder = byteorder or self._byteorder
 
-        if endian is None:
-            endian = self.endian
-
-        self.uc.mem_write(address, value.to_bytes(size, byteorder=endian))
+        self.uc.mem_write(address, value.to_bytes(size, byteorder=byteorder))
 
     def write_bytes(self, address: int, data: bytes):
         """Write bytes into the address."""
@@ -607,16 +601,13 @@ class Chomper:
         self,
         address: int,
         size: Optional[int] = None,
-        endian: Optional[Literal["little", "big"]] = None,
+        byteorder: Optional[Literal["little", "big"]] = None,
     ) -> int:
         """Read an integer from the address."""
-        if size is None:
-            size = self.arch.reg_size // 8
+        size = size or self.arch.reg_size // 8
+        byteorder = byteorder or self._byteorder
 
-        if endian is None:
-            endian = self.endian
-
-        return int.from_bytes(self.uc.mem_read(address, size), byteorder=endian)
+        return int.from_bytes(self.uc.mem_read(address, size), byteorder=byteorder)
 
     def read_bytes(self, address: int, size: int) -> bytes:
         """Read bytes from the address."""

@@ -24,9 +24,9 @@ def test_missing_symbol_required_exception(sample_bytes):
         emulator = Chomper(arch=ARCH_ARM64)
         szstonelib = emulator.load_module(os.path.join(arm64_path, "libszstone.so"))
 
-        a1 = emulator.create_buffer(len(sample_bytes))
+        a1 = emulator.alloc(len(sample_bytes))
         a2 = len(sample_bytes)
-        a3 = emulator.create_buffer(1024)
+        a3 = emulator.alloc(1024)
 
         emulator.write_bytes(a1, sample_bytes)
         emulator.call_address(szstonelib.base + 0x289A4, a1, a2, a3)
