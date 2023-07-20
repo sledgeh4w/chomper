@@ -1,137 +1,96 @@
 import os
 import random
 import threading
-from functools import wraps
-from typing import TYPE_CHECKING, Any, Callable
-
-from unicorn.unicorn import UC_HOOK_CODE_TYPE
-
-if TYPE_CHECKING:
-    from .core import Chomper
 
 
-def intercept(f: Callable[["Chomper"], Any]) -> UC_HOOK_CODE_TYPE:
-    """Intercept function call."""
-
-    @wraps(f)
-    def decorator(*args):
-        emulator = args[-1]["emulator"]
-        retval = f(emulator)
-
-        if isinstance(retval, int):
-            emulator.set_retval(retval)
-
-        emulator.uc.reg_write(
-            emulator.arch.instr_reg,
-            emulator.uc.reg_read(emulator.arch.ret_reg),
-        )
-
-    return decorator
-
-
-@intercept
-def hook_arc4random(_):
+def hook_arc4random(uc, address, size, user_data):
     """Intercept `arc4random` of `libc.so`."""
     return random.randint(0, 0x100000000)
 
 
-@intercept
-def hook_free(emulator: "Chomper"):
+def hook_free(uc, address, size, user_data):
     """Intercept `free` of `libc.so`."""
-    addr = emulator.get_argument(0)
+    emu = user_data["emu"]
 
-    emulator.free(addr)
+    addr = emu.get_argument(0)
+    emu.free_memory(addr)
 
 
-@intercept
-def hook_getcwd(emulator: "Chomper") -> int:
+def hook_getcwd(uc, address, size, user_data):
     """Intercept `getcwd` of `libc.so`."""
-    buf = emulator.get_argument(0)
+    emu = user_data["emu"]
+
+    buf = emu.get_argument(0)
     cwd = os.getcwd()
 
     if not buf:
-        buf = emulator.alloc_string(cwd)
-    else:
-        emulator.write_string(buf, cwd)
+        buf = emu.alloc_memory(len(cwd) + 1)
 
-    emulator.set_argument(0, buf)
+    emu.write_string(buf, cwd)
+    emu.set_argument(0, buf)
 
     return buf
 
 
-@intercept
-def hook_getpid(emulator: "Chomper"):
+def hook_getpid(uc, address, size, user_data):
     """Intercept `getpid` of `libc.so`."""
-    emulator.set_retval(os.getpid())
+    emu = user_data["emu"]
+
+    emu.set_retval(os.getpid())
 
 
-@intercept
-def hook_gettid(emulator: "Chomper"):
+def hook_gettid(uc, address, size, user_data):
     """Intercept `gettid` of `libc.so`."""
-    emulator.set_retval(threading.get_ident())
+    emu = user_data["emu"]
+
+    emu.set_retval(threading.get_ident())
 
 
-@intercept
-def hook_malloc(emulator: "Chomper") -> int:
+def hook_malloc(uc, address, size, user_data):
     """Intercept `malloc` of `libc.so`."""
-    size = emulator.get_argument(0)
-    addr = emulator.alloc(size)
+    emu = user_data["emu"]
+
+    size = emu.get_argument(0)
+    addr = emu.alloc_memory(size)
 
     return addr
 
 
-@intercept
-def hook_memcpy(emulator: "Chomper") -> int:
+def hook_memcpy(uc, address, size, user_data):
     """Intercept `memcpy` of `libc.so`."""
-    dst, src, size = emulator.get_arguments(3)
-    emulator.write_bytes(dst, emulator.read_bytes(src, size))
+    emu = user_data["emu"]
+
+    dst, src, size = emu.get_arguments(3)
+    emu.write_bytes(dst, emu.read_bytes(src, size))
 
     return dst
 
 
-@intercept
-def hook_memset(emulator: "Chomper") -> int:
+def hook_memset(uc, address, size, user_data):
     """Intercept `memset` of `libc.so`."""
-    addr, char, size = emulator.get_arguments(3)
-    emulator.write_bytes(addr, bytes([char for _ in range(size)]))
+    emu = user_data["emu"]
+
+    addr, char, size = emu.get_arguments(3)
+    emu.write_bytes(addr, bytes([char for _ in range(size)]))
 
     return addr
 
 
-@intercept
-def hook_ctype_get_mb_cur_max(_) -> int:
+def hook_ctype_get_mb_cur_max(uc, address, size, user_data):
     """Intercept `__ctype_get_mb_cur_max` of `libc.so`."""
     return 1
 
 
-@intercept
-def hook_nanosleep(_) -> int:
+def hook_nanosleep(uc, address, size, user_data):
     """Intercept `nanosleep` and `clock_nanosleep` of `libc.so`."""
     return 0
 
 
-@intercept
-def hook_pthread_mutex_lock(_):
+def hook_pthread_mutex_lock(uc, address, size, user_data):
     """Intercept `pthread_mutex_lock` of `libc.so`."""
     return
 
 
-@intercept
-def hook_pthread_mutex_unlock(_):
+def hook_pthread_mutex_unlock(uc, address, size, user_data):
     """Intercept `pthread_mutex_unlock` of `libc.so`."""
     return
-
-
-default_symbol_hooks = {
-    "__ctype_get_mb_cur_max": hook_ctype_get_mb_cur_max,
-    "arc4random": hook_arc4random,
-    "clock_nanosleep": hook_nanosleep,
-    "free": hook_free,
-    "getcwd": hook_getcwd,
-    "getpid": hook_getpid,
-    "gettid": hook_gettid,
-    "malloc": hook_malloc,
-    "nanosleep": hook_nanosleep,
-    "pthread_mutex_lock": hook_pthread_mutex_lock,
-    "pthread_mutex_unlock": hook_pthread_mutex_unlock,
-}

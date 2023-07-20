@@ -27,19 +27,19 @@ from chomper import Chomper
 from chomper.const import ARCH_ARM64
 
 # Initialize emulator
-emulator = Chomper(ARCH_ARM64)
+emu = Chomper(ARCH_ARM64)
 
 # Load modules
-emulator.load_module("examples/arm64/libz.so")
+emu.load_module("examples/arm64/libz.so")
 
 # Construct arguments
-data = b"chomper"
+s = "chomper"
 
-addr = emulator.alloc(data)
-size = len(data)
+addr = emu.alloc_string(s)
+size = len(s)
 
 # Call function
-emulator.call_symbol("crc32", 0, addr, size)
+emu.call_symbol("crc32", 0, addr, size)
 ```
 
 Emulate arch ARM.
@@ -48,47 +48,46 @@ Emulate arch ARM.
 from chomper import Chomper
 from chomper.const import ARCH_ARM
 
-emulator = Chomper(ARCH_ARM)
+emu = Chomper(ARCH_ARM)
 ```
 
 Read/Write data.
 
 ```python
-v1 = emulator.alloc(64)
-v2 = emulator.alloc_string("chomper")
+addr = emu.alloc_memory(64)
 
-emulator.write_int(v1, 1)
-emulator.read_int(v1)
+emu.write_int(addr, 1)
+emu.read_int(addr)
 
-emulator.write_bytes(v1, b"chomper")
-emulator.read_bytes(v1, 8)
+emu.write_bytes(addr, b"chomper")
+emu.read_bytes(addr, 7)
 
-emulator.write_string(v2, "chomper")
-emulator.read_string(v2)
+emu.write_string(addr, "chomper")
+emu.read_string(addr)
 ```
 
 Hook instructions.
 
 ```python
 def hook_code(uc, address, size, user_data):
-    emu = user_data["emulator"]
+    pass
 
-symbol = emulator.find_symbol("zlibVersion")
-emulator.add_hook(symbol.address, hook_code)
+symbol = emu.find_symbol("zlibVersion")
+emu.add_hook(symbol.address, hook_code)
 ```
 
 Trace instructions.
 
 ```python
 # Trace all instructions
-emulator = Chomper(ARCH_ARM64, trace_instr=True)
+emu = Chomper(ARCH_ARM64, trace_instr=True)
 
 # Trace instructions in this module
-emulator.load_module("examples/arm64/libz.so", trace_instr=True)
+emu.load_module("examples/arm64/libz.so", trace_instr=True)
 ```
 
 Execute initialization functions in section `.init_array`.
 
 ```python
-emulator.load_module("examples/arm64/libszstone.so", exec_init_array=True)
+emu.load_module("examples/arm64/libszstone.so", exec_init_array=True)
 ```
