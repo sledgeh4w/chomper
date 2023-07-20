@@ -33,10 +33,10 @@ emu = Chomper(ARCH_ARM64)
 emu.load_module("examples/arm64/libz.so")
 
 # Construct arguments
-data = b"chomper"
+s = "chomper"
 
-addr = emu.alloc_memory(data)
-size = len(data)
+addr = emu.alloc_string(s)
+size = len(s)
 
 # Call function
 emu.call_symbol("crc32", 0, addr, size)
@@ -54,24 +54,23 @@ emu = Chomper(ARCH_ARM)
 Read/Write data.
 
 ```python
-v1 = emu.alloc_memory(64)
-v2 = emu.alloc_string("chomper")
+addr = emu.alloc_memory(64)
 
-emu.write_int(v1, 1)
-emu.read_int(v1)
+emu.write_int(addr, 1)
+emu.read_int(addr)
 
-emu.write_bytes(v1, b"chomper")
-emu.read_bytes(v1, 8)
+emu.write_bytes(addr, b"chomper")
+emu.read_bytes(addr, 7)
 
-emu.write_string(v2, "chomper")
-emu.read_string(v2)
+emu.write_string(addr, "chomper")
+emu.read_string(addr)
 ```
 
 Hook instructions.
 
 ```python
 def hook_code(uc, address, size, user_data):
-    emu = user_data["emu"]
+    pass
 
 symbol = emu.find_symbol("zlibVersion")
 emu.add_hook(symbol.address, hook_code)
