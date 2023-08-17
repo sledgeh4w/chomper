@@ -1,6 +1,8 @@
-## v0.2.1
+## v0.3.0
 
 Released: -
+
+- Support emulate executable files on iOS.
 
 ## v0.2.0
 
