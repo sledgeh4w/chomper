@@ -14,7 +14,9 @@ class Module:
     base: int
     size: int
     name: str
+
     symbols: List[Symbol]
+    init_array: List[int]
 
 
 @dataclass
@@ -30,6 +32,10 @@ class Location:
         offset = self.address - self.module.base
 
         return f"0x{offset:x}@{self.module.name}"
+
+    @property
+    def offset(self):
+        return self.address - self.module.base
 
 
 @dataclass
