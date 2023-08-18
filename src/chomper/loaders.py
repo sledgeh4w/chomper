@@ -305,11 +305,6 @@ class MachOLoader(BaseLoader):
         cross-references."""
         symbols_map = self._get_symbols_map()
 
-        # for relocation in binary.relocations:
-        #     if relocation.type == 1:
-        #         addr = self.emu.read_pointer(module_base + relocation.address)
-        #         self.emu.write_pointer(module_base + relocation.address, module_base + addr)
-
         blocks: List[Tuple[int, int]] = []
 
         begin = None
@@ -435,7 +430,7 @@ class MachOLoader(BaseLoader):
         module_name = os.path.basename(module_file)
         self.emu.logger.info(f"Load module '{module_name}'.")
 
-        binary: lief.MachO.Binary = lief.parse(module_file)     # type: ignore
+        binary: lief.MachO.Binary = lief.parse(module_file)  # type: ignore
 
         base = self._get_load_base()
         size = self._map_segments(binary, base)

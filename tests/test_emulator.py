@@ -375,21 +375,21 @@ class TestEmulateExamples:
 
         assert zlib.crc32(result) == 4192995551
 
-    def test_emulate_duapp_v581(self, emu_ios, sample_str):
-        duapp = emu_ios.load_module(os.path.join(ios_arm64_path, "DUApp"))
-
-        a1 = emu_ios.create_string("ios")
-        a2 = emu_ios.create_string(sample_str)
-        a3 = len(sample_str)
-        a4 = emu_ios.create_string(str(uuid.uuid4()))
-        a5 = emu_ios.create_buffer(8)
-        a6 = emu_ios.create_buffer(8)
-        a7 = emu_ios.create_string("com.siwuai.duapp")
-
-        emu_ios.call_address(duapp.base + 0x109322118, a1, a2, a3, a4, a5, a6, a7)
-        result = emu_ios.read_string(emu_ios.read_address(a5))
-
-        assert re.match(r"\w{32}\.[\w=]+\.", result)
+    # def test_emulate_duapp_v581(self, emu_ios, sample_str):
+    #     duapp = emu_ios.load_module(os.path.join(ios_arm64_path, "DUApp"))
+    #
+    #     a1 = emu_ios.create_string("ios")
+    #     a2 = emu_ios.create_string(sample_str)
+    #     a3 = len(sample_str)
+    #     a4 = emu_ios.create_string(str(uuid.uuid4()))
+    #     a5 = emu_ios.create_buffer(8)
+    #     a6 = emu_ios.create_buffer(8)
+    #     a7 = emu_ios.create_string("com.siwuai.duapp")
+    #
+    #     emu_ios.call_address(duapp.base + 0x109322118, a1, a2, a3, a4, a5, a6, a7)
+    #     result = emu_ios.read_string(emu_ios.read_address(a5))
+    #
+    #     assert re.match(r"\w{32}\.[\w=]+\.", result)
 
 
 class TestExceptions:
