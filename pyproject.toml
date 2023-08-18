@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "chomper"
-description = "A lightweight Android native library emulation framework for executing encryption functions."
+description = "A lightweight emulation framework for performing encryption or decryption on mobile platform (Android, iOS)."
 readme = "README.md"
 license = { text = "MIT" }
 authors = [
@@ -25,6 +25,7 @@ dependencies = [
     "pyelftools >= 0.29",
     "unicorn >= 2.0.0",
     "capstone >= 4.0",
+    "lief",
 ]
 dynamic = ["version"]
 

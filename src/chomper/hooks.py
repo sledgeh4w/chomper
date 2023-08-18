@@ -1,6 +1,4 @@
-import os
 import random
-import threading
 
 
 def hook_arc4random(uc, address, size, user_data):
@@ -13,37 +11,7 @@ def hook_free(uc, address, size, user_data):
     emu = user_data["emu"]
 
     addr = emu.get_argument(0)
-    emu.free_memory(addr)
-
-
-def hook_getcwd(uc, address, size, user_data):
-    """Intercept `getcwd` of `libc.so`."""
-    emu = user_data["emu"]
-
-    buf = emu.get_argument(0)
-    cwd = os.getcwd()
-
-    if not buf:
-        buf = emu.alloc_memory(len(cwd) + 1)
-
-    emu.write_string(buf, cwd)
-    emu.set_argument(0, buf)
-
-    return buf
-
-
-def hook_getpid(uc, address, size, user_data):
-    """Intercept `getpid` of `libc.so`."""
-    emu = user_data["emu"]
-
-    emu.set_retval(os.getpid())
-
-
-def hook_gettid(uc, address, size, user_data):
-    """Intercept `gettid` of `libc.so`."""
-    emu = user_data["emu"]
-
-    emu.set_retval(threading.get_ident())
+    emu.free(addr)
 
 
 def hook_malloc(uc, address, size, user_data):
@@ -51,7 +19,7 @@ def hook_malloc(uc, address, size, user_data):
     emu = user_data["emu"]
 
     size = emu.get_argument(0)
-    addr = emu.alloc_memory(size)
+    addr = emu.create_buffer(size)
 
     return addr
 
@@ -93,4 +61,29 @@ def hook_pthread_mutex_lock(uc, address, size, user_data):
 
 def hook_pthread_mutex_unlock(uc, address, size, user_data):
     """Intercept `pthread_mutex_unlock` of `libc.so`."""
+    return
+
+
+def hook_localconv_l(uc, address, size, user_data):
+    emu = user_data["emu"]
+
+    decimal_point = emu.create_string(".")
+    emu.logger.info(hex(decimal_point))
+
+    lc = emu.create_buffer(128)
+    emu.write_address(lc, decimal_point)
+    emu.logger.info(hex(lc))
+
+    return lc
+
+
+def hook_os_unfair_lock_lock(uc, address, size, user_data):
+    return
+
+
+def hook_os_unfair_lock_unlock(uc, address, size, user_data):
+    return
+
+
+def hook_cxa_atexit(uc, address, size, user_data):
     return
