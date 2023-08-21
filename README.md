@@ -20,7 +20,7 @@ $ pip install chomper
 
 ## Usage
 
-Load modules and call functions.
+Emulate Android native libraries.
 
 ```python
 from chomper import Chomper
@@ -29,31 +29,34 @@ from chomper.const import ARCH_ARM64
 # Initialize emulator
 emu = Chomper(ARCH_ARM64)
 
-# Load modules
+# Load C standard and other libraries
+emu.load_module("examples/android/arm64/libc.so")
 emu.load_module("examples/android/arm64/libz.so")
 
-# Construct arguments
+# Load main library
+libszstone = emu.load_module(
+    "examples/android/arm64/libszstone.so", 
+    exec_init_array=True,
+)
+
 s = "chomper"
 
-addr = emu.create_string(s)
-size = len(s)
+# Construct arguments
+a1 = emu.create_string(s)
+a2 = len(s)
+a3 = emu.create_buffer(1024)
 
 # Call function
-emu.call_symbol("crc32", 0, addr, size)
+result_size = emu.call_address(libszstone.base + 0x2F1C8, a1, a2, a3)
+result = emu.read_bytes(a3, result_size)
 ```
 
-Emulate arch ARM.
+
+Emulate iOS executable files.
 
 ```python
-from chomper import Chomper
-from chomper.const import ARCH_ARM
+import uuid
 
-emu = Chomper(ARCH_ARM)
-```
-
-Emulate executable files on iOS.
-
-```python
 from chomper import Chomper
 from chomper.const import ARCH_ARM64
 from chomper.loaders import MachOLoader
@@ -64,21 +67,21 @@ emu = Chomper(ARCH_ARM64, loader=MachOLoader)
 emu.load_module("examples/ios/arm64/libsystem_platform.dylib")
 emu.load_module("examples/ios/arm64/libsystem_c.dylib")
 emu.load_module("examples/ios/arm64/libsystem_kernel.dylib")
-```
 
-Read/Write data.
+duapp = emu.load_module("examples/ios/arm64/DUApp")
 
-```python
-addr = emu.create_buffer(64)
+s = "chomper"
 
-emu.write_int(addr, 1, size=4)
-emu.read_int(addr, size=4)
+a1 = emu.create_string("ios")
+a2 = emu.create_string(s)
+a3 = len(s)
+a4 = emu.create_string(str(uuid.uuid4()))
+a5 = emu.create_buffer(8)
+a6 = emu.create_buffer(8)
+a7 = emu.create_string("com.siwuai.duapp")
 
-emu.write_bytes(addr, b"chomper")
-emu.read_bytes(addr, 7)
-
-emu.write_string(addr, "chomper")
-emu.read_string(addr)
+emu.call_address(duapp.base + 0x109322118, a1, a2, a3, a4, a5, a6, a7)
+result = emu.read_string(emu.read_address(a5))
 ```
 
 Hook instructions.
@@ -87,7 +90,7 @@ Hook instructions.
 def hook_code(uc, address, size, user_data):
     pass
 
-symbol = emu.find_symbol("zlibVersion")
+symbol = emu.find_symbol("strlen")
 emu.add_hook(symbol.address, hook_code)
 ```
 
