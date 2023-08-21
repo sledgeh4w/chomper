@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "chomper"
-description = "A lightweight emulation framework for performing encryption or decryption on mobile platform (Android, iOS)."
+description = "A lightweight emulation framework for performing encryption or decryption of mobile platform (Android, iOS)."
 readme = "README.md"
 license = { text = "MIT" }
 authors = [
