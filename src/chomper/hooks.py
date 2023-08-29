@@ -68,11 +68,9 @@ def hook_localconv_l(uc, address, size, user_data):
     emu = user_data["emu"]
 
     decimal_point = emu.create_string(".")
-    emu.logger.info(hex(decimal_point))
 
     lc = emu.create_buffer(128)
     emu.write_address(lc, decimal_point)
-    emu.logger.info(hex(lc))
 
     return lc
 

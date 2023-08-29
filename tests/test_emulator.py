@@ -20,12 +20,6 @@ class TestEmulator:
 
         assert symbol.name == symbol_name
 
-    def test_locate_address(self, emu_arm64, libc_arm64):
-        address = libc_arm64.base + 0x1000
-        location = emu_arm64.locate_address(address)
-
-        assert location.module.name == libc_arm64.name
-
     def test_backtrace(self, emu_arm64, libtiny_v73021_arm64):
         def hook_code(*_):
             locations = emu_arm64.backtrace()
@@ -127,7 +121,7 @@ class TestEmulator:
         assert emu_arm64.read_string(libszstone_v4945_arm64.base + 0x49DD8) == "1.2.3"
 
 
-class TestEmulateLibc:
+class TestCallLibc:
     emu_names = ["emu_arm", "emu_arm64"]
 
     @pytest.mark.usefixtures("libc_arm", "libc_arm64")
@@ -324,11 +318,9 @@ class TestEmulateLibc:
         emu.call_symbol("printf", v1, v2, v3)
 
 
-class TestEmulateExamples:
+class TestCallExamples:
     @pytest.mark.usefixtures("libc_arm", "libz_arm")
-    def test_emulate_libdusanwa_v4856_arm(
-        self, emu_arm, libdusanwa_v4856_arm, sample_bytes
-    ):
+    def test_libdusanwa_v4856_arm(self, emu_arm, libdusanwa_v4856_arm, sample_bytes):
         a1 = emu_arm.create_buffer(32)
         a2 = 32
         a3 = emu_arm.create_buffer(32)
@@ -343,7 +335,7 @@ class TestEmulateExamples:
         assert zlib.crc32(result) == 1148403178
 
     @pytest.mark.usefixtures("libc_arm64", "libz_arm64")
-    def test_emulate_libszstone_v4945_arm64(
+    def test_libszstone_v4945_arm64(
         self, emu_arm64, libszstone_v4945_arm64, sample_bytes
     ):
         a1 = emu_arm64.create_buffer(len(sample_bytes))
@@ -360,9 +352,7 @@ class TestEmulateExamples:
         assert zlib.crc32(result) == 3884391316
 
     @pytest.mark.usefixtures("libc_arm64", "libz_arm64")
-    def test_emulate_libtiny_v73021_arm64(
-        self, emu_arm64, libtiny_v73021_arm64, sample_bytes
-    ):
+    def test_libtiny_v73021_arm64(self, emu_arm64, libtiny_v73021_arm64, sample_bytes):
         a1 = emu_arm64.create_buffer(32)
         a2 = emu_arm64.create_buffer(32)
         a3 = emu_arm64.create_buffer(32)
@@ -375,21 +365,22 @@ class TestEmulateExamples:
 
         assert zlib.crc32(result) == 4192995551
 
-    # def test_emulate_duapp_v581(self, emu_ios, sample_str):
-    #     duapp = emu_ios.load_module(os.path.join(ios_arm64_path, "DUApp"))
-    #
-    #     a1 = emu_ios.create_string("ios")
-    #     a2 = emu_ios.create_string(sample_str)
-    #     a3 = len(sample_str)
-    #     a4 = emu_ios.create_string(str(uuid.uuid4()))
-    #     a5 = emu_ios.create_buffer(8)
-    #     a6 = emu_ios.create_buffer(8)
-    #     a7 = emu_ios.create_string("com.siwuai.duapp")
-    #
-    #     emu_ios.call_address(duapp.base + 0x109322118, a1, a2, a3, a4, a5, a6, a7)
-    #     result = emu_ios.read_string(emu_ios.read_address(a5))
-    #
-    #     assert re.match(r"\w{32}\.[\w=]+\.", result)
+    @staticmethod
+    def _test_duapp_v581(emu_ios, sample_str):
+        duapp = emu_ios.load_module(os.path.join(ios_arm64_path, "DUApp"))
+
+        a1 = emu_ios.create_string("ios")
+        a2 = emu_ios.create_string(sample_str)
+        a3 = len(sample_str)
+        a4 = emu_ios.create_string(str(uuid.uuid4()))
+        a5 = emu_ios.create_buffer(8)
+        a6 = emu_ios.create_buffer(8)
+        a7 = emu_ios.create_string("com.siwuai.duapp")
+
+        emu_ios.call_address(duapp.base + 0x109322118, a1, a2, a3, a4, a5, a6, a7)
+        result = emu_ios.read_string(emu_ios.read_address(a5))
+
+        assert re.match(r"\w{32}\.[\w=]+\.", result)
 
 
 class TestExceptions:

@@ -1,5 +1,6 @@
 import logging
 import sys
+from functools import wraps
 from typing import List, Optional, Tuple, Type, Union
 
 from capstone import CS_ARCH_ARM, CS_ARCH_ARM64, CS_MODE_ARM, CS_MODE_THUMB, Cs
@@ -22,7 +23,7 @@ from .exceptions import EmulatorCrashedException, SymbolMissingException
 from .loaders import BaseLoader, ELFLoader, MachOLoader
 from .log import get_logger
 from .memory import MemoryManager
-from .structs import Location, Module, Symbol
+from .structs import Module, Symbol
 
 if sys.version_info >= (3, 8):
     from typing import Literal
@@ -204,7 +205,7 @@ class Chomper:
         self.uc.reg_write(self.arch.reg_pc, address)
 
         try:
-            self.logger.info(f"Start emulate at {self.locate_address(address)}.")
+            self.logger.info(f"Start emulate at {self.address_format(address)}.")
             self.uc.emu_start(address, stop_addr)
 
         except UcError as e:
@@ -215,7 +216,7 @@ class Chomper:
             # Check whether the last instruction is svc.
             if inst.mnemonic == "svc":
                 raise EmulatorCrashedException(
-                    f"Unhandled system call at {self.locate_address(address)}"
+                    f"Unhandled system call at {self.address_format(address)}"
                 )
 
             raise EmulatorCrashedException("Unknown reason") from e
@@ -233,18 +234,35 @@ class Chomper:
 
         raise SymbolMissingException(f"{symbol_name} not found")
 
-    def locate_address(self, address: int) -> Location:
-        """Locate which module this address is in."""
-        located_module = None
-
+    def find_module(self, address: int) -> Optional[Module]:
+        """Find module by address."""
         for module in self.modules:
             if module.base <= address < module.base + module.size:
-                located_module = module
-                break
+                return module
 
-        return Location(address=address, module=located_module)
+        return None
 
-    def backtrace(self) -> List[Location]:
+    def address_format(
+        self,
+        address: int,
+        module_base: Optional[int] = None,
+        module_name: Optional[str] = None,
+    ) -> str:
+        """Format address to `0x1000@libfoo.so` or `0x10000`."""
+        if module_base is None or module_name is None:
+            module = self.find_module(address)
+
+            if module:
+                module_base = module.base
+                module_name = module.name
+
+        if module_base and module_name:
+            offset = address - module_base
+            return f"0x{offset:x}@{module_name}"
+
+        return f"0x{address:x}"
+
+    def backtrace(self) -> List[Tuple[int, Optional[Module]]]:
         """Backtrace call stack."""
         call_stack = [self.uc.reg_read(self.arch.reg_lr)]
         frame = self.uc.reg_read(self.arch.reg_fp)
@@ -259,11 +277,11 @@ class Chomper:
 
             call_stack.append(addr)
 
-        return [self.locate_address(addr - 4) for addr in call_stack if addr]
+        return [(addr - 4, self.find_module(addr)) for addr in call_stack if addr]
 
     def add_hook(
         self,
-        symbol_or_addr: Union[int, str, Symbol],
+        symbol_or_addr: Union[int, str],
         callback: UC_HOOK_CODE_TYPE,
         user_data: Optional[dict] = None,
     ) -> int:
@@ -284,22 +302,13 @@ class Chomper:
         """
         if isinstance(symbol_or_addr, int):
             hook_addr = symbol_or_addr
-            self.logger.info(f"Hook address at {self.locate_address(hook_addr)}.")
 
         else:
-            symbol = (
-                self.find_symbol(symbol_or_addr)
-                if isinstance(symbol_or_addr, str)
-                else symbol_or_addr
-            )
+            symbol = self.find_symbol(symbol_or_addr)
             hook_addr = symbol.address
 
-            if self.arch == arm_arch:
-                hook_addr = (hook_addr | 1) - 1
-
-            self.logger.info(
-                f"Hook symbol '{symbol.name}' at {self.locate_address(hook_addr)}."
-            )
+        if self.arch == arm_arch:
+            hook_addr = (hook_addr | 1) - 1
 
         return self.uc.hook_add(
             UC_HOOK_CODE,
@@ -315,12 +324,13 @@ class Chomper:
 
     def add_interceptor(
         self,
-        symbol_or_addr: Union[Symbol, str, int],
+        symbol_or_addr: Union[int, str],
         callback: UC_HOOK_CODE_TYPE,
         user_data: Optional[dict] = None,
     ):
         """Hook and intercept."""
 
+        @wraps(callback)
         def decorator(*args):
             retval = callback(*args)
 
@@ -342,7 +352,7 @@ class Chomper:
         """Trace instruction."""
         for inst in self.cs.disasm_lite(uc.mem_read(address, size), 0):
             self.logger.info(
-                f"Trace at {self.locate_address(address)}: {inst[-2]} {inst[-1]}."
+                f"Trace at {self.address_format(address)}: {inst[-2]} {inst[-1]}."
             )
 
     def load_module(
@@ -367,35 +377,10 @@ class Chomper:
             module_file=module_file,
             exec_init_array=exec_init_array,
             trace_symbol_calls=trace_symbol_calls or self._trace_symbol_calls,
+            trace_instr=trace_instr or self._trace_instr,
         )
 
         self.modules.append(module)
-
-        if trace_instr or self._trace_instr:
-            # Trace instructions
-            self.uc.hook_add(
-                UC_HOOK_CODE,
-                self._trace_instr_callback,
-                begin=module.base,
-                end=module.base + module.size,
-            )
-
-        if exec_init_array:
-            # Execute initialization functions
-            for init_func in module.init_array:
-                try:
-                    self.logger.info(
-                        "Execute initialization function %s"
-                        % self.locate_address(init_func)
-                    )
-                    self.call_address(init_func)
-
-                except Exception as e:
-                    self.logger.warning(
-                        "Initialization function %s execute failed: %s"
-                        % (self.locate_address(init_func), repr(e))
-                    )
-
         return module
 
     def _get_argument_container(self, index: int) -> Tuple[bool, int]:
