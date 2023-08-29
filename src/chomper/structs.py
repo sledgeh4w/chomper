@@ -1,12 +1,18 @@
 from dataclasses import dataclass
-from typing import List, Optional
+from enum import Enum
+from typing import List
+
+
+class SymbolType(Enum):
+    FUNC = 1
+    OTHER = 2
 
 
 @dataclass
 class Symbol:
     address: int
     name: str
-    type: str
+    type: SymbolType
 
 
 @dataclass
@@ -14,28 +20,7 @@ class Module:
     base: int
     size: int
     name: str
-
     symbols: List[Symbol]
-    init_array: List[int]
-
-
-@dataclass
-class Location:
-    address: int
-    module: Optional[Module]
-
-    def __str__(self):
-        """Display as ``0x1000@libfoo.so`` or ``0x10000``."""
-        if not self.module:
-            return f"0x{self.address:x}"
-
-        offset = self.address - self.module.base
-
-        return f"0x{offset:x}@{self.module.name}"
-
-    @property
-    def offset(self):
-        return self.address - self.module.base
 
 
 @dataclass
