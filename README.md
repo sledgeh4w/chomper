@@ -35,7 +35,7 @@ emu.load_module("examples/android/arm64/libz.so")
 
 # Load main library
 libszstone = emu.load_module(
-    "examples/android/arm64/libszstone.so", 
+    "examples/android/arm64/libszstone.so",
     exec_init_array=True,
 )
 
@@ -101,7 +101,7 @@ Trace instructions.
 emu = Chomper(ARCH_ARM64, trace_instr=True)
 
 # Trace instructions in this module
-emu.load_module("examples/android/arm64/libz.so", trace_instr=True)
+emu.load_module("examples/android/arm64/libc.so", trace_instr=True)
 ```
 
 Execute initialization functions in section `.init_array`.

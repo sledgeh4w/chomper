@@ -7,11 +7,11 @@ from elftools.elf.dynamic import DynamicSegment
 from elftools.elf.elffile import ELFFile
 from elftools.elf.enums import ENUM_RELOC_TYPE_AARCH64, ENUM_RELOC_TYPE_ARM
 from elftools.elf.relocation import Relocation
-from unicorn import arm_const, arm64_const
+from unicorn import arm_const, arm64_const, Uc, UC_HOOK_CODE
 
 from . import const
 from .exceptions import EmulatorCrashedException
-from .structs import Module, Symbol
+from .structs import Module, Symbol, SymbolType
 from .utils import aligned
 
 
@@ -30,6 +30,7 @@ class BaseLoader:
         )
 
     def _get_symbols_map(self) -> Dict[str, Symbol]:
+        """Get symbols from loaded modules."""
         symbols_map = {}
 
         for module in self.emu.modules:
@@ -50,8 +51,15 @@ class BaseLoader:
 
         self.emu.logger.info(
             f"Symbol '{symbol.name}' called"
-            + (f" from {self.emu.locate_address(ret_addr)}." if ret_addr else ".")
+            + (f" from {self.emu.address_format(ret_addr)}." if ret_addr else ".")
         )
+
+    def _trace_instr_callback(self, uc: Uc, address: int, size: int, _: dict):
+        """Trace instruction."""
+        for inst in self.emu.cs.disasm_lite(uc.mem_read(address, size), 0):
+            self.emu.logger.info(
+                f"Trace at {self.emu.address_format(address)}: {inst[-2]} {inst[-1]}."
+            )
 
     @staticmethod
     def _missing_symbol_required_callback(*args):
@@ -64,10 +72,32 @@ class BaseLoader:
             f"you should load the library that contains it."
         )
 
+    def _exec_init_array(
+        self, module_base: int, module_name: str, init_array: List[int]
+    ):
+        """Execute initialization functions."""
+        for init_func in init_array:
+            try:
+                self.emu.logger.info(
+                    "Execute initialization function %s"
+                    % self.emu.address_format(init_func, module_base, module_name)
+                )
+                self.emu.call_address(init_func)
+
+            except Exception as e:
+                self.emu.logger.warning(
+                    "Initialization function %s execute failed: %s"
+                    % (
+                        self.emu.address_format(init_func, module_base, module_name),
+                        repr(e),
+                    )
+                )
+
     def load_module(
         self,
         module_file: str,
         exec_init_array: bool = False,
+        trace_instr: bool = False,
         trace_symbol_calls: bool = False,
     ) -> Module:
         """Load executable file."""
@@ -110,7 +140,11 @@ class ELFLoader(BaseLoader):
                         Symbol(
                             address=module_base + symbol.entry["st_value"],
                             name=symbol.name,
-                            type=symbol.entry["st_info"]["type"],
+                            type=(
+                                SymbolType.FUNC
+                                if symbol.entry["st_info"]["type"] == "STT_FUNC"
+                                else SymbolType.OTHER
+                            ),
                         )
                     )
 
@@ -204,6 +238,7 @@ class ELFLoader(BaseLoader):
         self,
         module_file: str,
         exec_init_array: bool = False,
+        trace_instr: bool = False,
         trace_symbol_calls: bool = False,
     ) -> Module:
         """Load ELF library file from path."""
@@ -218,30 +253,50 @@ class ELFLoader(BaseLoader):
             symbols = self._get_export_symbols(elffile, base)
 
             for symbol in symbols:
-                if symbol.type == "STT_FUNC":
+                if symbol.type == SymbolType.FUNC:
                     # Trace symbol call
                     if trace_symbol_calls:
                         self.emu.add_hook(
-                            symbol,
+                            symbol.address,
                             self._trace_symbol_call_callback,
                             user_data={"symbol": symbol},
                         )
 
                     # Hook symbol
                     if self.emu.hooks.get(symbol.name):
-                        self.emu.add_interceptor(symbol, self.emu.hooks[symbol.name])
+                        self.emu.logger.info(
+                            "Hook export symbol '{}' at {}.".format(
+                                symbol.name,
+                                self.emu.address_format(
+                                    symbol.address, base, module_name
+                                ),
+                            )
+                        )
+                        self.emu.add_interceptor(
+                            symbol.address, self.emu.hooks[symbol.name]
+                        )
 
             # Process address relocation.
             self._process_relocation(elffile, base, symbols)
 
-            init_array = self._get_init_array(elffile, base)
+            if trace_instr:
+                # Trace instructions
+                self.emu.uc.hook_add(
+                    UC_HOOK_CODE,
+                    self._trace_instr_callback,
+                    begin=base,
+                    end=base + size,
+                )
+
+            if exec_init_array:
+                init_array = self._get_init_array(elffile, base)
+                self._exec_init_array(base, module_name, init_array)
 
             return Module(
                 base=base,
                 size=size,
                 name=module_name,
                 symbols=symbols,
-                init_array=init_array,
             )
 
 
@@ -272,7 +327,11 @@ class MachOLoader(BaseLoader):
         return boundary - module_base
 
     def _get_export_symbols(
-        self, binary: lief.MachO.Binary, module_base: int, trace_symbol_calls: int
+        self,
+        binary: lief.MachO.Binary,
+        module_base: int,
+        module_name: str,
+        trace_symbol_calls: int,
     ) -> List[Symbol]:
         """Get all export symbols in the module."""
         symbols = []
@@ -283,24 +342,36 @@ class MachOLoader(BaseLoader):
                     Symbol(
                         address=module_base + symbol.value,
                         name=symbol.name,
-                        type="",
+                        type=SymbolType.OTHER,
                     )
                 )
 
                 if trace_symbol_calls:
                     self.emu.add_hook(
-                        symbols[-1],
+                        symbols[-1].address,
                         self._trace_symbol_call_callback,
                         user_data={"symbol": symbols[-1]},
                     )
 
                 # Hook exports
                 if self.emu.hooks.get(symbol.name):
-                    self.emu.add_interceptor(symbols[-1], self.emu.hooks[symbol.name])
+                    self.emu.logger.info(
+                        "Hook export symbol '{}' at {}.".format(
+                            symbol.name,
+                            self.emu.address_format(
+                                symbols[-1].address, module_base, module_name
+                            ),
+                        )
+                    )
+                    self.emu.add_interceptor(
+                        symbols[-1].address, self.emu.hooks[symbol.name]
+                    )
 
         return symbols
 
-    def _process_relocation(self, binary: lief.MachO.Binary, module_base: int):
+    def _process_relocation(
+        self, binary: lief.MachO.Binary, module_base: int, module_name: str
+    ):
         """Process relocations base on relocation table and symbol
         cross-references."""
         symbols_map = self._get_symbols_map()
@@ -330,8 +401,7 @@ class MachOLoader(BaseLoader):
             pointers = []
             for offset in range(0, end - begin, self.emu.arch.addr_size):
                 pointers.append(
-                    module_base
-                    + int.from_bytes(
+                    int.from_bytes(
                         content[offset : offset + self.emu.arch.addr_size],
                         byteorder=self.emu.byteorder,
                     )
@@ -341,7 +411,7 @@ class MachOLoader(BaseLoader):
                 begin,
                 b"".join(
                     (
-                        pointer.to_bytes(
+                        (module_base + pointer).to_bytes(
                             self.emu.arch.addr_size, byteorder=self.emu.byteorder
                         )
                         for pointer in pointers
@@ -359,6 +429,14 @@ class MachOLoader(BaseLoader):
 
                     # Hook imports
                     if self.emu.hooks.get(symbol.name):
+                        self.emu.logger.info(
+                            "Hook import symbol '{}' at {}.".format(
+                                symbol.name,
+                                self.emu.address_format(
+                                    symbol.binding_info.address, 0, module_name
+                                ),
+                            )
+                        )
                         self.emu.add_interceptor(
                             reloc_addr, self.emu.hooks[symbol.name]
                         )
@@ -424,6 +502,7 @@ class MachOLoader(BaseLoader):
         self,
         module_file: str,
         exec_init_array: bool = False,
+        trace_instr: bool = False,
         trace_symbol_calls: bool = False,
     ) -> Module:
         """Load Mach-O executable file from path."""
@@ -434,16 +513,28 @@ class MachOLoader(BaseLoader):
 
         base = self._get_load_base()
         size = self._map_segments(binary, base)
-        symbols = self._get_export_symbols(binary, base, trace_symbol_calls)
+        symbols = self._get_export_symbols(
+            binary, base, module_name, trace_symbol_calls
+        )
 
-        self._process_relocation(binary, base)
+        self._process_relocation(binary, base, module_name)
 
-        init_array = self._get_init_array(binary, base)
+        if trace_instr:
+            # Trace instructions
+            self.emu.uc.hook_add(
+                UC_HOOK_CODE,
+                self._trace_instr_callback,
+                begin=base,
+                end=base + size,
+            )
+
+        if exec_init_array:
+            init_array = self._get_init_array(binary, base)
+            self._exec_init_array(base, module_name, init_array)
 
         return Module(
             base=base,
             size=size,
             name=module_name,
             symbols=symbols,
-            init_array=init_array,
         )
