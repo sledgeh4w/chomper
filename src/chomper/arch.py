@@ -1,20 +1,28 @@
-from dataclasses import dataclass
 from typing import List
 
 from unicorn import arm64_const, arm_const
 
 
-@dataclass
 class Arch:
-    nbits: int
+    def __init__(
+        self,
+        nbits: int,
+        reg_pc: int,
+        reg_sp: int,
+        reg_fp: int,
+        reg_lr: int,
+        reg_args: List[int],
+        reg_retval: int,
+    ):
+        self.nbits = nbits
 
-    reg_pc: int
-    reg_sp: int
-    reg_fp: int
-    reg_lr: int
+        self.reg_pc = reg_pc
+        self.reg_sp = reg_sp
+        self.reg_fp = reg_fp
+        self.reg_lr = reg_lr
 
-    reg_args: List[int]
-    reg_retval: int
+        self.reg_args = reg_args
+        self.reg_retval = reg_retval
 
     @property
     def addr_size(self) -> int:

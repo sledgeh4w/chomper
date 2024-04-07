@@ -2,8 +2,22 @@ from typing import List
 
 from unicorn import Uc
 
-from .structs import MemoryPool
 from .utils import aligned
+
+
+class MemoryPool:
+    def __init__(self, address: int, size: int, blocks: List[int]):
+        self.address = address
+        self.size = size
+        self.blocks = blocks
+
+    @property
+    def block_num(self) -> int:
+        return len(self.blocks)
+
+    @property
+    def block_size(self) -> int:
+        return self.size // self.block_num
 
 
 class MemoryManager:
@@ -58,7 +72,7 @@ class MemoryManager:
             self.pools.append(self.create_pool(block_size))
 
     def alloc(self, size: int) -> int:
-        """Alloc memory."""
+        """Allocate memory."""
         if size > self.minimum_pool_size:
             block_size = aligned(size, 1024)
 
@@ -81,6 +95,22 @@ class MemoryManager:
         pool.blocks[0] = 1
 
         return pool.address
+
+    def realloc(self, address: int, size: int) -> int:
+        """Reallocate memory."""
+        block_size = 0
+
+        for pool in self.pools:
+            if pool.address <= address < pool.address + pool.size:
+                block_size = pool.block_size
+
+        if block_size >= size:
+            return address
+
+        new_address = self.alloc(size)
+        self.uc.mem_write(new_address, bytes(self.uc.mem_read(address, block_size)))
+
+        return new_address
 
     def free(self, address: int):
         """Free memory."""
