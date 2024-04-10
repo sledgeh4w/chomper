@@ -14,13 +14,13 @@ classifiers = [
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3 :: Only",
-    "Programming Language :: Python :: 3.7",
     "Programming Language :: Python :: 3.8",
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
 ]
-requires-python = ">=3.7"
+requires-python = ">=3.8"
 dependencies = [
     "pyelftools >= 0.29",
     "unicorn >= 2.0.0",
@@ -34,7 +34,7 @@ version = { attr = "chomper.__version__" }
 
 [tool.mypy]
 files = ["src/chomper"]
-python_version = "3.7"
+python_version = "3.8"
 show_error_codes = true
 allow_redefinition = true
 no_implicit_optional = true
