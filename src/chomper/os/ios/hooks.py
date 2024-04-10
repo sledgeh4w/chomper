@@ -7,7 +7,7 @@ from chomper.types import FuncHooks
 
 
 class IosFuncHooks(FuncHooks):
-    """System function hooks for iOS."""
+    """System function hooks for the iOS."""
 
     @classmethod
     def register(cls, emu):
@@ -29,12 +29,12 @@ class IosFuncHooks(FuncHooks):
             "_dispatch_async": 0,
             # libdyld.dylib
             "_dyld_program_sdk_at_least": 1,
-            "__CFBundleCreateInfoDictFromMainExecutable": 0,
+            # libobjc.A.dylib
             "__ZN11objc_object16rootAutorelease2Ev": None,
+            # CoreFoundation
+            "__CFBundleCreateInfoDictFromMainExecutable": 0,
             # Foundation
             "_NSLog": 0,
-            # Other modules
-            "___cficu_udat_open": 0,
         }
 
         hooks = {
@@ -61,12 +61,10 @@ class IosFuncHooks(FuncHooks):
             "_srandom": cls.hook_srandom,
             "_random": cls.hook_random,
             "_localtime_r": cls.hook_localtime_r,
-            "_fopen": cls.hook_fopen,
             "___srefill": cls.hook_srefill,
             # libsystem_kernel.dylib
             "_stat": cls.hook_stat,
             "_lstat": cls.hook_lstat,
-            "___sysctl": cls.hook_sysctl,
             "___sysctlbyname": cls.hook_sysctlbyname,
             # libmacho.dylib
             "_getsectiondata": cls.hook_getsectiondata,
@@ -291,10 +289,6 @@ class IosFuncHooks(FuncHooks):
         # st_mode
         emu.write_u32(stat + 4, 0x4000)
 
-        return 0
-
-    @staticmethod
-    def hook_sysctl(uc, address, size, user_data):
         return 0
 
     @staticmethod
