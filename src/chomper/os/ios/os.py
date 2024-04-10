@@ -59,8 +59,17 @@ class IosOs(BaseOs):
         raise FileNotFoundError("Module '%s' not found" % module_name)
 
     def check_module(self, module_name: str) -> bool:
-        """Check if the module is loaded."""
+        """Check if the module exist."""
         return module_name in (t.name for t in self.emu.modules)
+
+    def resolve_modules(self, module_classes: List):
+        """Load modules if don't exist."""
+        for module_class in module_classes:
+            if self.check_module(module_class.MODULE_NAME):
+                continue
+
+            module = module_class(self.emu)
+            module.load()
 
     def init_objc(self, module: Module):
         """Initialize Objective-C."""
@@ -95,11 +104,6 @@ class IosOs(BaseOs):
             self.emu.logger.error("Initialize Objective-C failed.")
             self.emu.logger.exception(e)
 
-    def load_modules(self, module_classes: List):
-        """Load modules."""
-        for module_cls in module_classes:
-            module_cls(self.emu).load()
-
     def enable_objc(self):
         """Enable Objective-C support."""
         dependent_modules = [
@@ -127,7 +131,7 @@ class IosOs(BaseOs):
             modules.Security,
         ]
 
-        self.load_modules(dependent_modules)
+        self.resolve_modules(dependent_modules)
 
     def enable_ui_kit(self):
         """Enable UIKit support.
@@ -147,7 +151,7 @@ class IosOs(BaseOs):
             modules.UIKitCore,
         ]
 
-        self.load_modules(dependent_modules)
+        self.resolve_modules(dependent_modules)
 
     def initialize(self):
         """Initialize the environment."""

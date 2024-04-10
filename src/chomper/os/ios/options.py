@@ -2,7 +2,7 @@ from chomper.types import Options
 
 
 class IosOptions(Options):
-    """Options for iOS.
+    """Options of the iOS environment.
 
     Args:
         enable_objc: Enable Objective-C support. Defaults to True.

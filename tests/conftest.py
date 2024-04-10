@@ -9,7 +9,8 @@ base_path = os.path.abspath(os.path.dirname(__file__))
 
 android_lib_path = os.path.join(base_path, "../examples/rootfs/android/system/lib")
 android_lib64_path = os.path.join(base_path, "../examples/rootfs/android/system/lib64")
-ios_lib_path = os.path.join(base_path, "../examples/rootfs/ios/usr/lib/system")
+
+ios_rootfs_path = os.path.join(base_path, "../examples/rootfs/ios")
 
 com_shizhuang_duapp_path = os.path.join(
     base_path, "../examples/apps/android/com.shizhuang.duapp"
@@ -46,7 +47,7 @@ def libz_arm(emu_arm):
 def libdusanwa_v4856_arm(emu_arm):
     """From com.shizhuang.duapp 4.85.6"""
     yield emu_arm.load_module(
-        os.path.join(com_shizhuang_duapp_path, "libdusanwa.so"),
+        module_file=os.path.join(com_shizhuang_duapp_path, "libdusanwa.so"),
         exec_init_array=True,
     )
 
@@ -70,7 +71,7 @@ def libz_arm64(emu_arm64):
 def libszstone_v4945_arm64(emu_arm64):
     """From com.shizhuang.duapp 4.94.5"""
     yield emu_arm64.load_module(
-        os.path.join(com_shizhuang_duapp_path, "libszstone.so"),
+        module_file=os.path.join(com_shizhuang_duapp_path, "libszstone.so"),
         exec_init_array=True,
     )
 
@@ -83,10 +84,8 @@ def libtiny_v73021_arm64(emu_arm64):
 
 @pytest.fixture(scope="module")
 def emu_ios():
-    emu = Chomper(arch=ARCH_ARM64, os_type=OS_IOS)
-
-    emu.load_module(os.path.join(ios_lib_path, "libsystem_platform.dylib"))
-    emu.load_module(os.path.join(ios_lib_path, "libsystem_c.dylib"))
-    emu.load_module(os.path.join(ios_lib_path, "libsystem_kernel.dylib"))
-
-    yield emu
+    yield Chomper(
+        arch=ARCH_ARM64,
+        os_type=OS_IOS,
+        rootfs_path=ios_rootfs_path,
+    )
