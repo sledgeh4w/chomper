@@ -15,7 +15,9 @@ class IosSyscallNo:
     ACCESS = 0x21
     GETEGID = 0x2B
     GETTIMEOFDAY = 0x74
+    SYSCTL = 0xCA
     SHM_OPEN = 0x10A
+    SYSCTLBYNAME = 0x112
     GETTID = 0x11E
     ISSETUGID = 0x147
     STAT64 = 0x152
@@ -31,7 +33,7 @@ class IosSyscallNo:
 
 
 class IosSyscallHandler(SyscallHandler):
-    """System call handler for iOS."""
+    """System call handler for the iOS."""
 
     @classmethod
     def register(cls, emu):
@@ -42,7 +44,9 @@ class IosSyscallHandler(SyscallHandler):
             IosSyscallNo.ACCESS: cls.access,
             IosSyscallNo.GETEGID: cls.getegid,
             IosSyscallNo.GETTIMEOFDAY: cls.gettimeofday,
+            IosSyscallNo.SYSCTL: cls.sysctl,
             IosSyscallNo.SHM_OPEN: cls.shm_open,
+            IosSyscallNo.SYSCTLBYNAME: cls.sysctlbyname,
             IosSyscallNo.GETTID: cls.gettid,
             IosSyscallNo.ISSETUGID: cls.issetugid,
             IosSyscallNo.STAT64: cls.stat64,
@@ -71,8 +75,7 @@ class IosSyscallHandler(SyscallHandler):
 
     @staticmethod
     def access(emu):
-        # pathname = emu.read_string(emu.get_arg(0))
-
+        # path = emu.read_string(emu.get_arg(0))
         emu.set_retval(0)
 
     @staticmethod
@@ -89,8 +92,39 @@ class IosSyscallHandler(SyscallHandler):
         emu.set_retval(0)
 
     @staticmethod
+    def sysctl(emu):
+        emu.set_retval(0)
+
+    @staticmethod
     def shm_open(emu):
         emu.set_retval(0x80000000)
+
+    @staticmethod
+    def sysctlbyname(emu):
+        name = emu.read_string(emu.get_arg(0))
+        oldp = emu.get_arg(2)
+        oldlenp = emu.get_arg(3)
+
+        if not oldp or not oldlenp:
+            emu.set_retval(0)
+            return
+
+        if name == "kern.boottime":
+            emu.write_u64(oldp, int(time.time()) - 3600 * 24)
+            emu.write_u64(oldp + 8, 0)
+
+        elif name == "kern.osvariant_status":
+            # internal_release_type = 3
+            emu.write_u64(oldp, 0x30)
+
+        elif name == "hw.memsize":
+            emu.write_u64(oldp, 4 * 1024 * 1024 * 1024)
+
+        else:
+            emu.logger.warning("Unhandled sysctlbyname: %s" % name)
+            # raise RuntimeError("Unhandled sysctl command: %s" % name)
+
+        emu.set_retval(0)
 
     @staticmethod
     def gettid(emu):

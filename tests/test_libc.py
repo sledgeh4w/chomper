@@ -1,15 +1,29 @@
 import pytest
 
+from chomper.exceptions import SymbolMissingException
+
 
 class TestCStandardLibrary:
-    emu_names = ["emu_arm", "emu_arm64"]
+    emu_names = ["emu_arm", "emu_arm64", "emu_ios"]
+
+    @staticmethod
+    def call_symbol(emu, emu_name, symbol_name, *args):
+        if emu_name == "emu_ios":
+            symbol_name = f"_{symbol_name}"
+
+            try:
+                emu.find_symbol(symbol_name)
+            except SymbolMissingException:
+                symbol_name = f"__platform{symbol_name}"
+
+        return emu.call_symbol(symbol_name, *args)
 
     @pytest.mark.usefixtures("libc_arm", "libc_arm64")
     @pytest.mark.parametrize("emu_name", emu_names)
     def test_malloc(self, request, emu_name):
         emu = request.getfixturevalue(emu_name)
 
-        result = emu.call_symbol("malloc", 16)
+        result = self.call_symbol(emu, emu_name, "malloc", 16)
 
         assert result != 0
 
@@ -18,8 +32,8 @@ class TestCStandardLibrary:
     def test_free(self, request, emu_name):
         emu = request.getfixturevalue(emu_name)
 
-        addr = emu.call_symbol("malloc", 16)
-        emu.call_symbol("free", addr)
+        addr = self.call_symbol(emu, emu_name, "malloc", 16)
+        self.call_symbol(emu, emu_name, "free", addr)
 
     @pytest.mark.usefixtures("libc_arm", "libc_arm64")
     @pytest.mark.parametrize("emu_name", emu_names)
@@ -29,7 +43,7 @@ class TestCStandardLibrary:
         v1 = emu.create_buffer(16)
         v2 = emu.create_string(str_test)
 
-        emu.call_symbol("memcpy", v1, v2, len(str_test) + 1)
+        self.call_symbol(emu, emu_name, "memcpy", v1, v2, len(str_test) + 1)
         result = emu.read_string(v1)
 
         assert result == str_test
@@ -43,11 +57,11 @@ class TestCStandardLibrary:
         v2 = emu.create_string(str_test)
         v3 = emu.create_string(str_test[::-1])
 
-        result = emu.call_symbol("memcmp", v1, v2, len(str_test))
+        result = self.call_symbol(emu, emu_name, "memcmp", v1, v2, len(str_test))
 
         assert result == 0
 
-        result = emu.call_symbol("memcmp", v1, v3, len(str_test))
+        result = self.call_symbol(emu, emu_name, "memcmp", v1, v3, len(str_test))
 
         assert result != 0
 
@@ -60,7 +74,7 @@ class TestCStandardLibrary:
 
         v1 = emu.create_string(str_test)
 
-        emu.call_symbol("memset", v1, 0, size)
+        self.call_symbol(emu, emu_name, "memset", v1, 0, size)
         result = emu.read_bytes(v1, size)
 
         assert result == b"\x00" * size
@@ -74,7 +88,7 @@ class TestCStandardLibrary:
         v2 = emu.create_string(str_test)
         v3 = 5
 
-        emu.call_symbol("strncpy", v1, v2, v3)
+        self.call_symbol(emu, emu_name, "strncpy", v1, v2, v3)
         result = emu.read_string(v1)
 
         assert result == str_test[:v3]
@@ -87,11 +101,11 @@ class TestCStandardLibrary:
         v1 = emu.create_string(str_test)
         v2 = emu.create_string(str_test[:-1] + " ")
 
-        result = emu.call_symbol("strncmp", v1, v2, len(str_test) - 1)
+        result = self.call_symbol(emu, emu_name, "strncmp", v1, v2, len(str_test) - 1)
 
         assert result == 0
 
-        result = emu.call_symbol("strncmp", v1, v2, len(str_test))
+        result = self.call_symbol(emu, emu_name, "strncmp", v1, v2, len(str_test))
 
         assert result != 0
 
@@ -106,7 +120,7 @@ class TestCStandardLibrary:
 
         emu.write_string(v1, str_test)
 
-        emu.call_symbol("strncat", v1, v2, v3)
+        self.call_symbol(emu, emu_name, "strncat", v1, v2, v3)
         result = emu.read_string(v1)
 
         assert result == str_test + str_test[:v3]
@@ -119,7 +133,7 @@ class TestCStandardLibrary:
         v1 = emu.create_buffer(16)
         v2 = emu.create_string(str_test)
 
-        emu.call_symbol("strcpy", v1, v2)
+        self.call_symbol(emu, emu_name, "strcpy", v1, v2)
         result = emu.read_string(v1)
 
         assert result == str_test
@@ -133,11 +147,11 @@ class TestCStandardLibrary:
         v2 = emu.create_string(str_test)
         v3 = emu.create_string(str_test[:-1] + " ")
 
-        result = emu.call_symbol("strcmp", v1, v2)
+        result = self.call_symbol(emu, emu_name, "strcmp", v1, v2)
 
         assert result == 0
 
-        result = emu.call_symbol("strcmp", v1, v3)
+        result = self.call_symbol(emu, emu_name, "strcmp", v1, v3)
 
         assert result != 0
 
@@ -151,7 +165,7 @@ class TestCStandardLibrary:
 
         emu.write_string(v1, str_test)
 
-        emu.call_symbol("strcat", v1, v2)
+        self.call_symbol(emu, emu_name, "strcat", v1, v2)
         result = emu.read_string(v1)
 
         assert result == str_test + str_test
@@ -163,12 +177,12 @@ class TestCStandardLibrary:
 
         v1 = emu.create_string(str_test)
 
-        result = emu.call_symbol("strlen", v1)
+        result = self.call_symbol(emu, emu_name, "strlen", v1)
 
         assert result == len(str_test)
 
     @pytest.mark.usefixtures("libc_arm", "libc_arm64")
-    @pytest.mark.parametrize("emu_name", emu_names)
+    @pytest.mark.parametrize("emu_name", ["emu_arm", "emu_arm64"])
     def test_sprintf(self, request, emu_name, str_test):
         emu = request.getfixturevalue(emu_name)
 
@@ -179,13 +193,13 @@ class TestCStandardLibrary:
         v3 = len(str_test)
         v4 = emu.create_string(str_test)
 
-        emu.call_symbol("sprintf", v1, v2, v3, v4)
+        self.call_symbol(emu, emu_name, "sprintf", v1, v2, v3, v4)
         result = emu.read_string(v1)
 
         assert result == f"{len(str_test)}{str_test}"
 
     @pytest.mark.usefixtures("libc_arm", "libc_arm64")
-    @pytest.mark.parametrize("emu_name", emu_names)
+    @pytest.mark.parametrize("emu_name", ["emu_arm", "emu_arm64"])
     def test_printf(self, request, emu_name, str_test):
         emu = request.getfixturevalue(emu_name)
 
@@ -195,4 +209,4 @@ class TestCStandardLibrary:
         v2 = len(str_test)
         v3 = emu.create_string(str_test)
 
-        emu.call_symbol("printf", v1, v2, v3)
+        self.call_symbol(emu, emu_name, "printf", v1, v2, v3)
