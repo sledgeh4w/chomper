@@ -3,6 +3,8 @@
 Released: -
 
 - Support emulate executable files on iOS.
+- Support working with Objective-C.
+- Drop support for Python 3.7.
 
 ## v0.2.0
 
