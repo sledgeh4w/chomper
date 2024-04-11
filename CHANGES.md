@@ -1,6 +1,6 @@
 ## v0.3.0
 
-Released: -
+Released: 2024-04-12
 
 - Support emulate executable files on iOS.
 - Support working with Objective-C.
