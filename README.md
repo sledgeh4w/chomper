@@ -37,11 +37,11 @@ from chomper.const import ARCH_ARM64, OS_IOS
 emu = Chomper(
     arch=ARCH_ARM64,
     os_type=OS_IOS,
-    rootfs_path="examples/rootfs/ios",
+    rootfs_path="examples/ios/rootfs",
 )
 
 # Load main program
-duapp = emu.load_module("examples/apps/ios/com.siwuai.duapp/DUApp")
+duapp = emu.load_module("examples/ios/apps/com.siwuai.duapp/DUApp")
 
 s = "chomper"
 
@@ -68,10 +68,10 @@ from chomper.const import ARCH_ARM64, OS_IOS
 emu = Chomper(
     arch=ARCH_ARM64,
     os_type=OS_IOS,
-    rootfs_path="examples/rootfs/ios",
+    rootfs_path="examples/ios/rootfs",
 )
 
-emu.load_module("examples/apps/ios/cn.com.scal.sichuanair/zsch")
+emu.load_module("examples/ios/apps/cn.com.scal.sichuanair/zsch")
 
 # The ObjC can only be used through c functions for now,
 # more friendly API will be probided in the future.
@@ -104,8 +104,8 @@ from chomper.const import ARCH_ARM64, OS_ANDROID
 emu = Chomper(arch=ARCH_ARM64, os_type=OS_ANDROID)
 
 # Load C standard and other libraries
-emu.load_module("examples/rootfs/android/system/lib64/libc.so")
-emu.load_module("examples/rootfs/android/system/lib64/libz.so")
+emu.load_module("examples/android/rootfs/system/lib64/libc.so")
+emu.load_module("examples/android/rootfs/system/lib64/libz.so")
 
 libszstone = emu.load_module(
     "examples/apps/android/com.shizhuang.duapp/libszstone.so",
@@ -139,11 +139,11 @@ Trace instructions.
 emu = Chomper(arch=ARCH_ARM64, os_type=OS_ANDROID, trace_instr=True)
 
 # Trace instructions in this module
-emu.load_module("examples/rootfs/android/system/lib64/libc.so", trace_inst=True)
+emu.load_module("examples/android/rootfs/system/lib64/libc.so", trace_inst=True)
 ```
 
 Execute initialization functions in section `.init_array`.
 
 ```python
-emu.load_module("examples/apps/android/com.shizhuang.duapp/libszstone.so", exec_init_array=True)
+emu.load_module("examples/android/apps/com.shizhuang.duapp/libszstone.so", exec_init_array=True)
 ```
