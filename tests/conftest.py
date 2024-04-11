@@ -7,15 +7,15 @@ from chomper.const import ARCH_ARM, ARCH_ARM64, OS_IOS
 
 base_path = os.path.abspath(os.path.dirname(__file__))
 
-android_lib_path = os.path.join(base_path, "../examples/rootfs/android/system/lib")
-android_lib64_path = os.path.join(base_path, "../examples/rootfs/android/system/lib64")
+android_lib_path = os.path.join(base_path, "../examples/android/rootfs/system/lib")
+android_lib64_path = os.path.join(base_path, "../examples/android/rootfs/system/lib64")
 
-ios_rootfs_path = os.path.join(base_path, "../examples/rootfs/ios")
+ios_rootfs_path = os.path.join(base_path, "../examples/ios/rootfs")
 
 com_shizhuang_duapp_path = os.path.join(
-    base_path, "../examples/apps/android/com.shizhuang.duapp"
+    base_path, "../examples/android/apps/com.shizhuang.duapp"
 )
-com_xingin_xhs_path = os.path.join(base_path, "../examples/apps/android/com.xingin.xhs")
+com_xingin_xhs_path = os.path.join(base_path, "../examples/android/apps/com.xingin.xhs")
 
 
 @pytest.fixture(scope="module")

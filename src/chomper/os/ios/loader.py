@@ -214,7 +214,7 @@ class MachoLoader(BaseLoader):
 
         values = self.emu.read_array(begin, end)
 
-        return [module_base + addr for addr in values if addr]
+        return [addr for addr in values if addr]
 
     def load(
         self,
