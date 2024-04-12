@@ -38,14 +38,16 @@ class IosModule:
     def relocate_refs(self, binary, module_base: int):
         """Relocate all references."""
         for section in binary.sections:
-            for pos in range(0, len(section.content) - 8 + 1):
-                value = int.from_bytes(section.content[pos : pos + 8], "little")
+            content = section.content
+
+            value = int.from_bytes(content[:7], "little") << 8
+
+            for pos in range(0, len(content) - 7):
+                value = (value >> 8) + (content[pos + 7] << (7 * 8))
 
                 if value in self.refs_reloc:
                     address = module_base + section.virtual_address + pos
                     self.emu.write_pointer(address, module_base + value)
-
-        self.refs_reloc.clear()
 
     def relocate_symbols(self, binary: lief.MachO.Binary):
         """Relocate references to all symbols."""
@@ -67,8 +69,8 @@ class IosModule:
                 if flags == 0x50000000 and reversed_value == 0:
                     self.relocate_address(module_base, address + 0x10)
 
-    def fix_sections(self, binary: lief.MachO.Binary, module_base: int):
-        """Fix sections which contains pointers."""
+    def fixup_sections(self, binary: lief.MachO.Binary, module_base: int):
+        """Fixup sections which contains pointers."""
         section_names = [
             "__objc_classlist",
             "__objc_catlist",
@@ -91,21 +93,21 @@ class IosModule:
 
             if section_name == "__objc_classlist":
                 for value in values:
-                    self.fix_class_struct(module_base, value)
+                    self.fixup_class_struct(module_base, value)
                     self.set_refs_reloc(value)
 
                     meta_class_ptr = self.emu.read_pointer(module_base + value)
 
-                    self.fix_class_struct(module_base, meta_class_ptr)
+                    self.fixup_class_struct(module_base, meta_class_ptr)
                     self.set_refs_reloc(meta_class_ptr)
 
             elif section_name == "__objc_catlist":
                 for value in values:
-                    self.fix_category_struct(module_base, value)
+                    self.fixup_category_struct(module_base, value)
 
             elif section_name == "__objc_protolist":
                 for value in values:
-                    self.fix_protocol_struct(module_base, value)
+                    self.fixup_protocol_struct(module_base, value)
 
             elif section_name == "__objc_protorefs":
                 for value in values:
@@ -124,7 +126,7 @@ class IosModule:
                     symbol_name.startswith("_OBJC_METACLASS_$")
                     or symbol_name.startswith("_OBJC_CLASS_$")
                 ):
-                    self.fix_class_struct(module_base, symbol.value)
+                    self.fixup_class_struct(module_base, symbol.value)
                     self.set_refs_reloc(symbol.value)
 
         if not binary.has_section("__objc_protolist"):
@@ -132,10 +134,10 @@ class IosModule:
                 symbol_name = str(symbol.name)
 
                 if symbol.value and symbol_name.startswith("__OBJC_PROTOCOL_$"):
-                    self.fix_protocol_struct(module_base, symbol.value)
+                    self.fixup_protocol_struct(module_base, symbol.value)
 
-    def fix_method_list(self, module_base: int, address: int):
-        """Fix the method list struct."""
+    def fixup_method_list(self, module_base: int, address: int):
+        """Fixup the method list struct."""
         method_list_ptr = self.relocate_address(module_base, address)
         if not method_list_ptr:
             return
@@ -151,10 +153,10 @@ class IosModule:
             for i in range(count):
                 method_ptr = method_list_ptr + 8 + i * 0x18
 
-                # Fix method SEL
+                # Fixup method SEL
                 self.relocate_address(module_base, method_ptr)
 
-                # Fix method IMPL
+                # Fixup method IMPL
                 self.relocate_address(module_base, method_ptr + 0x10)
 
         else:
@@ -162,11 +164,11 @@ class IosModule:
                 sel_offset_ptr = method_list_ptr + 8 + i * 12
                 sel_offset = self.emu.read_u32(sel_offset_ptr)
 
-                # Fix method SEL
+                # Fixup method SEL
                 self.relocate_address(module_base, sel_offset_ptr + sel_offset)
 
-    def fix_variable_list(self, module_base: int, address: int):
-        """Fix the variable list struct."""
+    def fixup_variable_list(self, module_base: int, address: int):
+        """Fixup the variable list struct."""
         variable_list_ptr = self.relocate_address(module_base, address)
         if not variable_list_ptr:
             return
@@ -180,8 +182,8 @@ class IosModule:
             self.relocate_address(module_base, variable_offset + 0x8)
             self.relocate_address(module_base, variable_offset + 0x16)
 
-    def fix_protocol_list(self, module_base: int, address: int):
-        """Fix the protocol list struct."""
+    def fixup_protocol_list(self, module_base: int, address: int):
+        """Fixup the protocol list struct."""
         protocol_list_ptr = self.relocate_address(module_base, address)
         if not protocol_list_ptr:
             return
@@ -194,8 +196,8 @@ class IosModule:
             protocol_address = self.relocate_address(module_base, protocol_offset)
             self.relocate_address(module_base, protocol_address + 0x8)
 
-    def fix_class_struct(self, module_base: int, address: int):
-        """Fix the class struct."""
+    def fixup_class_struct(self, module_base: int, address: int):
+        """Fixup the class struct."""
         address += module_base
 
         data_ptr = self.emu.read_pointer(address + 0x20)
@@ -208,16 +210,16 @@ class IosModule:
             self.set_refs_reloc(name_ptr)
 
         instance_methods_ptr = data_ptr + 0x20
-        self.fix_method_list(module_base, instance_methods_ptr)
+        self.fixup_method_list(module_base, instance_methods_ptr)
 
         protocols_ptr = data_ptr + 0x28
-        self.fix_protocol_list(module_base, protocols_ptr)
+        self.fixup_protocol_list(module_base, protocols_ptr)
 
         instance_variables_ptr = data_ptr + 0x30
-        self.fix_variable_list(module_base, instance_variables_ptr)
+        self.fixup_variable_list(module_base, instance_variables_ptr)
 
-    def fix_protocol_struct(self, module_base: int, address: int):
-        """Fix the protocol struct."""
+    def fixup_protocol_struct(self, module_base: int, address: int):
+        """Fixup the protocol struct."""
         address += module_base
 
         name_ptr = self.emu.read_pointer(address + 0x8)
@@ -225,20 +227,20 @@ class IosModule:
             self.set_refs_reloc(name_ptr)
 
         protocols_ptr = address + 0x10
-        self.fix_protocol_list(module_base, protocols_ptr)
+        self.fixup_protocol_list(module_base, protocols_ptr)
 
-    def fix_category_struct(self, module_base: int, address: int):
-        """Fix the category struct."""
+    def fixup_category_struct(self, module_base: int, address: int):
+        """Fixup the category struct."""
         address += module_base
 
         instance_methods_ptr = address + 0x10
-        self.fix_method_list(module_base, instance_methods_ptr)
+        self.fixup_method_list(module_base, instance_methods_ptr)
 
         class_methods_ptr = address + 0x18
-        self.fix_method_list(module_base, class_methods_ptr)
+        self.fixup_method_list(module_base, class_methods_ptr)
 
-    def fix_cstring_section(self, binary: lief.MachO.Binary):
-        """Fix the `__cstring` section."""
+    def fixup_cstring_section(self, binary: lief.MachO.Binary):
+        """Fixup the `__cstring` section."""
         section = binary.get_section("__cstring")
         if not section:
             return
@@ -254,8 +256,8 @@ class IosModule:
                 self.set_refs_reloc(section.virtual_address + start)
                 start = offset + 1
 
-    def fix_cfstring_section(self, binary: lief.MachO.Binary, module_base: int):
-        """Fix the `__cfstring` section."""
+    def fixup_cfstring_section(self, binary: lief.MachO.Binary, module_base: int):
+        """Fixup the `__cfstring` section."""
         section_map = {
             "__cfstring": 0x20,
             "__cfstring_CFN": 0x38,
@@ -275,8 +277,8 @@ class IosModule:
                 self.set_refs_reloc(start + offset)
                 offset += step
 
-    def fix_cf_uni_char_string(self, binary: lief.MachO.Binary):
-        """Fix references of the string which used by `__CFUniCharLoadFile`."""
+    def fixup_cf_uni_char_string(self, binary: lief.MachO.Binary):
+        """Fixup references of the string which used by `__CFUniCharLoadFile`."""
         section_names = ["__csbitmaps", "__data", "__properties"]
 
         for section_name in section_names:
@@ -284,8 +286,8 @@ class IosModule:
             if section:
                 self.set_refs_reloc(section.virtual_address)
 
-    def fix_image(self, module: Module):
-        """Fix the image."""
+    def fixup_image(self, module: Module):
+        """Fixup the image."""
         if not module.binary:
             return
 
@@ -293,26 +295,31 @@ class IosModule:
 
         self.relocate_symbols(module.binary)
         self.relocate_block_invoke_calls(module.binary, module_base)
-        self.fix_sections(module.binary, module_base)
-        self.fix_cstring_section(module.binary)
-        self.fix_cfstring_section(module.binary, module_base)
-        self.fix_cf_uni_char_string(module.binary)
+        self.fixup_sections(module.binary, module_base)
+        self.fixup_cstring_section(module.binary)
+        self.fixup_cfstring_section(module.binary, module_base)
+        self.fixup_cf_uni_char_string(module.binary)
         self.relocate_refs(module.binary, module_base)
 
+        self.reloc_map.clear()
+        self.refs_reloc.clear()
+
     def init_objc(self, module: Module):
+        """Initialize Objective-C."""
         self.emu.os.init_objc(module)
 
     def initialize(self, module: Module):
-        self.fix_image(module)
+        self.fixup_image(module)
         self.init_objc(module)
 
-    def load(self) -> Module:
+    def resolve(self):
         module_path = self.emu.os.find_system_module(self.MODULE_NAME)
-        module = self.emu.load_module(module_path, exec_objc_init=False)
 
+        module = self.emu.load_module(module_path, exec_objc_init=False)
         self.initialize(module)
 
-        return module
+        if module.binary:
+            module.binary = None
 
 
 class SystemPlatform(IosModule):
@@ -456,7 +463,7 @@ class Objc(IosModule):
     MODULE_NAME = "libobjc.A.dylib"
 
     def initialize(self, module):
-        self.fix_image(module)
+        self.fixup_image(module)
 
         prototypes = self.emu.find_symbol("__ZL10prototypes")
         self.emu.write_u64(prototypes.address, 0)
