@@ -69,7 +69,7 @@ class IosOs(BaseOs):
                 continue
 
             module = module_class(self.emu)
-            module.load()
+            module.resolve()
 
     def init_objc(self, module: Module):
         """Initialize Objective-C."""
@@ -103,6 +103,9 @@ class IosOs(BaseOs):
         except Exception as e:
             self.emu.logger.error("Initialize Objective-C failed.")
             self.emu.logger.exception(e)
+
+        finally:
+            module.binary = None
 
     def enable_objc(self):
         """Enable Objective-C support."""
