@@ -52,7 +52,11 @@ class IosOs(BaseOs):
             if os.path.exists(lib_path):
                 return lib_path
 
-            framework_path = os.path.join(path, f"{module_name}.framework")
+            framework_path = ''
+            if module_name.endswith('.dylib'):
+                framework_path = os.path.join(path, module_name)
+            else:
+                framework_path = os.path.join(path, f"{module_name}.framework")
             if os.path.exists(framework_path):
                 return os.path.join(framework_path, module_name)
 
