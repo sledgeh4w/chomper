@@ -1,7 +1,7 @@
 import logging
 import re
 from functools import wraps
-from typing import Callable, Dict, List, Optional, Tuple, Type, Union
+from typing import Callable, Dict, List, Optional, Tuple, Union
 
 from capstone import CS_ARCH_ARM, CS_ARCH_ARM64, CS_MODE_ARM, CS_MODE_THUMB, Cs
 from unicorn import (
@@ -22,7 +22,7 @@ from . import const
 from .arch import arm_arch, arm64_arch
 from .exceptions import EmulatorCrashedException, SymbolMissingException
 from .memory import MemoryManager
-from .types import Module, Symbol, OptionsTV
+from .types import Module, Symbol
 from .log import get_logger
 from .os.android import AndroidOs
 from .os.ios import IosOs
@@ -30,7 +30,7 @@ from .utils import aligned
 
 
 class Chomper:
-    """Lightweight emulation framework for mobile platform (Android, iOS).
+    """Lightweight emulation framework for emulating native programs on Android and iOS.
 
     Args:
         arch: The architecture to emulate, support ARM and ARM64.
@@ -39,11 +39,15 @@ class Chomper:
         logger: The logger to print log.
         endian: Default endian to use.
         enable_vfp: Enable VFP extension of ARM.
+        enable_objc: Enable Objective-C runtime of iOS.
+        enable_ui_kit: Enable UIKit framework of iOS.
         trace_inst: Print log when any instruction is executed. The emulator will
             call disassembler in real time to display the assembly instructions,
             so this will slow down the emulation.
         trace_symbol_calls: Print log when any symbol is called.
     """
+
+    os: Union[AndroidOs, IosOs]
 
     def __init__(
         self,
@@ -54,9 +58,10 @@ class Chomper:
         endian: const.EndianType = const.LITTLE_ENDIAN,
         rootfs_path: Optional[str] = None,
         enable_vfp: bool = True,
+        enable_objc: bool = True,
+        enable_ui_kit: bool = False,
         trace_inst: bool = False,
         trace_symbol_calls: bool = False,
-        os_options: Optional[OptionsTV] = None,
     ):
         self._setup_arch(arch)
 
@@ -67,6 +72,9 @@ class Chomper:
 
         self.os_type = os_type
         self.endian = endian
+
+        self.enable_objc = enable_objc
+        self.enable_ui_kit = enable_ui_kit
 
         self._trace_inst = trace_inst
         self._trace_symbol_calls = trace_symbol_calls
@@ -85,16 +93,8 @@ class Chomper:
         self._setup_emulator(enable_vfp=enable_vfp)
         self._setup_interrupt_handler()
 
-        os_cls: Union[Type[AndroidOs], Type[IosOs]]
+        self._setup_os(os_type, rootfs_path=rootfs_path)
 
-        if os_type == const.OS_ANDROID:
-            os_cls = AndroidOs
-        elif os_type == const.OS_IOS:
-            os_cls = IosOs
-        else:
-            raise ValueError("Unsupported platform type")
-
-        self.os = os_cls(self, rootfs_path=rootfs_path, options=os_options)
         self.os.initialize()
 
     def _setup_arch(self, arch: int):
@@ -105,6 +105,15 @@ class Chomper:
             self.arch = arm64_arch
         else:
             raise ValueError("Invalid argument arch")
+
+    def _setup_os(self, os_type: int, **kwargs):
+        """Setup operating system."""
+        if os_type == const.OS_ANDROID:
+            self.os = AndroidOs(self, **kwargs)
+        elif os_type == const.OS_IOS:
+            self.os = IosOs(self, **kwargs)
+        else:
+            raise ValueError("Unsupported platform type")
 
     @staticmethod
     def _create_uc(arch: int, mode: int) -> Uc:
@@ -431,11 +440,15 @@ class Chomper:
     def _dispatch_syscall(self):
         """Dispatch system calls to the registered handlers of the OS."""
         if self.os_type == const.OS_IOS:
-            syscall_id = self.uc.reg_read(arm64_const.UC_ARM64_REG_X16)
-            syscall_handler = self.syscall_handlers.get(syscall_id)
+            syscall_no = self.uc.reg_read(arm64_const.UC_ARM64_REG_X16)
+            syscall_handler = self.syscall_handlers.get(syscall_no)
 
             if syscall_handler:
-                syscall_handler(self)
+                result = syscall_handler(self)
+
+                if result is not None:
+                    self.set_retval(result)
+
                 return
 
         self.crash("Unhandled system call")
@@ -496,45 +509,46 @@ class Chomper:
 
         for key, exec_func in exec_func_map.items():
             if inst.startswith(key):
-                value = exec_func(regs, value)
+                result = exec_func(regs[0], regs[1], value)
 
-                if value is not None:
-                    write_func(addr, value % (2**op_bits))
+                if result is not None:
+                    write_func(addr, result % (2**op_bits))
 
                 return True
 
         return False
 
-    def _exec_inst_ldxr(self, regs: List[int], value: int):
+    def _exec_inst_ldxr(self, s: int, t: int, v: int) -> Optional[int]:
         """Execute `ldxr` instruction."""
-        self.uc.reg_write(regs[0], value)
+        self.uc.reg_write(s, v)
         return None
 
-    def _exec_inst_ldadd(self, regs: List[int], value: int):
+    def _exec_inst_ldadd(self, s: int, t: int, v: int) -> Optional[int]:
         """Execute `ldadd` instruction."""
-        self.uc.reg_write(regs[1], value)
-        value += self.uc.reg_read(regs[0])
-        return value
+        self.uc.reg_write(t, v)
+        v += self.uc.reg_read(s)
+        return v
 
-    def _exec_inst_ldset(self, regs: List[int], value: int):
+    def _exec_inst_ldset(self, s: int, t: int, v: int) -> Optional[int]:
         """Execute `ldset` instruction."""
-        self.uc.reg_write(regs[1], value)
-        value |= self.uc.reg_read(regs[0])
-        return value
+        self.uc.reg_write(t, v)
+        v |= self.uc.reg_read(s)
+        return v
 
-    def _exec_inst_swp(self, regs: List[int], value: int):
+    def _exec_inst_swp(self, s: int, t: int, v: int) -> Optional[int]:
         """Execute `swp` instruction."""
-        self.uc.reg_write(regs[1], value)
-        value = self.uc.reg_read(regs[0])
-        return value
+        self.uc.reg_write(t, v)
+        v = self.uc.reg_read(s)
+        return v
 
-    def _exec_inst_cas(self, regs: List[int], value: int):
+    def _exec_inst_cas(self, s: int, t: int, v: int) -> Optional[int]:
         """Execute `cas` instruction."""
-        self.uc.reg_write(regs[0], value)
+        n = self.uc.reg_read(s)
 
-        if self.uc.reg_read(regs[0]) == value:
-            value = self.uc.reg_read(regs[1])
-            return value
+        self.uc.reg_write(s, v)
+
+        if n == v:
+            return self.uc.reg_read(t)
 
         return None
 

@@ -1,39 +1,47 @@
 import uuid
+from collections import defaultdict
+from typing import Dict, Type
 
 import lief
 
 from chomper.types import Module
 
 
-class IosModule:
-    """System module on iOS."""
+class ModulePatch:
+    """Represents a patch to be applied to a module.
 
-    MODULE_NAME: str
+    These system modules are all extracted from `dyld_shared_cache`,
+    and they are lost part relocation information, which needs to be fixed;
+    In addition, some initialization processes that should have
+    been carried out by the system also need to be executed.
+    """
 
     def __init__(self, emu):
         self.emu = emu
 
-        self.reloc_map = {}
-        self.refs_reloc = set()
+        self._relocate_cache = {}
 
-    def relocate_address(self, module_base: int, address: int) -> int:
-        """Relocate the address."""
-        if address in self.reloc_map:
-            return self.reloc_map[address]
+        self._refs_relocations = set()
 
-        value = self.emu.read_pointer(address)
-        if not value:
-            return value
+    def relocate_pointer(self, module_base: int, address: int) -> int:
+        """Relocate pointer stored at the address."""
+        if address in self._relocate_cache:
+            return self._relocate_cache[address]
 
-        value += module_base
+        pointer = self.emu.read_pointer(address)
+        if not pointer:
+            return 0
 
-        self.emu.write_pointer(address, value)
-        self.reloc_map[address] = value
+        pointer += module_base
 
-        return value
+        self.emu.write_pointer(address, pointer)
+        self._relocate_cache[address] = pointer
 
-    def set_refs_reloc(self, address: int):
-        self.refs_reloc.add(address)
+        return pointer
+
+    def add_refs_relocation(self, address: int):
+        """Add the address to the reference relocation."""
+        self._refs_relocations.add(address)
 
     def relocate_refs(self, binary, module_base: int):
         """Relocate all references."""
@@ -45,7 +53,7 @@ class IosModule:
             for pos in range(0, len(content) - 7):
                 value = (value >> 8) + (content[pos + 7] << (7 * 8))
 
-                if value in self.refs_reloc:
+                if value in self._refs_relocations:
                     address = module_base + section.virtual_address + pos
                     self.emu.write_pointer(address, module_base + value)
 
@@ -55,7 +63,7 @@ class IosModule:
             if not symbol.value:
                 continue
 
-            self.set_refs_reloc(symbol.value)
+            self.add_refs_relocation(symbol.value)
 
     def relocate_block_invoke_calls(self, binary: lief.MachO.Binary, module_base: int):
         """Relocate function address for block struct."""
@@ -67,7 +75,7 @@ class IosModule:
                 reversed_value = self.emu.read_u32(address + 0xC)
 
                 if flags == 0x50000000 and reversed_value == 0:
-                    self.relocate_address(module_base, address + 0x10)
+                    self.relocate_pointer(module_base, address + 0x10)
 
     def fixup_sections(self, binary: lief.MachO.Binary, module_base: int):
         """Fixup sections which contains pointers."""
@@ -94,12 +102,12 @@ class IosModule:
             if section_name == "__objc_classlist":
                 for value in values:
                     self.fixup_class_struct(module_base, value)
-                    self.set_refs_reloc(value)
+                    self.add_refs_relocation(value)
 
                     meta_class_ptr = self.emu.read_pointer(module_base + value)
 
                     self.fixup_class_struct(module_base, meta_class_ptr)
-                    self.set_refs_reloc(meta_class_ptr)
+                    self.add_refs_relocation(meta_class_ptr)
 
             elif section_name == "__objc_catlist":
                 for value in values:
@@ -111,7 +119,7 @@ class IosModule:
 
             elif section_name == "__objc_protorefs":
                 for value in values:
-                    self.relocate_address(module_base, module_base + value + 8)
+                    self.relocate_pointer(module_base, module_base + value + 8)
 
             values = map(lambda v: module_base + v if v else 0, values)
             self.emu.write_array(begin, values)
@@ -127,7 +135,7 @@ class IosModule:
                     or symbol_name.startswith("_OBJC_CLASS_$")
                 ):
                     self.fixup_class_struct(module_base, symbol.value)
-                    self.set_refs_reloc(symbol.value)
+                    self.add_refs_relocation(symbol.value)
 
         if not binary.has_section("__objc_protolist"):
             for symbol in binary.symbols:
@@ -138,7 +146,7 @@ class IosModule:
 
     def fixup_method_list(self, module_base: int, address: int):
         """Fixup the method list struct."""
-        method_list_ptr = self.relocate_address(module_base, address)
+        method_list_ptr = self.relocate_pointer(module_base, address)
         if not method_list_ptr:
             return
 
@@ -154,10 +162,10 @@ class IosModule:
                 method_ptr = method_list_ptr + 8 + i * 0x18
 
                 # Fixup method SEL
-                self.relocate_address(module_base, method_ptr)
+                self.relocate_pointer(module_base, method_ptr)
 
                 # Fixup method IMPL
-                self.relocate_address(module_base, method_ptr + 0x10)
+                self.relocate_pointer(module_base, method_ptr + 0x10)
 
         else:
             for i in range(count):
@@ -165,11 +173,11 @@ class IosModule:
                 sel_offset = self.emu.read_u32(sel_offset_ptr)
 
                 # Fixup method SEL
-                self.relocate_address(module_base, sel_offset_ptr + sel_offset)
+                self.relocate_pointer(module_base, sel_offset_ptr + sel_offset)
 
     def fixup_variable_list(self, module_base: int, address: int):
         """Fixup the variable list struct."""
-        variable_list_ptr = self.relocate_address(module_base, address)
+        variable_list_ptr = self.relocate_pointer(module_base, address)
         if not variable_list_ptr:
             return
 
@@ -178,13 +186,13 @@ class IosModule:
         for i in range(count):
             variable_offset = variable_list_ptr + 8 + i * 0x18
 
-            self.relocate_address(module_base, variable_offset)
-            self.relocate_address(module_base, variable_offset + 0x8)
-            self.relocate_address(module_base, variable_offset + 0x16)
+            self.relocate_pointer(module_base, variable_offset)
+            self.relocate_pointer(module_base, variable_offset + 0x8)
+            self.relocate_pointer(module_base, variable_offset + 0x16)
 
     def fixup_protocol_list(self, module_base: int, address: int):
         """Fixup the protocol list struct."""
-        protocol_list_ptr = self.relocate_address(module_base, address)
+        protocol_list_ptr = self.relocate_pointer(module_base, address)
         if not protocol_list_ptr:
             return
 
@@ -193,21 +201,21 @@ class IosModule:
         for i in range(count):
             protocol_offset = protocol_list_ptr + 8 + i * 0x8
 
-            protocol_address = self.relocate_address(module_base, protocol_offset)
-            self.relocate_address(module_base, protocol_address + 0x8)
+            protocol_address = self.relocate_pointer(module_base, protocol_offset)
+            self.relocate_pointer(module_base, protocol_address + 0x8)
 
     def fixup_class_struct(self, module_base: int, address: int):
         """Fixup the class struct."""
         address += module_base
 
         data_ptr = self.emu.read_pointer(address + 0x20)
-        self.set_refs_reloc(data_ptr)
+        self.add_refs_relocation(data_ptr)
 
         data_ptr += module_base
 
         name_ptr = self.emu.read_pointer(data_ptr + 0x18)
         if name_ptr:
-            self.set_refs_reloc(name_ptr)
+            self.add_refs_relocation(name_ptr)
 
         instance_methods_ptr = data_ptr + 0x20
         self.fixup_method_list(module_base, instance_methods_ptr)
@@ -224,7 +232,7 @@ class IosModule:
 
         name_ptr = self.emu.read_pointer(address + 0x8)
         if name_ptr:
-            self.set_refs_reloc(name_ptr)
+            self.add_refs_relocation(name_ptr)
 
         protocols_ptr = address + 0x10
         self.fixup_protocol_list(module_base, protocols_ptr)
@@ -253,7 +261,7 @@ class IosModule:
 
         for offset in range(section.size):
             if section_content[offset] == 0:
-                self.set_refs_reloc(section.virtual_address + start)
+                self.add_refs_relocation(section.virtual_address + start)
                 start = offset + 1
 
     def fixup_cfstring_section(self, binary: lief.MachO.Binary, module_base: int):
@@ -273,8 +281,8 @@ class IosModule:
 
             while offset < section.size:
                 address = module_base + start + offset + 0x10
-                self.relocate_address(module_base, address)
-                self.set_refs_reloc(start + offset)
+                self.relocate_pointer(module_base, address)
+                self.add_refs_relocation(start + offset)
                 offset += step
 
     def fixup_cf_uni_char_string(self, binary: lief.MachO.Binary):
@@ -284,7 +292,7 @@ class IosModule:
         for section_name in section_names:
             section = binary.get_section("__UNICODE", section_name)
             if section:
-                self.set_refs_reloc(section.virtual_address)
+                self.add_refs_relocation(section.virtual_address)
 
     def fixup_image(self, module: Module):
         """Fixup the image."""
@@ -295,39 +303,45 @@ class IosModule:
 
         self.relocate_symbols(module.binary)
         self.relocate_block_invoke_calls(module.binary, module_base)
+
         self.fixup_sections(module.binary, module_base)
         self.fixup_cstring_section(module.binary)
         self.fixup_cfstring_section(module.binary, module_base)
         self.fixup_cf_uni_char_string(module.binary)
+
         self.relocate_refs(module.binary, module_base)
 
-        self.reloc_map.clear()
-        self.refs_reloc.clear()
+        self._relocate_cache.clear()
+        self._refs_relocations.clear()
 
     def init_objc(self, module: Module):
         """Initialize Objective-C."""
         self.emu.os.init_objc(module)
 
-    def initialize(self, module: Module):
+    def patch(self, module: Module):
         self.fixup_image(module)
         self.init_objc(module)
 
-    def resolve(self):
-        module_path = self.emu.os.find_system_module(self.MODULE_NAME)
 
-        module = self.emu.load_module(module_path, exec_objc_init=False)
-        self.initialize(module)
-
-        if module.binary:
-            module.binary = None
+module_patch_map: Dict[str, Type[ModulePatch]] = defaultdict(lambda: ModulePatch)
 
 
-class SystemPlatform(IosModule):
-    MODULE_NAME = "libsystem_platform.dylib"
+def register_module_patch(module_name: str):
+    """Decorator to register a module patch."""
 
-    def set_arch_flag(self):
-        """Set a flag meaning the arch type, which will be read by functions
-        such as `_os_unfair_recursive_lock_lock_with_options`."""
+    def decorator(cls):
+        module_patch_map[module_name] = cls
+
+        return cls
+
+    return decorator
+
+
+@register_module_patch("libsystem_platform.dylib")
+class SystemPlatformPatch(ModulePatch):
+    def patch(self, module):
+        super().patch(module)
+
         self.emu.uc.mem_map(0xFFFFFC000, 1024)
 
         # arch flag
@@ -335,30 +349,12 @@ class SystemPlatform(IosModule):
 
         self.emu.write_u64(0xFFFFFC104, 0x100)
 
-    def initialize(self, module):
-        self.set_arch_flag()
-        super().initialize(module)
 
-
-class SystemKernel(IosModule):
-    MODULE_NAME = "libsystem_kernel.dylib"
-
-
-class SystemC(IosModule):
-    MODULE_NAME = "libsystem_c.dylib"
-
+@register_module_patch("libsystem_c.dylib")
+class SystemCPatch(ModulePatch):
     def init_program_vars(self):
         """Initialize program variables."""
-        argc = self.emu.create_buffer(8)
-        self.emu.write_int(argc, 0, 8)
-
-        nxargc_pointer = self.emu.find_symbol("_NXArgc_pointer")
-        self.emu.write_pointer(nxargc_pointer.address, argc)
-
-        nxargv_pointer = self.emu.find_symbol("_NXArgv_pointer")
-        self.emu.write_pointer(nxargv_pointer.address, self.emu.create_string(""))
-
-        environ_dict = {
+        environ_vars = {
             "__CF_USER_TEXT_ENCODING": "0:0",
             "CFN_USE_HTTP3": "0",
             "CFStringDisableROM": "1",
@@ -368,20 +364,29 @@ class SystemC(IosModule):
             ),
         }
 
-        size = self.emu.arch.addr_size * len(environ_dict) + 1
-        environ_values = self.emu.create_buffer(size)
+        argc = self.emu.create_buffer(8)
+        self.emu.write_int(argc, 0, 8)
+
+        nx_argc_pointer = self.emu.find_symbol("_NXArgc_pointer")
+        self.emu.write_pointer(nx_argc_pointer.address, argc)
+
+        nx_argv_pointer = self.emu.find_symbol("_NXArgv_pointer")
+        self.emu.write_pointer(nx_argv_pointer.address, self.emu.create_string(""))
+
+        size = self.emu.arch.addr_size * len(environ_vars) + 1
+        environ_buf = self.emu.create_buffer(size)
 
         offset = 0x0
 
-        for key, value in environ_dict.items():
+        for key, value in environ_vars.items():
             prop_str = self.emu.create_string(f"{key}={value}")
-            self.emu.write_pointer(environ_values + offset, prop_str)
+            self.emu.write_pointer(environ_buf + offset, prop_str)
             offset += self.emu.arch.addr_size
 
-        self.emu.write_pointer(environ_values + offset, 0)
+        self.emu.write_pointer(environ_buf + offset, 0)
 
         environ = self.emu.create_buffer(8)
-        self.emu.write_pointer(environ, environ_values)
+        self.emu.write_pointer(environ, environ_buf)
 
         environ_pointer = self.emu.find_symbol("_environ_pointer")
         self.emu.write_pointer(environ_pointer.address, environ)
@@ -389,8 +394,8 @@ class SystemC(IosModule):
         progname_pointer = self.emu.find_symbol("___progname_pointer")
         self.emu.write_pointer(progname_pointer.address, self.emu.create_string(""))
 
-    def initialize(self, module):
-        super().initialize(module)
+    def patch(self, module):
+        super().patch(module)
 
         symbol_names = ("___locale_key", "___global_locale")
 
@@ -401,43 +406,10 @@ class SystemC(IosModule):
         self.init_program_vars()
 
 
-class SystemPthread(IosModule):
-    MODULE_NAME = "libsystem_pthread.dylib"
-
-
-class SystemInfo(IosModule):
-    MODULE_NAME = "libsystem_info.dylib"
-
-
-class SystemDarwin(IosModule):
-    MODULE_NAME = "libsystem_darwin.dylib"
-
-
-class SystemFeatureflags(IosModule):
-    MODULE_NAME = "libsystem_featureflags.dylib"
-
-
-class Corecrypto(IosModule):
-    MODULE_NAME = "libcorecrypto.dylib"
-
-
-class CommonCrypto(IosModule):
-    MODULE_NAME = "libcommonCrypto.dylib"
-
-
-class Cppabi(IosModule):
-    MODULE_NAME = "libc++abi.dylib"
-
-
-class Cpp(IosModule):
-    MODULE_NAME = "libc++.1.dylib"
-
-
-class Dyld(IosModule):
-    MODULE_NAME = "libdyld.dylib"
-
-    def initialize(self, module):
-        super().initialize(module)
+@register_module_patch("libdyld.dylib")
+class DyldPatch(ModulePatch):
+    def patch(self, module):
+        super().patch(module)
 
         g_use_dyld3 = self.emu.find_symbol("_gUseDyld3")
         self.emu.write_u8(g_use_dyld3.address, 1)
@@ -459,10 +431,9 @@ class Dyld(IosModule):
         self.emu.write_pointer(dyld_all_images.address + 0x50, platform_ptr)
 
 
-class Objc(IosModule):
-    MODULE_NAME = "libobjc.A.dylib"
-
-    def initialize(self, module):
+@register_module_patch("libobjc.A.dylib")
+class ObjcPatch(ModulePatch):
+    def patch(self, module):
         self.fixup_image(module)
 
         prototypes = self.emu.find_symbol("__ZL10prototypes")
@@ -485,51 +456,37 @@ class Objc(IosModule):
         self.init_objc(module)
 
 
-class Dispatch(IosModule):
-    MODULE_NAME = "libdispatch.dylib"
-
-    def initialize(self, module):
+@register_module_patch("libdispatch.dylib")
+class DispatchPatch(ModulePatch):
+    def patch(self, module):
         symbol = self.emu.find_symbol("_OBJC_CLASS_$_OS_dispatch_queue_serial")
         offsets = [0x30, 0x50, 0x58]
 
         for offset in offsets:
             address = self.emu.read_pointer(symbol.address + offset)
-            self.set_refs_reloc(address)
+            self.add_refs_relocation(address)
 
-        super().initialize(module)
-
-
-class SystemBlocks(IosModule):
-    MODULE_NAME = "libsystem_blocks.dylib"
+        super().patch(module)
 
 
-class SystemTrace(IosModule):
-    MODULE_NAME = "libsystem_trace.dylib"
-
-    def initialize(self, module):
-        super().initialize(module)
+@register_module_patch("libsystem_trace.dylib")
+class SystemTracePatch(ModulePatch):
+    def patch(self, module):
+        super().patch(module)
 
         self.emu.write_u64(0xFFFFFC104, 0x100)
 
 
-class SystemSandbox(IosModule):
-    MODULE_NAME = "libsystem_sandbox.dylib"
+@register_module_patch("CoreFoundation")
+class CoreFoundationPatch(ModulePatch):
+    def patch(self, module):
+        super().patch(module)
 
-
-class Network(IosModule):
-    MODULE_NAME = "libnetwork.dylib"
-
-
-class CoreFoundation(IosModule):
-    MODULE_NAME = "CoreFoundation"
-
-    def initialize(self, module):
-        super().initialize(module)
-
-        cf_process_path_str = (
+        process_path = (
             f"/private/var/containers/Bundle/Application/{uuid.uuid4()}/App.app"
         )
-        cf_process_path_ptr = self.emu.create_string(cf_process_path_str)
+
+        cf_process_path_ptr = self.emu.create_string(process_path)
 
         cf_process_path = self.emu.find_symbol("___CFProcessPath")
         self.emu.write_pointer(cf_process_path.address, cf_process_path_ptr)
@@ -537,69 +494,23 @@ class CoreFoundation(IosModule):
         self.emu.call_symbol("___CFInitialize")
 
 
-class CFNetwork(IosModule):
-    MODULE_NAME = "CFNetwork"
-
-    def initialize(self, module):
+@register_module_patch("CFNetwork")
+class CFNetworkPatch(ModulePatch):
+    def patch(self, module):
         offset = module.base - module.image_base + 0x1D1C28610
 
         for i in range(25):
             address = self.emu.read_pointer(offset + i * 8)
-            self.set_refs_reloc(address)
+            self.add_refs_relocation(address)
 
-        self.set_refs_reloc(0x180A63880)
+        self.add_refs_relocation(0x180A63880)
 
-        super().initialize(module)
+        super().patch(module)
 
 
-class Foundation(IosModule):
-    MODULE_NAME = "Foundation"
-
-    def initialize(self, module):
-        super().initialize(module)
+@register_module_patch("Foundation")
+class FoundationPatch(ModulePatch):
+    def patch(self, module):
+        super().patch(module)
 
         self.emu.call_symbol("__NSInitializePlatform")
-
-
-class Security(IosModule):
-    MODULE_NAME = "Security"
-
-
-class QuartzCore(IosModule):
-    MODULE_NAME = "QuartzCore"
-
-
-class BaseBoard(IosModule):
-    MODULE_NAME = "BaseBoard"
-
-
-class FrontBoardServices(IosModule):
-    MODULE_NAME = "FrontBoardServices"
-
-
-class PrototypeTools(IosModule):
-    MODULE_NAME = "PrototypeTools"
-
-
-class TextInput(IosModule):
-    MODULE_NAME = "TextInput"
-
-
-class PhysicsKit(IosModule):
-    MODULE_NAME = "PhysicsKit"
-
-
-class CoreAutoLayout(IosModule):
-    MODULE_NAME = "CoreAutoLayout"
-
-
-class UIFoundation(IosModule):
-    MODULE_NAME = "UIFoundation"
-
-
-class UIKitServices(IosModule):
-    MODULE_NAME = "UIKitServices"
-
-
-class UIKitCore(IosModule):
-    MODULE_NAME = "UIKitCore"

@@ -4,7 +4,8 @@ from typing import Dict, List, Tuple, Optional
 import lief
 from lief.MachO import BIND_TYPES, ARM64_RELOCATION
 
-from chomper.types import BaseLoader, Module, Symbol, Binding
+from chomper.abc import BaseLoader
+from chomper.types import Module, Symbol, Binding
 from chomper.utils import aligned
 
 
@@ -110,7 +111,7 @@ class MachoLoader(BaseLoader):
         symbols: List[Symbol],
     ) -> List[Binding]:
         """Process relocations for symbols."""
-        symbol_map = self.get_loaded_symbols()
+        symbol_map = self.get_symbols()
         symbol_map.update({symbol.name: symbol for symbol in symbols})
 
         hooks_map: Dict = {}

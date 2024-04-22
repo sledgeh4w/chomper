@@ -1,9 +1,8 @@
 import logging
 import os
 
-from chomper.core import Chomper
-from chomper.const import OS_IOS
-from chomper.os.ios.options import IosOptions
+from chomper import Chomper
+from chomper.const import ARCH_ARM64, OS_IOS
 
 base_path = os.path.abspath(os.path.dirname(__file__))
 
@@ -17,14 +16,14 @@ logger = logging.getLogger(__name__)
 
 
 def create_emulator():
-    options = IosOptions(enable_objc=True, enable_ui_kit=True)
-    emu = Chomper(
+    return Chomper(
+        arch=ARCH_ARM64,
         os_type=OS_IOS,
         logger=logger,
         rootfs_path=os.path.join(base_path, "ios/rootfs"),
-        os_options=options,
+        enable_objc=True,
+        enable_ui_kit=True,
     )
-    return emu
 
 
 def objc_get_class(emu, class_name):
@@ -35,7 +34,7 @@ def objc_sel_register_name(emu, sel_name):
     return emu.call_symbol("_sel_registerName", emu.create_string(sel_name))
 
 
-def create_ns_string(emu, s):
+def objc_create_ns_string(emu, s):
     ns_string_class = objc_get_class(emu, "NSString")
     string_with_utf8_string_sel = objc_sel_register_name(emu, "stringWithUTF8String:")
     obj = emu.call_symbol(
@@ -47,7 +46,7 @@ def create_ns_string(emu, s):
     return obj
 
 
-def read_ns_string(emu, obj):
+def objc_read_ns_string(emu, obj):
     c_string_using_encoding_sel = objc_sel_register_name(emu, "cStringUsingEncoding:")
     ptr = emu.call_symbol("_objc_msgSend", obj, c_string_using_encoding_sel, 4)
     return emu.read_string(ptr)
@@ -77,18 +76,18 @@ def main():
     jm_box_153_jm_box_501_sel = objc_sel_register_name(emu, "JMBox153:JMBox501:")
 
     encrypt_data = '{"biClassId":["2","3","4"]}'
-    encrypt_input = create_ns_string(emu, encrypt_data)
+    encrypt_input = objc_create_ns_string(emu, encrypt_data)
 
     encrypt_result = emu.call_symbol("_objc_msgSend", jm_box_125_class, jm_box_167_jm_box_501_sel, encrypt_input, 1)
 
-    logger.info("encrypt_result: %s", read_ns_string(emu, encrypt_result))
+    logger.info("encrypt_result: %s", objc_read_ns_string(emu, encrypt_result))
 
     decrypt_data = "XKQYFMCP9Eb0IUzrQ9KaRRvTeFcYYyLcInrS/IWp6be1+VZa14GanCrzeb3DR45HW+XH0xiZLA5WUjUcXnlpM+CC6EtauUDUxCLap3QPWRyewLUosCB/ESHE7341DQca6lx5KFcP0XCkBpGlEKpACR5v7TwNBxc62auNBDvmEY422LTAUEEBrC8FDE+Y4DS2IJTLN6h9f7hdmQ4zUnY4cwyZXwgdIoH+bVuNy6TSw1JjQaFF/fLLHVZOQovrMcjtTpMZGr8xOSoW/+msiZzKwET3"
-    decrypt_input = create_ns_string(emu, decrypt_data)
+    decrypt_input = objc_create_ns_string(emu, decrypt_data)
 
     decrypt_result = emu.call_symbol("_objc_msgSend", jm_box_125_class, jm_box_153_jm_box_501_sel, decrypt_input, 1)
 
-    logger.info("decrypt_result: %s", read_ns_string(emu, decrypt_result))
+    logger.info("decrypt_result: %s", objc_read_ns_string(emu, decrypt_result))
 
 
 if __name__ == "__main__":
