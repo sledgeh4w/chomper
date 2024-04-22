@@ -6,7 +6,8 @@ from elftools.elf.elffile import ELFFile
 from elftools.elf.enums import ENUM_RELOC_TYPE_AARCH64, ENUM_RELOC_TYPE_ARM
 from elftools.elf.relocation import Relocation
 
-from chomper.types import BaseLoader, Module, Symbol, SymbolType
+from chomper.abc import BaseLoader
+from chomper.types import Module, Symbol, SymbolType
 from chomper.utils import aligned
 
 
@@ -111,7 +112,7 @@ class ELFLoader(BaseLoader):
         symbols: List[Symbol],
     ):
         """Process relocation tables."""
-        symbol_map = self.get_loaded_symbols()
+        symbol_map = self.get_symbols()
         symbol_map.update({symbol.name: symbol for symbol in symbols})
 
         for segment in elffile.iter_segments(type="PT_DYNAMIC"):

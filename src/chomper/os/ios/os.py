@@ -2,37 +2,82 @@ import os
 from ctypes import sizeof
 from typing import List
 
-from . import modules
-from .hooks import IosFuncHooks
-from .loader import MachoLoader
-from .options import IosOptions
-from .structs import MachHeader64
-from .syscall import IosSyscallHandler
-
-from chomper.types import BaseOs, Module
+from chomper.abc import BaseOs
+from chomper.types import Module
 from chomper.utils import struct2bytes
+from chomper.os.ios.hooks import hooks
+from chomper.os.ios.loader import MachoLoader
+from chomper.os.ios.module import module_patch_map
+from chomper.os.ios.structs import MachHeader64
+from chomper.os.ios.syscall import syscall_handlers
 
 
 class IosOs(BaseOs):
-    """The iOS environment."""
+    """Provide iOS runtime environment."""
 
     def __init__(self, emu, **kwargs):
         super().__init__(emu, **kwargs)
 
-        if not self.options:
-            self.options = IosOptions()
-
         self.loader = MachoLoader(emu)
 
-    def init_hooks(self):
+    def _setup_hooks(self):
         """Initialize the hooks."""
-        IosFuncHooks.register(self.emu)
+        self.emu.hooks.update(hooks)
 
-    def init_syscall_handlers(self):
+    def _setup_syscall_handlers(self):
         """Initialize the system call handlers."""
-        IosSyscallHandler.register(self.emu)
+        self.emu.syscall_handlers.update(syscall_handlers)
 
-    def find_system_module(self, module_name: str) -> str:
+    def _enable_objc(self):
+        """Enable Objective-C support."""
+        dependencies = [
+            "libsystem_platform.dylib",
+            "libsystem_kernel.dylib",
+            "libsystem_c.dylib",
+            "libsystem_pthread.dylib",
+            "libsystem_info.dylib",
+            "libsystem_darwin.dylib",
+            "libsystem_featureflags.dylib",
+            "libcorecrypto.dylib",
+            "libcommonCrypto.dylib",
+            "libc++abi.dylib",
+            "libc++.1.dylib",
+            "libdyld.dylib",
+            "libobjc.A.dylib",
+            "libdispatch.dylib",
+            "libsystem_blocks.dylib",
+            "libsystem_trace.dylib",
+            "libsystem_sandbox.dylib",
+            "libnetwork.dylib",
+            "CoreFoundation",
+            "CFNetwork",
+            "Foundation",
+            "Security",
+        ]
+
+        self.load_system_modules(dependencies)
+
+    def _enable_ui_kit(self):
+        """Enable UIKit support.
+
+        Mainly used to load `UIDevice` class, which is used to get device info.
+        """
+        dependencies = [
+            "QuartzCore",
+            "BaseBoard",
+            "FrontBoardServices",
+            "PrototypeTools",
+            "TextInput",
+            "PhysicsKit",
+            "CoreAutoLayout",
+            "UIFoundation",
+            "UIKitServices",
+            "UIKitCore",
+        ]
+
+        self.load_system_modules(dependencies)
+
+    def locate_system_module(self, module_name: str) -> str:
         """Find system module in rootfs directory.
 
         raises:
@@ -58,45 +103,41 @@ class IosOs(BaseOs):
 
         raise FileNotFoundError("Module '%s' not found" % module_name)
 
-    def check_module(self, module_name: str) -> bool:
-        """Check if the module exist."""
-        return module_name in (t.name for t in self.emu.modules)
-
-    def resolve_modules(self, module_classes: List):
-        """Load modules if don't exist."""
-        for module_class in module_classes:
-            if self.check_module(module_class.MODULE_NAME):
+    def load_system_modules(self, module_names: List):
+        """Load modules if don't loaded."""
+        for module_name in module_names:
+            if self.emu.find_module(module_name):
                 continue
 
-            module = module_class(self.emu)
-            module.resolve()
+            module_path = self.emu.os.locate_system_module(module_name)
+            module = self.emu.load_module(module_path, exec_objc_init=False)
+
+            module_patch_cls = module_patch_map[module_name]
+            module_patch_cls(self.emu).patch(module)
 
     def init_objc(self, module: Module):
         """Initialize Objective-C."""
-        if not self.check_module(modules.Objc.MODULE_NAME):
+        if not self.emu.find_module("libobjc.A.dylib") or not module.binary:
             return
 
-        if not module.binary:
-            return
+        mach_header = MachHeader64(
+            magic=module.binary.header.magic.value,
+            cputype=module.binary.header.cpu_type.value,
+            cpusubtype=module.binary.header.cpu_subtype,
+            filetype=module.binary.header.file_type.value,
+            ncmds=module.binary.header.nb_cmds,
+            sizeofcmds=module.binary.header.sizeof_cmds,
+            flags=module.binary.header.flags,
+            reserved=module.binary.header.reserved,
+        )
+
+        mach_header_ptr = self.emu.create_buffer(sizeof(MachHeader64))
+        self.emu.write_bytes(mach_header_ptr, struct2bytes(mach_header))
+
+        mach_header_ptrs = self.emu.create_buffer(self.emu.arch.addr_size)
+        self.emu.write_pointer(mach_header_ptrs, mach_header_ptr)
 
         try:
-            mach_header = MachHeader64(
-                magic=module.binary.header.magic.value,
-                cputype=module.binary.header.cpu_type.value,
-                cpusubtype=module.binary.header.cpu_subtype,
-                filetype=module.binary.header.file_type.value,
-                ncmds=module.binary.header.nb_cmds,
-                sizeofcmds=module.binary.header.sizeof_cmds,
-                flags=module.binary.header.flags,
-                reserved=module.binary.header.reserved,
-            )
-
-            mach_header_ptr = self.emu.create_buffer(sizeof(MachHeader64))
-            self.emu.write_bytes(mach_header_ptr, struct2bytes(mach_header))
-
-            mach_header_ptrs = self.emu.create_buffer(self.emu.arch.addr_size)
-            self.emu.write_pointer(mach_header_ptrs, mach_header_ptr)
-
             self.emu.call_symbol("_map_images", 1, 0, mach_header_ptrs)
             self.emu.call_symbol("_load_images")
 
@@ -107,62 +148,13 @@ class IosOs(BaseOs):
         finally:
             module.binary = None
 
-    def enable_objc(self):
-        """Enable Objective-C support."""
-        dependent_modules = [
-            modules.SystemPlatform,
-            modules.SystemKernel,
-            modules.SystemC,
-            modules.SystemPthread,
-            modules.SystemInfo,
-            modules.SystemDarwin,
-            modules.SystemFeatureflags,
-            modules.Corecrypto,
-            modules.CommonCrypto,
-            modules.Cppabi,
-            modules.Cpp,
-            modules.Dyld,
-            modules.Objc,
-            modules.Dispatch,
-            modules.SystemBlocks,
-            modules.SystemTrace,
-            modules.SystemSandbox,
-            modules.Network,
-            modules.CoreFoundation,
-            modules.CFNetwork,
-            modules.Foundation,
-            modules.Security,
-        ]
-
-        self.resolve_modules(dependent_modules)
-
-    def enable_ui_kit(self):
-        """Enable UIKit support.
-
-        Mainly used to load `UIDevice` class, which is used to get device info.
-        """
-        dependent_modules = [
-            modules.QuartzCore,
-            modules.BaseBoard,
-            modules.FrontBoardServices,
-            modules.PrototypeTools,
-            modules.TextInput,
-            modules.PhysicsKit,
-            modules.CoreAutoLayout,
-            modules.UIFoundation,
-            modules.UIKitServices,
-            modules.UIKitCore,
-        ]
-
-        self.resolve_modules(dependent_modules)
-
     def initialize(self):
         """Initialize the environment."""
-        self.init_hooks()
-        self.init_syscall_handlers()
+        self._setup_hooks()
+        self._setup_syscall_handlers()
 
-        if self.options.enable_objc:
-            self.enable_objc()
+        if self.emu.enable_objc:
+            self._enable_objc()
 
-        if self.options.enable_ui_kit:
-            self.enable_ui_kit()
+        if self.emu.enable_ui_kit:
+            self._enable_ui_kit()
