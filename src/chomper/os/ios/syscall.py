@@ -2,8 +2,11 @@ import os
 import random
 import time
 import threading
+import uuid
 from functools import wraps
 from typing import Callable, Dict
+
+from unicorn import arm64_const
 
 from chomper.os.ios import const
 
@@ -11,7 +14,12 @@ from chomper.os.ios import const
 syscall_handlers: Dict[int, Callable] = {}
 
 
-def register_handler(syscall_no: int):
+def get_syscall_handlers() -> Dict[int, Callable]:
+    """Get the default system call handlers."""
+    return syscall_handlers.copy()
+
+
+def register_syscall_handler(syscall_no: int):
     """Decorator to register a system call handler."""
 
     def wrapper(func):
@@ -25,32 +33,42 @@ def register_handler(syscall_no: int):
     return wrapper
 
 
-@register_handler(const.SYS_GETPID)
+def clear_carry_flag(emu):
+    """Clear the carry flag.
+
+    Some system functions will check the carry flag after system calls,
+    such as `_csops` and `proc_pidpath`.
+    """
+    nzcv = emu.uc.reg_read(arm64_const.UC_ARM64_REG_NZCV)
+    emu.uc.reg_write(arm64_const.UC_ARM64_REG_NZCV, nzcv & ~(1 << 29))
+
+
+@register_syscall_handler(const.SYS_GETPID)
 def handle_sys_getpid(emu):
     return os.getpid()
 
 
-@register_handler(const.SYS_GETUID)
+@register_syscall_handler(const.SYS_GETUID)
 def handle_sys_getuid(emu):
     return 1
 
 
-@register_handler(const.SYS_GETEUID)
+@register_syscall_handler(const.SYS_GETEUID)
 def handle_sys_geteuid(emu):
     return 1
 
 
-@register_handler(const.SYS_ACCESS)
+@register_syscall_handler(const.SYS_ACCESS)
 def handle_sys_access(emu):
     return 0
 
 
-@register_handler(const.SYS_GETEGID)
+@register_syscall_handler(const.SYS_GETEGID)
 def handle_sys_getegid(emu):
     return 1
 
 
-@register_handler(const.SYS_GETTIMEOFDAY)
+@register_syscall_handler(const.SYS_GETTIMEOFDAY)
 def handle_sys_gettimeofday(emu):
     tv = emu.get_arg(0)
 
@@ -60,17 +78,28 @@ def handle_sys_gettimeofday(emu):
     return 0
 
 
-@register_handler(const.SYS_SYSCTL)
+@register_syscall_handler(const.SYS_CSOPS)
+def handle_sys_csops(emu):
+    useraddr = emu.get_arg(2)
+
+    emu.write_u32(useraddr, 0x4000800)
+
+    clear_carry_flag(emu)
+
+    return 0
+
+
+@register_syscall_handler(const.SYS_SYSCTL)
 def handle_sys_sysctl(emu):
     return 0
 
 
-@register_handler(const.SYS_SHM_OPEN)
+@register_syscall_handler(const.SYS_SHM_OPEN)
 def handle_sys_shm_open(emu):
     return 0x80000000
 
 
-@register_handler(const.SYS_SYSCTLBYNAME)
+@register_syscall_handler(const.SYS_SYSCTLBYNAME)
 def handle_sys_sysctlbyname(emu):
     name = emu.read_string(emu.get_arg(0))
     oldp = emu.get_arg(2)
@@ -91,24 +120,38 @@ def handle_sys_sysctlbyname(emu):
         emu.write_u64(oldp, 4 * 1024 * 1024 * 1024)
 
     else:
-        emu.logger.warning("Unhandled sysctlbyname: %s" % name)
+        emu.logger.warning("Unhandled sysctl command: %s" % name)
         # raise RuntimeError("Unhandled sysctl command: %s" % name)
 
     return 0
 
 
-@register_handler(const.SYS_GETTID)
+@register_syscall_handler(const.SYS_GETTID)
 def handle_sys_gettid(emu):
     thread = threading.current_thread()
     return thread.ident
 
 
-@register_handler(const.SYS_ISSETUGID)
+@register_syscall_handler(const.SYS_ISSETUGID)
 def handle_sys_issetugid(emu):
     return 0
 
 
-@register_handler(const.SYS_STAT64)
+@register_syscall_handler(const.SYS_PROC_INFO)
+def handle_sys_proc_info(emu):
+    buffer = emu.get_arg(4)
+
+    process_path = (
+        "/private/var/containers/Bundle/Application/%s/App.app" % uuid.uuid4()
+    )
+    emu.write_string(buffer, process_path)
+
+    clear_carry_flag(emu)
+
+    return 0
+
+
+@register_syscall_handler(const.SYS_STAT64)
 def handle_sys_stat64(emu):
     # path = emu.read_string(emu.get_arg(0))
     stat = emu.get_arg(1)
@@ -119,7 +162,7 @@ def handle_sys_stat64(emu):
     return 0
 
 
-@register_handler(const.SYS_LSTAT64)
+@register_syscall_handler(const.SYS_LSTAT64)
 def handle_sys_lstat64(emu):
     # path = emu.read_string(emu.get_arg(0))
     stat = emu.get_arg(1)
@@ -130,7 +173,7 @@ def handle_sys_lstat64(emu):
     return 0
 
 
-@register_handler(const.SYS_GETENTROPY)
+@register_syscall_handler(const.SYS_GETENTROPY)
 def handle_sys_getentropy(emu):
     buffer = emu.get_arg(0)
     size = emu.get_arg(1)
@@ -141,12 +184,12 @@ def handle_sys_getentropy(emu):
     return 0
 
 
-@register_handler(const.MACH_ABSOLUTE_TIME_TRAP)
+@register_syscall_handler(const.MACH_ABSOLUTE_TIME_TRAP)
 def handle_mach_absolute_time_trap(emu):
     emu.set_retval(int(time.time_ns() % (3600 * 10**9)))
 
 
-@register_handler(const.MACH_TIMEBASE_INFO_TRAP)
+@register_syscall_handler(const.MACH_TIMEBASE_INFO_TRAP)
 def handle_mach_timebase_info_trap(emu):
     info = emu.get_arg(0)
 
@@ -156,7 +199,7 @@ def handle_mach_timebase_info_trap(emu):
     return 0
 
 
-@register_handler(const.MACH_MSG_TRAP)
+@register_syscall_handler(const.MACH_MSG_TRAP)
 def handle_mach_msg_trap(emu):
     # msg = emu.get_arg(0)
 
@@ -172,12 +215,12 @@ def handle_mach_msg_trap(emu):
     return 6
 
 
-@register_handler(const.MACH_REPLY_PORT_TRAP)
+@register_syscall_handler(const.MACH_REPLY_PORT_TRAP)
 def handle_mach_reply_port_trap(emu):
     return 0
 
 
-@register_handler(const.KERNELRPC_MACH_VM_MAP_TRAP)
+@register_syscall_handler(const.KERNELRPC_MACH_VM_MAP_TRAP)
 def handle_kernelrpc_mach_vm_map_trap(emu):
     address = emu.get_arg(1)
     size = emu.get_arg(2)
