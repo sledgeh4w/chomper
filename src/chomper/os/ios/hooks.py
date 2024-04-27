@@ -10,6 +10,11 @@ from unicorn.unicorn import UC_HOOK_CODE_TYPE
 hooks: Dict[str, UC_HOOK_CODE_TYPE] = {}
 
 
+def get_hooks() -> Dict[str, UC_HOOK_CODE_TYPE]:
+    """Returns a dictionary of default hooks."""
+    return hooks.copy()
+
+
 def register_hook(symbol_name: str):
     """Decorator to register a hook function for a given symbol name."""
 
@@ -69,14 +74,20 @@ def hook_sysctlbyname(uc, address, size, user_data):
         emu.write_u64(oldp + 8, 0)
 
     elif name == "kern.osvariant_status":
+        variant_status = 0
+
+        # can_has_debugger = 3
+        variant_status |= 3 << 2
+
         # internal_release_type = 3
-        emu.write_u64(oldp, 0x30)
+        variant_status |= 3 << 4
+
+        emu.write_u64(oldp, variant_status)
 
     elif name == "hw.memsize":
         emu.write_u64(oldp, 4 * 1024 * 1024 * 1024)
 
     else:
-        emu.logger.info([emu.debug_symbol(t[0]) for t in emu.backtrace()])
         raise RuntimeError("Unhandled sysctl command: %s" % name)
 
     return 0
@@ -305,16 +316,6 @@ def hook_posix_memalign(uc, address, size, user_data):
 
     mem = emu.memory_manager.alloc(size)
     emu.write_pointer(memptr, mem)
-
-    return 0
-
-
-@register_hook("_fopen")
-def hook_fopen(uc, address, size, user_data):
-    emu = user_data["emu"]
-
-    path = emu.read_string(emu.get_arg(0))
-    emu.logger.info("fopen: %s" % path)
 
     return 0
 

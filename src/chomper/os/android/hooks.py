@@ -8,6 +8,11 @@ from unicorn.unicorn import UC_HOOK_CODE_TYPE
 hooks: Dict[str, UC_HOOK_CODE_TYPE] = {}
 
 
+def get_hooks() -> Dict[str, UC_HOOK_CODE_TYPE]:
+    """Returns a dictionary of default hooks."""
+    return hooks.copy()
+
+
 def register_hook(symbol_name: str):
     """Decorator to register a hook function for a given symbol name."""
 

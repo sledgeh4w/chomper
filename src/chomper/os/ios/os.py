@@ -1,15 +1,16 @@
 import os
+import uuid
 from ctypes import sizeof
 from typing import List
 
 from chomper.abc import BaseOs
 from chomper.types import Module
 from chomper.utils import struct2bytes
-from chomper.os.ios.hooks import hooks
+from chomper.os.ios.fixup import SystemModuleFixup
+from chomper.os.ios.hooks import get_hooks
 from chomper.os.ios.loader import MachoLoader
-from chomper.os.ios.module import module_patch_map
 from chomper.os.ios.structs import MachHeader64
-from chomper.os.ios.syscall import syscall_handlers
+from chomper.os.ios.syscall import get_syscall_handlers
 
 
 class IosOs(BaseOs):
@@ -22,103 +23,120 @@ class IosOs(BaseOs):
 
     def _setup_hooks(self):
         """Initialize the hooks."""
-        self.emu.hooks.update(hooks)
+        self.emu.hooks.update(get_hooks())
 
     def _setup_syscall_handlers(self):
         """Initialize the system call handlers."""
-        self.emu.syscall_handlers.update(syscall_handlers)
+        self.emu.syscall_handlers.update(get_syscall_handlers())
 
-    def _enable_objc(self):
-        """Enable Objective-C support."""
-        dependencies = [
-            "libsystem_platform.dylib",
-            "libsystem_kernel.dylib",
-            "libsystem_c.dylib",
-            "libsystem_pthread.dylib",
-            "libsystem_info.dylib",
-            "libsystem_darwin.dylib",
-            "libsystem_featureflags.dylib",
-            "libcorecrypto.dylib",
-            "libcommonCrypto.dylib",
-            "libc++abi.dylib",
-            "libc++.1.dylib",
-            "libdyld.dylib",
-            "libobjc.A.dylib",
-            "libdispatch.dylib",
-            "libsystem_blocks.dylib",
-            "libsystem_trace.dylib",
-            "libsystem_sandbox.dylib",
-            "libnetwork.dylib",
-            "CoreFoundation",
-            "CFNetwork",
-            "Foundation",
-            "Security",
-        ]
+    def _init_special_flag(self):
+        """Set a flag meaning the arch type, which will be read by functions
+        such as `_os_unfair_recursive_lock_lock_with_options`."""
+        self.emu.uc.mem_map(0xFFFFFC000, 1024)
 
-        self.load_system_modules(dependencies)
+        # arch flag
+        self.emu.write_u64(0xFFFFFC023, 2)
 
-    def _enable_ui_kit(self):
-        """Enable UIKit support.
+        self.emu.write_u64(0xFFFFFC104, 0x100)
 
-        Mainly used to load `UIDevice` class, which is used to get device info.
-        """
-        dependencies = [
-            "QuartzCore",
-            "BaseBoard",
-            "FrontBoardServices",
-            "PrototypeTools",
-            "TextInput",
-            "PhysicsKit",
-            "CoreAutoLayout",
-            "UIFoundation",
-            "UIKitServices",
-            "UIKitCore",
-        ]
+    def _init_program_vars(self):
+        """Initialize program variables, works like `__program_vars_init`."""
+        environ_vars = {
+            "__CF_USER_TEXT_ENCODING": "0:0",
+            "CFN_USE_HTTP3": "0",
+            "CFStringDisableROM": "1",
+            "HOME": (
+                f"/Users/Sergey/Library/Developer/CoreSimulator/Devices/{uuid.uuid4()}"
+                f"/data/Containers/Data/Application/{uuid.uuid4()}"
+            ),
+        }
 
-        self.load_system_modules(dependencies)
+        argc = self.emu.create_buffer(8)
+        self.emu.write_int(argc, 0, 8)
 
-    def locate_system_module(self, module_name: str) -> str:
-        """Find system module in rootfs directory.
+        nx_argc_pointer = self.emu.find_symbol("_NXArgc_pointer")
+        self.emu.write_pointer(nx_argc_pointer.address, argc)
 
-        raises:
-            FileNotFoundError: If module not found.
-        """
-        lib_dirs = [
-            "usr/lib/system",
-            "usr/lib",
-            "System/Library/Frameworks",
-            "System/Library/PrivateFrameworks",
-        ]
+        nx_argv_pointer = self.emu.find_symbol("_NXArgv_pointer")
+        self.emu.write_pointer(nx_argv_pointer.address, self.emu.create_string(""))
 
-        for lib_dir in lib_dirs:
-            path = os.path.join(self.rootfs_path or ".", lib_dir)
+        size = self.emu.arch.addr_size * len(environ_vars) + 1
+        environ_buf = self.emu.create_buffer(size)
 
-            lib_path = os.path.join(path, module_name)
-            if os.path.exists(lib_path):
-                return lib_path
+        offset = 0x0
 
-            framework_path = os.path.join(path, f"{module_name}.framework")
-            if os.path.exists(framework_path):
-                return os.path.join(framework_path, module_name)
+        for key, value in environ_vars.items():
+            prop_str = self.emu.create_string(f"{key}={value}")
+            self.emu.write_pointer(environ_buf + offset, prop_str)
+            offset += self.emu.arch.addr_size
 
-        raise FileNotFoundError("Module '%s' not found" % module_name)
+        self.emu.write_pointer(environ_buf + offset, 0)
 
-    def load_system_modules(self, module_names: List):
-        """Load modules if don't loaded."""
-        for module_name in module_names:
-            if self.emu.find_module(module_name):
-                continue
+        environ = self.emu.create_buffer(8)
+        self.emu.write_pointer(environ, environ_buf)
 
-            module_path = self.emu.os.locate_system_module(module_name)
-            module = self.emu.load_module(module_path, exec_objc_init=False)
+        environ_pointer = self.emu.find_symbol("_environ_pointer")
+        self.emu.write_pointer(environ_pointer.address, environ)
 
-            module_patch_cls = module_patch_map[module_name]
-            module_patch_cls(self.emu).patch(module)
+        progname_pointer = self.emu.find_symbol("___progname_pointer")
+        self.emu.write_pointer(progname_pointer.address, self.emu.create_string(""))
+
+    def _init_dyld_vars(self):
+        """Initialize global variables in `libdyld.dylib`."""
+        g_use_dyld3 = self.emu.find_symbol("_gUseDyld3")
+        self.emu.write_u8(g_use_dyld3.address, 1)
+
+        dyld_all_images = self.emu.find_symbol("__ZN5dyld310gAllImagesE")
+
+        # dyld3::closure::ContainerTypedBytes::findAttributePayload
+        attribute_payload_ptr = self.emu.create_buffer(8)
+
+        self.emu.write_u32(attribute_payload_ptr, 2**10)
+        self.emu.write_u8(attribute_payload_ptr + 4, 0x20)
+
+        self.emu.write_pointer(dyld_all_images.address, attribute_payload_ptr)
+
+        # dyld3::AllImages::platform
+        platform_ptr = self.emu.create_buffer(0x144)
+        self.emu.write_u32(platform_ptr + 0x140, 2)
+
+        self.emu.write_pointer(dyld_all_images.address + 0x50, platform_ptr)
+
+    def _init_objc_vars(self):
+        """Initialize global variables in `libobjc.A.dylib while
+        calling `__objc_init`."""
+        prototypes = self.emu.find_symbol("__ZL10prototypes")
+        self.emu.write_u64(prototypes.address, 0)
+
+        gdb_objc_realized_classes = self.emu.find_symbol("_gdb_objc_realized_classes")
+        protocolsv_ret = self.emu.call_symbol("__ZL9protocolsv")
+
+        self.emu.write_pointer(gdb_objc_realized_classes.address, protocolsv_ret)
+
+        opt = self.emu.find_symbol("__ZL3opt")
+        self.emu.write_pointer(opt.address, 0)
+
+        # Disable pre-optimization
+        disable_preopt = self.emu.find_symbol("_DisablePreopt")
+        self.emu.write_u8(disable_preopt.address, 1)
+
+        self.emu.call_symbol("__objc_init")
 
     def init_objc(self, module: Module):
-        """Initialize Objective-C."""
+        """Initialize Objective-C for the module.
+
+        Calling `map_images` and `load_images` of `libobjc.A.dylib`.
+        """
         if not self.emu.find_module("libobjc.A.dylib") or not module.binary:
             return
+
+        initialized = self.emu.find_symbol("__ZZ10_objc_initE11initialized")
+        if not self.emu.read_u8(initialized.address):
+            # As the initialization timing before program execution
+            self._init_special_flag()
+            self._init_program_vars()
+            self._init_dyld_vars()
+            self._init_objc_vars()
 
         mach_header = MachHeader64(
             magic=module.binary.header.magic.value,
@@ -147,6 +165,102 @@ class IosOs(BaseOs):
 
         finally:
             module.binary = None
+
+    def search_module(self, module_name: str) -> str:
+        """Search system module in rootfs directory.
+
+        raises:
+            FileNotFoundError: If module not found.
+        """
+        lib_dirs = [
+            "usr/lib/system",
+            "usr/lib",
+            "System/Library/Frameworks",
+            "System/Library/PrivateFrameworks",
+        ]
+
+        for lib_dir in lib_dirs:
+            path = os.path.join(self.rootfs_path or ".", lib_dir)
+
+            lib_path = os.path.join(path, module_name)
+            if os.path.exists(lib_path):
+                return lib_path
+
+            framework_path = os.path.join(path, f"{module_name}.framework")
+            if os.path.exists(framework_path):
+                return os.path.join(framework_path, module_name)
+
+        raise FileNotFoundError("Module '%s' not found" % module_name)
+
+    def resolve_modules(self, module_names: List[str]):
+        """Load system modules if don't loaded."""
+        patch = SystemModuleFixup(self.emu)
+
+        for module_name in module_names:
+            if self.emu.find_module(module_name):
+                continue
+
+            module_path = self.search_module(module_name)
+            module = self.emu.load_module(module_path, exec_objc_init=False)
+
+            patch.install(module)
+
+            self.init_objc(module)
+
+    def _enable_objc(self):
+        """Enable Objective-C support."""
+        dependencies = [
+            "libsystem_platform.dylib",
+            "libsystem_kernel.dylib",
+            "libsystem_c.dylib",
+            "libsystem_pthread.dylib",
+            "libsystem_info.dylib",
+            "libsystem_darwin.dylib",
+            "libsystem_featureflags.dylib",
+            "libcorecrypto.dylib",
+            "libcommonCrypto.dylib",
+            "libc++abi.dylib",
+            "libc++.1.dylib",
+            "libdyld.dylib",
+            "libobjc.A.dylib",
+            "libdispatch.dylib",
+            "libsystem_blocks.dylib",
+            "libsystem_trace.dylib",
+            "libsystem_sandbox.dylib",
+            "libnetwork.dylib",
+            "CoreFoundation",
+            "CFNetwork",
+            "Foundation",
+            "Security",
+        ]
+
+        self.resolve_modules(dependencies)
+
+        # Call initialize function of `CoreFoundation`
+        self.emu.call_symbol("___CFInitialize")
+
+        # Call initialize function of `Foundation`
+        self.emu.call_symbol("__NSInitializePlatform")
+
+    def _enable_ui_kit(self):
+        """Enable UIKit support.
+
+        Mainly used to load `UIDevice` class, which is used to get device info.
+        """
+        dependencies = [
+            "QuartzCore",
+            "BaseBoard",
+            "FrontBoardServices",
+            "PrototypeTools",
+            "TextInput",
+            "PhysicsKit",
+            "CoreAutoLayout",
+            "UIFoundation",
+            "UIKitServices",
+            "UIKitCore",
+        ]
+
+        self.resolve_modules(dependencies)
 
     def initialize(self):
         """Initialize the environment."""

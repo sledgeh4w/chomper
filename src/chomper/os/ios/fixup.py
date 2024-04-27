@@ -1,24 +1,20 @@
-import uuid
-from collections import defaultdict
-from typing import Dict, Type
-
 import lief
 
+from chomper.exceptions import SymbolMissingException
 from chomper.types import Module
 
 
-class ModulePatch:
-    """Represents a patch to be applied to a module.
+class SystemModuleFixup:
+    """Fixup system modules in iOS.
 
-    These system modules are all extracted from `dyld_shared_cache`,
-    and they are lost part relocation information, which needs to be fixed;
-    In addition, some initialization processes that should have
-    been carried out by the system also need to be executed.
+    System modules in the project are all extracted from `dyld_shared_cache`,
+    and they are lost part relocation information, which needs to be fixed.
     """
 
     def __init__(self, emu):
         self.emu = emu
 
+        # Filter duplicate relocations
         self._relocate_cache = {}
 
         self._refs_relocations = set()
@@ -43,7 +39,7 @@ class ModulePatch:
         """Add the address to the reference relocation."""
         self._refs_relocations.add(address)
 
-    def relocate_refs(self, binary, module_base: int):
+    def relocate_refs(self, binary: lief.MachO.Binary, module_base: int):
         """Relocate all references."""
         for section in binary.sections:
             content = section.content
@@ -294,8 +290,22 @@ class ModulePatch:
             if section:
                 self.add_refs_relocation(section.virtual_address)
 
-    def fixup_image(self, module: Module):
-        """Fixup the image."""
+    def fixup_dispatch_vtable(self):
+        """Fixup virtual function table in `libdipstch.dylib`."""
+        try:
+            symbol = self.emu.find_symbol("_OBJC_CLASS_$_OS_dispatch_queue_serial")
+
+            if symbol:
+                for i in range(6):
+                    offset = 0x30 + 0x8 * i
+                    address = self.emu.read_pointer(symbol.address + offset)
+                    self.add_refs_relocation(address)
+
+        except SymbolMissingException:
+            pass
+
+    def install(self, module: Module):
+        """Fixup image for the module."""
         if not module.binary:
             return
 
@@ -308,209 +318,9 @@ class ModulePatch:
         self.fixup_cstring_section(module.binary)
         self.fixup_cfstring_section(module.binary, module_base)
         self.fixup_cf_uni_char_string(module.binary)
+        self.fixup_dispatch_vtable()
 
         self.relocate_refs(module.binary, module_base)
 
         self._relocate_cache.clear()
         self._refs_relocations.clear()
-
-    def init_objc(self, module: Module):
-        """Initialize Objective-C."""
-        self.emu.os.init_objc(module)
-
-    def patch(self, module: Module):
-        self.fixup_image(module)
-        self.init_objc(module)
-
-
-module_patch_map: Dict[str, Type[ModulePatch]] = defaultdict(lambda: ModulePatch)
-
-
-def register_module_patch(module_name: str):
-    """Decorator to register a module patch."""
-
-    def decorator(cls):
-        module_patch_map[module_name] = cls
-
-        return cls
-
-    return decorator
-
-
-@register_module_patch("libsystem_platform.dylib")
-class SystemPlatformPatch(ModulePatch):
-    def patch(self, module):
-        super().patch(module)
-
-        self.emu.uc.mem_map(0xFFFFFC000, 1024)
-
-        # arch flag
-        self.emu.write_u64(0xFFFFFC023, 2)
-
-        self.emu.write_u64(0xFFFFFC104, 0x100)
-
-
-@register_module_patch("libsystem_c.dylib")
-class SystemCPatch(ModulePatch):
-    def init_program_vars(self):
-        """Initialize program variables."""
-        environ_vars = {
-            "__CF_USER_TEXT_ENCODING": "0:0",
-            "CFN_USE_HTTP3": "0",
-            "CFStringDisableROM": "1",
-            "HOME": (
-                f"/Users/Sergey/Library/Developer/CoreSimulator/Devices/{uuid.uuid4()}"
-                f"/data/Containers/Data/Application/{uuid.uuid4()}"
-            ),
-        }
-
-        argc = self.emu.create_buffer(8)
-        self.emu.write_int(argc, 0, 8)
-
-        nx_argc_pointer = self.emu.find_symbol("_NXArgc_pointer")
-        self.emu.write_pointer(nx_argc_pointer.address, argc)
-
-        nx_argv_pointer = self.emu.find_symbol("_NXArgv_pointer")
-        self.emu.write_pointer(nx_argv_pointer.address, self.emu.create_string(""))
-
-        size = self.emu.arch.addr_size * len(environ_vars) + 1
-        environ_buf = self.emu.create_buffer(size)
-
-        offset = 0x0
-
-        for key, value in environ_vars.items():
-            prop_str = self.emu.create_string(f"{key}={value}")
-            self.emu.write_pointer(environ_buf + offset, prop_str)
-            offset += self.emu.arch.addr_size
-
-        self.emu.write_pointer(environ_buf + offset, 0)
-
-        environ = self.emu.create_buffer(8)
-        self.emu.write_pointer(environ, environ_buf)
-
-        environ_pointer = self.emu.find_symbol("_environ_pointer")
-        self.emu.write_pointer(environ_pointer.address, environ)
-
-        progname_pointer = self.emu.find_symbol("___progname_pointer")
-        self.emu.write_pointer(progname_pointer.address, self.emu.create_string(""))
-
-    def patch(self, module):
-        super().patch(module)
-
-        symbol_names = ("___locale_key", "___global_locale")
-
-        for symbol_name in symbol_names:
-            symbol = self.emu.find_symbol(symbol_name)
-            self.emu.write_pointer(symbol.address, 0)
-
-        self.init_program_vars()
-
-
-@register_module_patch("libdyld.dylib")
-class DyldPatch(ModulePatch):
-    def patch(self, module):
-        super().patch(module)
-
-        g_use_dyld3 = self.emu.find_symbol("_gUseDyld3")
-        self.emu.write_u8(g_use_dyld3.address, 1)
-
-        dyld_all_images = self.emu.find_symbol("__ZN5dyld310gAllImagesE")
-
-        # dyld3::closure::ContainerTypedBytes::findAttributePayload
-        attribute_payload_ptr = self.emu.create_buffer(8)
-
-        self.emu.write_u32(attribute_payload_ptr, 2**10)
-        self.emu.write_u8(attribute_payload_ptr + 4, 0x20)
-
-        self.emu.write_pointer(dyld_all_images.address, attribute_payload_ptr)
-
-        # dyld3::AllImages::platform
-        platform_ptr = self.emu.create_buffer(0x144)
-        self.emu.write_u32(platform_ptr + 0x140, 2)
-
-        self.emu.write_pointer(dyld_all_images.address + 0x50, platform_ptr)
-
-
-@register_module_patch("libobjc.A.dylib")
-class ObjcPatch(ModulePatch):
-    def patch(self, module):
-        self.fixup_image(module)
-
-        prototypes = self.emu.find_symbol("__ZL10prototypes")
-        self.emu.write_u64(prototypes.address, 0)
-
-        gdb_objc_realized_classes = self.emu.find_symbol("_gdb_objc_realized_classes")
-        protocolsv_ret = self.emu.call_symbol("__ZL9protocolsv")
-
-        self.emu.write_pointer(gdb_objc_realized_classes.address, protocolsv_ret)
-
-        opt = self.emu.find_symbol("__ZL3opt")
-        self.emu.write_pointer(opt.address, 0)
-
-        # Disable pre-optimization
-        disable_preopt = self.emu.find_symbol("_DisablePreopt")
-        self.emu.write_u8(disable_preopt.address, 1)
-
-        self.emu.call_symbol("__objc_init")
-
-        self.init_objc(module)
-
-
-@register_module_patch("libdispatch.dylib")
-class DispatchPatch(ModulePatch):
-    def patch(self, module):
-        symbol = self.emu.find_symbol("_OBJC_CLASS_$_OS_dispatch_queue_serial")
-        offsets = [0x30, 0x50, 0x58]
-
-        for offset in offsets:
-            address = self.emu.read_pointer(symbol.address + offset)
-            self.add_refs_relocation(address)
-
-        super().patch(module)
-
-
-@register_module_patch("libsystem_trace.dylib")
-class SystemTracePatch(ModulePatch):
-    def patch(self, module):
-        super().patch(module)
-
-        self.emu.write_u64(0xFFFFFC104, 0x100)
-
-
-@register_module_patch("CoreFoundation")
-class CoreFoundationPatch(ModulePatch):
-    def patch(self, module):
-        super().patch(module)
-
-        process_path = (
-            f"/private/var/containers/Bundle/Application/{uuid.uuid4()}/App.app"
-        )
-
-        cf_process_path_ptr = self.emu.create_string(process_path)
-
-        cf_process_path = self.emu.find_symbol("___CFProcessPath")
-        self.emu.write_pointer(cf_process_path.address, cf_process_path_ptr)
-
-        self.emu.call_symbol("___CFInitialize")
-
-
-@register_module_patch("CFNetwork")
-class CFNetworkPatch(ModulePatch):
-    def patch(self, module):
-        offset = module.base - module.image_base + 0x1D1C28610
-
-        for i in range(25):
-            address = self.emu.read_pointer(offset + i * 8)
-            self.add_refs_relocation(address)
-
-        self.add_refs_relocation(0x180A63880)
-
-        super().patch(module)
-
-
-@register_module_patch("Foundation")
-class FoundationPatch(ModulePatch):
-    def patch(self, module):
-        super().patch(module)
-
-        self.emu.call_symbol("__NSInitializePlatform")
