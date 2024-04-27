@@ -1,5 +1,4 @@
 import logging
-import re
 from functools import wraps
 from typing import Callable, Dict, List, Optional, Tuple, Union
 
@@ -21,6 +20,7 @@ from unicorn.unicorn import UC_HOOK_CODE_TYPE
 from . import const
 from .arch import arm_arch, arm64_arch
 from .exceptions import EmulatorCrashedException, SymbolMissingException
+from .instruction import AutomicInstruction
 from .memory import MemoryManager
 from .types import Module, Symbol
 from .log import get_logger
@@ -42,7 +42,7 @@ class Chomper:
         enable_objc: Enable Objective-C runtime of iOS.
         enable_ui_kit: Enable UIKit framework of iOS.
         trace_inst: Print log when any instruction is executed. The emulator will
-            call disassembler in real time to display the assembly instructions,
+            call disassembler in real time to output the assembly instructions,
             so this will slow down the emulation.
         trace_symbol_calls: Print log when any symbol is called.
     """
@@ -379,12 +379,13 @@ class Chomper:
 
         raise EmulatorCrashedException(message)
 
-    def trace_symbol_call_callback(self, *args):
+    def trace_symbol_call_callback(
+        self, uc: Uc, address: int, size: int, user_data: dict
+    ):
         """Trace symbol call."""
-        user_data = args[-1]
         symbol = user_data["symbol"]
 
-        if self.arch == const.ARCH_ARM:
+        if self.arch == arm_arch:
             ret_addr = self.uc.reg_read(arm_const.UC_ARM_REG_LR)
         else:
             ret_addr = self.uc.reg_read(arm64_const.UC_ARM64_REG_LR)
@@ -427,13 +428,17 @@ class Chomper:
             return
 
         elif intno in (1, 4):
+            # Handle cpu exceptions
             address = self.uc.reg_read(self.arch.reg_pc)
-            inst = next(self.cs.disasm_lite(uc.mem_read(address, 4), 0))
-            result = self._handle_atomic_inst(inst)
+            code = uc.mem_read(address, 4)
 
-            if result:
+            try:
+                AutomicInstruction(self, code).execute()
                 self.uc.reg_write(arm64_const.UC_ARM64_REG_PC, address + 4)
                 return
+
+            except ValueError:
+                pass
 
         self.crash("Unhandled interruption %s" % (intno,))
 
@@ -452,105 +457,6 @@ class Chomper:
                 return
 
         self.crash("Unhandled system call")
-
-    def _handle_atomic_inst(self, inst: Tuple[int, int, str, str]) -> bool:
-        """Handle atomic instructions.
-
-        The iOS system libraries will use some atomic instructions from ARM v8.1.
-        However, Unicorn doesn't support these instructions, so we need to do some
-        simple simulation.
-
-        Returns:
-            True if the instruction is handled, False otherwise.
-        """
-        inst_set = ["ldxr", "ldadd", "ldset", "swp", "cas"]
-
-        if not any((inst[2].startswith(t) for t in inst_set)):
-            return False
-
-        match = re.match(r"(\w+), \[(\w+)]", inst[3])
-
-        if not match:
-            match = re.match(r"(\w+), (\w+), \[(\w+)]", inst[3])
-
-        if not match:
-            return False
-
-        if inst[2].endswith("b"):
-            op_bits = 8
-        elif re.search(r"w(\d+)", inst[3]):
-            op_bits = 32
-        else:
-            op_bits = 64
-
-        regs = []
-
-        for reg in match.groups():
-            attr = f"UC_ARM64_REG_{reg.upper()}"
-            regs.append(getattr(arm64_const, attr))
-
-        return self._exec_atomic_inst(inst[2], op_bits, regs)
-
-    def _exec_atomic_inst(self, inst: str, op_bits: int, regs: List[int]) -> bool:
-        """Execute an atomic instruction."""
-        exec_func_map = {
-            "ldxr": self._exec_inst_ldxr,
-            "ldadd": self._exec_inst_ldadd,
-            "ldset": self._exec_inst_ldset,
-            "swp": self._exec_inst_swp,
-            "cas": self._exec_inst_cas,
-        }
-
-        read_func = getattr(self, f"read_u{op_bits}")
-        write_func = getattr(self, f"write_u{op_bits}")
-
-        addr = self.uc.reg_read(regs[-1])
-        value = read_func(addr)
-
-        for key, exec_func in exec_func_map.items():
-            if inst.startswith(key):
-                result = exec_func(regs[0], regs[1], value)
-
-                if result is not None:
-                    write_func(addr, result % (2**op_bits))
-
-                return True
-
-        return False
-
-    def _exec_inst_ldxr(self, s: int, t: int, v: int) -> Optional[int]:
-        """Execute `ldxr` instruction."""
-        self.uc.reg_write(s, v)
-        return None
-
-    def _exec_inst_ldadd(self, s: int, t: int, v: int) -> Optional[int]:
-        """Execute `ldadd` instruction."""
-        self.uc.reg_write(t, v)
-        v += self.uc.reg_read(s)
-        return v
-
-    def _exec_inst_ldset(self, s: int, t: int, v: int) -> Optional[int]:
-        """Execute `ldset` instruction."""
-        self.uc.reg_write(t, v)
-        v |= self.uc.reg_read(s)
-        return v
-
-    def _exec_inst_swp(self, s: int, t: int, v: int) -> Optional[int]:
-        """Execute `swp` instruction."""
-        self.uc.reg_write(t, v)
-        v = self.uc.reg_read(s)
-        return v
-
-    def _exec_inst_cas(self, s: int, t: int, v: int) -> Optional[int]:
-        """Execute `cas` instruction."""
-        n = self.uc.reg_read(s)
-
-        self.uc.reg_write(s, v)
-
-        if n == v:
-            return self.uc.reg_read(t)
-
-        return None
 
     def add_inst_trace(self, module: Module):
         """Add instruction trace for the module."""
