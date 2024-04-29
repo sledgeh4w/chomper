@@ -1,11 +1,11 @@
 import os
-import uuid
 from ctypes import sizeof
 from typing import List
 
 from chomper.abc import BaseOs
 from chomper.types import Module
 from chomper.utils import struct2bytes
+from chomper.os.ios import const
 from chomper.os.ios.fixup import SystemModuleFixup
 from chomper.os.ios.hooks import get_hooks
 from chomper.os.ios.loader import MachoLoader
@@ -39,18 +39,23 @@ class IosOs(BaseOs):
 
         self.emu.write_u64(0xFFFFFC104, 0x100)
 
+    def _construct_environ(self) -> int:
+        """Construct a structure that contains environment variables."""
+        lines = const.ENVIRON_VARS.split("\n")
+
+        size = self.emu.arch.addr_size * (len(lines) + 1)
+        buffer = self.emu.create_buffer(size)
+
+        for index, line in enumerate(lines):
+            address = buffer + self.emu.arch.addr_size * index
+            self.emu.write_pointer(address, self.emu.create_string(line))
+
+        self.emu.write_pointer(buffer + size - self.emu.arch.addr_size, 0)
+
+        return buffer
+
     def _init_program_vars(self):
         """Initialize program variables, works like `__program_vars_init`."""
-        environ_vars = {
-            "__CF_USER_TEXT_ENCODING": "0:0",
-            "CFN_USE_HTTP3": "0",
-            "CFStringDisableROM": "1",
-            "HOME": (
-                f"/Users/Sergey/Library/Developer/CoreSimulator/Devices/{uuid.uuid4()}"
-                f"/data/Containers/Data/Application/{uuid.uuid4()}"
-            ),
-        }
-
         argc = self.emu.create_buffer(8)
         self.emu.write_int(argc, 0, 8)
 
@@ -60,20 +65,8 @@ class IosOs(BaseOs):
         nx_argv_pointer = self.emu.find_symbol("_NXArgv_pointer")
         self.emu.write_pointer(nx_argv_pointer.address, self.emu.create_string(""))
 
-        size = self.emu.arch.addr_size * len(environ_vars) + 1
-        environ_buf = self.emu.create_buffer(size)
-
-        offset = 0x0
-
-        for key, value in environ_vars.items():
-            prop_str = self.emu.create_string(f"{key}={value}")
-            self.emu.write_pointer(environ_buf + offset, prop_str)
-            offset += self.emu.arch.addr_size
-
-        self.emu.write_pointer(environ_buf + offset, 0)
-
         environ = self.emu.create_buffer(8)
-        self.emu.write_pointer(environ, environ_buf)
+        self.emu.write_pointer(environ, self._construct_environ())
 
         environ_pointer = self.emu.find_symbol("_environ_pointer")
         self.emu.write_pointer(environ_pointer.address, environ)
@@ -194,7 +187,7 @@ class IosOs(BaseOs):
 
     def resolve_modules(self, module_names: List[str]):
         """Load system modules if don't loaded."""
-        patch = SystemModuleFixup(self.emu)
+        fixup = SystemModuleFixup(self.emu)
 
         for module_name in module_names:
             if self.emu.find_module(module_name):
@@ -203,7 +196,7 @@ class IosOs(BaseOs):
             module_path = self.search_module(module_name)
             module = self.emu.load_module(module_path, exec_objc_init=False)
 
-            patch.install(module)
+            fixup.install(module)
 
             self.init_objc(module)
 

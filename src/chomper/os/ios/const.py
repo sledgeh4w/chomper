@@ -1,4 +1,26 @@
-# System call numbers in iOS
+# Environment variables
+ENVIRON_VARS = r"""SHELL=/bin/sh
+PWD=/var/root
+LOGNAME=root
+HOME=/var/root
+LS_COLORS=rs=0:di=01
+CLICOLOR=
+SSH_CONNECTION=127.0.0.1 59540 127.0.0.1 22
+TERM=xterm
+USER=root
+SHLVL=1
+PS1=\h:\w \u\$
+SSH_CLIENT=127.0.0.1 59540 22
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/bin/X11:/usr/games
+MAIL=/var/mail/root
+SSH_TTY=/dev/ttys000
+_=/usr/bin/env
+SBUS_INSERT_LIBRARIES=/usr/lib/substitute-inserter.dylib
+__CF_USER_TEXT_ENCODING=0x0:0:0
+CFN_USE_HTTP3=0
+CFStringDisableROM=1"""
+
+# System call numbers
 
 SYS_GETPID = 0x14
 SYS_GETUID = 0x18
