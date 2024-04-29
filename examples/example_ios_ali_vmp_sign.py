@@ -4,6 +4,7 @@ import uuid
 
 from chomper import Chomper
 from chomper.const import ARCH_ARM64, OS_IOS
+from chomper.objc import ObjC
 
 base_path = os.path.abspath(os.path.dirname(__file__))
 
@@ -16,44 +17,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def create_emulator():
-    return Chomper(
-        arch=ARCH_ARM64,
-        os_type=OS_IOS,
-        logger=logger,
-        rootfs_path=os.path.join(base_path, "ios/rootfs"),
-        enable_objc=True,
-        enable_ui_kit=True,
-    )
-
-
-def objc_get_class(emu, class_name):
-    return emu.call_symbol("_objc_getClass", emu.create_string(class_name))
-
-
-def objc_sel_register_name(emu, sel_name):
-    return emu.call_symbol("_sel_registerName", emu.create_string(sel_name))
-
-
-def objc_create_ns_string(emu, s):
-    ns_string_class = objc_get_class(emu, "NSString")
-    string_with_utf8_string_sel = objc_sel_register_name(emu, "stringWithUTF8String:")
-    obj = emu.call_symbol(
-        "_objc_msgSend",
-        ns_string_class,
-        string_with_utf8_string_sel,
-        emu.create_string(s),
-    )
-    return obj
-
-
-def objc_read_ns_string(emu, obj):
-    c_string_using_encoding_sel = objc_sel_register_name(emu, "cStringUsingEncoding:")
-    ptr = emu.call_symbol("_objc_msgSend", obj, c_string_using_encoding_sel, 4)
-    return emu.read_string(ptr)
-
-
-def hook_pass(uc, address, size, user_data):
+def hook_skip(uc, address, size, user_data):
     pass
 
 
@@ -64,55 +28,49 @@ def hook_retval(retval):
     return decorator
 
 
-def hook_ns_bundle(emu):
-    ns_mutable_dictionary_cls = objc_get_class(emu, "NSMutableDictionary")
-    dictionary_with_object_for_key_sel = objc_sel_register_name(emu, "dictionaryWithObject:forKey:")
-    add_object_for_key_sel = objc_sel_register_name(emu, "addObject:forKey:")
+def hook_ns_bundle(emu, objc):
+    bundle_identifier = objc.msg_send("NSString", "stringWithUTF8String:", "com.ceair.b2m")
 
-    bundle_identifier = objc_create_ns_string(emu, "com.ceair.b2m")
-    executable_path = objc_create_ns_string(emu, f"/var/containers/Bundle/Application"
-                                            f"/{uuid.uuid4()}/com.ceair.b2m/ceair_iOS_branch")
-
-    bundle_info_directory = emu.call_symbol(
-        "_objc_msgSend",
-        ns_mutable_dictionary_cls,
-        dictionary_with_object_for_key_sel,
-        objc_create_ns_string(emu, "9.4.7"),
-        objc_create_ns_string(emu, "CFBundleShortVersionString"),
+    executable_path = objc.msg_send(
+        "NSString",
+        "stringWithUTF8String:",
+        f"/var/containers/Bundle/Application/{uuid.uuid4()}/com.ceair.b2m/ceair_iOS_branch",
     )
 
-    emu.call_symbol(
-        "_objc_msgSend",
+    bundle_info_directory = objc.msg_send(
+        "NSMutableDictionary",
+        "dictionaryWithObject:forKey:",
+        objc.msg_send("NSString", "stringWithUTF8String:", "9.4.7"),
+        objc.msg_send("NSString", "stringWithUTF8String:", "CFBundleShortVersionString"),
+    )
+
+    objc.msg_send(
         bundle_info_directory,
-        add_object_for_key_sel,
+        "addObject:forKey:",
         executable_path,
-        objc_create_ns_string(emu, "CFBundleExecutable"),
+        objc.msg_send("NSString", "stringWithUTF8String:", "CFBundleExecutable"),
     )
 
-    emu.add_interceptor("-[NSBundle initWithPath:]", hook_pass)
+    emu.add_interceptor("-[NSBundle initWithPath:]", hook_skip)
     emu.add_interceptor("-[NSBundle bundleIdentifier]", hook_retval(bundle_identifier))
     emu.add_interceptor("-[NSBundle executablePath]", hook_retval(executable_path))
     emu.add_interceptor("-[NSBundle infoDictionary]", hook_retval(bundle_info_directory))
 
 
-def hook_ns_locale(emu):
-    ns_array_cls = objc_get_class(emu, "NSArray")
-    array_with_object_sel = objc_sel_register_name(emu, "arrayWithObject:")
-
-    preferred_languages = emu.call_symbol(
-        "_objc_msgSend",
-        ns_array_cls,
-        array_with_object_sel,
-        objc_create_ns_string(emu, "zh-cn"),
+def hook_ns_locale(emu, objc):
+    preferred_languages = objc.msg_send(
+        "NSArray",
+        "arrayWithObject:",
+        objc.msg_send("NSString", "stringWithUTF8String:", "zh-cn")
     )
 
     emu.add_interceptor("+[NSLocale preferredLanguages]", hook_retval(preferred_languages))
 
 
-def hook_ui_device(emu):
-    system_version = objc_create_ns_string(emu, "14.4.0")
-    device_name = objc_create_ns_string(emu, "iPhone")
-    device_model = objc_create_ns_string(emu, "iPhone13,1")
+def hook_ui_device(emu, objc):
+    system_version = objc.msg_send("NSString", "stringWithUTF8String:", "14.4.0")
+    device_name = objc.msg_send("NSString", "stringWithUTF8String:", "iPhone")
+    device_model = objc.msg_send("NSString", "stringWithUTF8String:", "iPhone13,1")
 
     emu.add_interceptor("-[UIDevice systemVersion]", hook_retval(system_version))
     emu.add_interceptor("-[UIDevice name]", hook_retval(device_name))
@@ -120,34 +78,40 @@ def hook_ui_device(emu):
 
 
 def main():
-    emu = create_emulator()
+    emu = Chomper(
+        arch=ARCH_ARM64,
+        os_type=OS_IOS,
+        logger=logger,
+        rootfs_path=os.path.join(base_path, "ios/rootfs"),
+        enable_ui_kit=True,
+    )
 
-    hook_ns_bundle(emu)
-    hook_ns_locale(emu)
-    hook_ui_device(emu)
+    objc = ObjC(emu)
 
+    hook_ns_bundle(emu, objc)
+    hook_ns_locale(emu, objc)
+    hook_ui_device(emu, objc)
+
+    # Skip a file operation
     emu.add_interceptor("_fopen", hook_retval(0))
 
     emu.load_module(os.path.join(base_path, "ios/apps/com.csair.MBP/CSMBP-AppStore-Package"))
 
-    ali_tiger_tally_class = objc_get_class(emu, "AliTigerTally")
+    ali_tiger_tally_instance = objc.msg_send("AliTigerTally", "sharedInstance")
 
-    shared_instance_sel = objc_sel_register_name(emu, "sharedInstance")
-    initialize_sel = objc_sel_register_name(emu, "initialize:")
-    vmp_sign_sel = objc_sel_register_name(emu, "vmpSign:")
-    data_using_encoding_sel = objc_sel_register_name(emu, "dataUsingEncoding:")
+    app_key = objc.msg_send(
+        "NSString",
+        "stringWithUTF8String:",
+        "xPEj7uv0KuziQnXUyPIBNUjnDvvHuW09VOYFuLYBcY-jV6fgqmfy5B1y75_iSuRM5U2zNq7MRoR9N1F-UthTEgv-QBWk68gr95BrAySzWuDzt08FrkeBZWQCGyZ0iAybalYLOJEF7nkKBtmDGLewcw==",
+    )
 
-    ali_tiger_tally_instance = emu.call_symbol("_objc_msgSend", ali_tiger_tally_class, shared_instance_sel)
+    objc.msg_send(ali_tiger_tally_instance, "initialize:", app_key)
 
-    app_key = objc_create_ns_string(emu, "xPEj7uv0KuziQnXUyPIBNUjnDvvHuW09VOYFuLYBcY-jV6fgqmfy5B1y75_iSuRM5U2zNq7MRoR9N1F-UthTEgv-QBWk68gr95BrAySzWuDzt08FrkeBZWQCGyZ0iAybalYLOJEF7nkKBtmDGLewcw==", )
-    emu.call_symbol("_objc_msgSend", ali_tiger_tally_instance, initialize_sel, app_key)
+    encrypt_str = objc.msg_send("NSString", "stringWithUTF8String:", '{"biClassId":["2","3","4"]}')
+    encrypt_bytes = objc.msg_send(encrypt_str, "dataUsingEncoding:", 1)
 
-    encrypt_str = objc_create_ns_string(emu, '{"biClassId":["2","3","4"]}')
-    encrypt_bytes = emu.call_symbol("_objc_msgSend", encrypt_str, data_using_encoding_sel, 1)
-
-    vmp_sign = emu.call_symbol("_objc_msgSend", ali_tiger_tally_instance, vmp_sign_sel, encrypt_bytes)
-
-    logger.info("vmp sign: %s", objc_read_ns_string(emu, vmp_sign))
+    vmp_sign = objc.msg_send(ali_tiger_tally_instance, "vmpSign:", encrypt_bytes)
+    logger.info("vmp sign: %s", emu.read_string(objc.msg_send(vmp_sign, "cStringUsingEncoding:", 4)))
 
 
 if __name__ == "__main__":

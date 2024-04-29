@@ -64,6 +64,7 @@ Working with Objective-C.
 ```python
 from chomper import Chomper
 from chomper.const import ARCH_ARM64, OS_IOS
+from chomper.objc import ObjC
 
 emu = Chomper(
     arch=ARCH_ARM64,
@@ -71,27 +72,18 @@ emu = Chomper(
     rootfs_path="examples/ios/rootfs",
 )
 
+objc = ObjC(emu)
+
 emu.load_module("examples/ios/apps/cn.com.scal.sichuanair/zsch")
 
-# The ObjC can only be used through c functions for now,
-# more friendly API will be probided in the future.
-
-# Get classes and selectors
-nsstring_cls = emu.call_symbol("_objc_getClass", emu.create_string("NSString"))
-string_with_utf8_string_sel = emu.call_symbol("_sel_registerName", emu.create_string("stringWithUTF8String:"))
-cstring_using_encoding_sel = emu.call_symbol("_sel_registerName", emu.create_string("cStringUsingEncoding:"))
-
-zschrsa_cls = emu.call_symbol("_objc_getClass", emu.create_string("ZSCHRSA"))
-get_req_sign_sel = emu.call_symbol("_sel_registerName", emu.create_string("getReqSign:"))
-
 # Construct NSString object
-a1 = emu.call_symbol("_objc_msgSend", nsstring_cls, string_with_utf8_string_sel, emu.create_string("test"))
+a1 = objc.msg_send("NSString", "stringWithUTF8String:", "test")
 
 # Call ObjC method
-req_sign = emu.call_symbol("_objc_msgSend", zschrsa_cls, get_req_sign_sel, a1)
+req_sign = objc.msg_send("ZSCHRSA", "getReqSign:", a1)
 
-# Convert NSString to C string
-result_ptr = emu.call_symbol("_objc_msgSend", req_sign, cstring_using_encoding_sel, 4)
+# Convert NSString object to C string
+result_ptr = objc.msg_send(req_sign, "cStringUsingEncoding:", 4)
 result = emu.read_string(result_ptr)
 ```
 
