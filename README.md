@@ -134,8 +134,5 @@ emu = Chomper(arch=ARCH_ARM64, os_type=OS_ANDROID, trace_instr=True)
 emu.load_module("examples/android/rootfs/system/lib64/libc.so", trace_inst=True)
 ```
 
-Execute initialization functions in section `.init_array`.
-
-```python
-emu.load_module("examples/android/apps/com.shizhuang.duapp/libszstone.so", exec_init_array=True)
-```
+## Examples
+[Here](https://github.com/sledgeh4w/chomper/tree/main/examples) are a fews examples of encryption emulations for security vendors.
