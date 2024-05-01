@@ -7,6 +7,8 @@ from typing import Dict
 
 from unicorn.unicorn import UC_HOOK_CODE_TYPE
 
+from chomper.utils import pyobj2nsobj
+
 hooks: Dict[str, UC_HOOK_CODE_TYPE] = {}
 
 
@@ -379,8 +381,92 @@ def hook_dispatch_async(uc, address, size, user_data):
     return 0
 
 
+@register_hook("_uloc_getLanguage")
+def hook_uloc_get_language(uc, address, size, user_data):
+    return 0
+
+
+@register_hook("_uloc_getScript")
+def hook_uloc_get_script(uc, address, size, user_data):
+    return 0
+
+
+@register_hook("_uloc_getCountry")
+def hook_uloc_get_country(uc, address, size, user_data):
+    return 0
+
+
+@register_hook("_uloc_getVariant")
+def hook_uloc_get_variant(uc, address, size, user_data):
+    return 0
+
+
+@register_hook("_uloc_openKeywords")
+def hook_uloc_open_keywords(uc, address, size, user_data):
+    return 0
+
+
+@register_hook("_uloc_getDisplayName")
+def hook_uloc_get_display_name(uc, address, size, user_data):
+    return 0
+
+
+@register_hook("_uloc_getDisplayLanguage")
+def hook_uloc_get_display_language(uc, address, size, user_data):
+    return 0
+
+
+@register_hook("_uenum_next")
+def hook_uenum_next(uc, address, size, user_data):
+    return 0
+
+
+@register_hook("_uenum_close")
+def hook_uenum_close(uc, address, size, user_data):
+    return 0
+
+
+@register_hook("_os_log_type_enabled")
+def hook_os_log_type_enabled(uc, address, size, user_data):
+    return 0
+
+
+@register_hook("__CFPreferencesCopyAppValueWithContainerAndConfiguration")
+def hook_cf_preferences_copy_app_value_with_container_and_configuration(
+    uc, address, size, user_data
+):
+    emu = user_data["emu"]
+
+    str_ptr = emu.read_pointer(emu.get_arg(0) + 0x10)
+    key = emu.read_string(str_ptr)
+
+    if key in emu.os.preferences:
+        return pyobj2nsobj(emu, emu.os.preferences[key])
+
+    return 0
+
+
 @register_hook("__CFBundleCreateInfoDictFromMainExecutable")
 def hook_cf_bundle_create_info_dict_from_main_executable(uc, address, size, user_data):
+    return 0
+
+
+@register_hook("___CFXPreferencesCopyCurrentApplicationStateWithDeadlockAvoidance")
+def hook_cf_x_preferences_copy_current_application_state_with_deadlock_avoidance(
+    uc, address, size, user_data
+):
+    emu = user_data["emu"]
+
+    return pyobj2nsobj(emu, emu.os.preferences)
+
+
+@register_hook("_CFNotificationCenterGetLocalCenter")
+def hook_cf_notification_center_get_local_center(uc, address, size, user_data):
+    return 0
+
+
+@register_hook("__CFPrefsClientLog")
+def hook_cf_prefs_client_log(uc, address, size, user_data):
     return 0
 
 
