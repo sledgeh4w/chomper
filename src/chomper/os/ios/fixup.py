@@ -276,9 +276,11 @@ class SystemModuleFixup:
             offset = 0
 
             while offset < section.size:
-                address = module_base + start + offset + 0x10
-                self.relocate_pointer(module_base, address)
                 self.add_refs_relocation(start + offset)
+
+                str_ptr = module_base + start + offset + 0x10
+                self.relocate_pointer(module_base, str_ptr)
+
                 offset += step
 
     def fixup_cf_uni_char_string(self, binary: lief.MachO.Binary):

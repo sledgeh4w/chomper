@@ -190,10 +190,10 @@ class Chomper:
         if self.arch == arm_arch and enable_vfp:
             self._enable_vfp()
 
-    def _start_emulate(self, address: int, *args: int):
+    def _start_emulate(self, address: int, *args: int) -> int:
         """Start emulate at the specified address."""
+        context = self.uc.context_save()
         stop_addr = self.create_buffer(8)
-        # stop_addr = 0
 
         for index, value in enumerate(args):
             self.set_arg(index, value)
@@ -208,11 +208,17 @@ class Chomper:
             self.logger.info(f"Start emulate at {self.debug_symbol(address)}")
             self.uc.emu_start(address, stop_addr)
 
+            return self.get_retval()
+
         except UcError as e:
             self.crash("Unknown reason", from_exc=e)
 
         finally:
+            self.uc.context_restore(context)
             self.free(stop_addr)
+
+        # Pass type hints
+        return 0
 
     def find_module(self, name_or_addr: Union[str, int]) -> Optional[Module]:
         """Find module by name or address."""
@@ -739,12 +745,8 @@ class Chomper:
         symbol = self.find_symbol(symbol_name)
         address = symbol.address
 
-        self._start_emulate(address, *args)
-
-        return self.get_retval()
+        return self._start_emulate(address, *args)
 
     def call_address(self, address: int, *args: int) -> int:
         """Call function at the address."""
-        self._start_emulate(address, *args)
-
-        return self.get_retval()
+        return self._start_emulate(address, *args)

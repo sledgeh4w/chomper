@@ -21,6 +21,23 @@ class IosOs(BaseOs):
 
         self.loader = MachoLoader(emu)
 
+        # By hooking functions:
+        # `__CFPreferencesCopyAppValueWithContainerAndConfiguration`,
+        # `___CFXPreferencesCopyCurrentApplicationStateWithDeadlockAvoidance`,
+        # enable the program to obtain preferences.
+        self.preferences = self._default_preferences.copy()
+
+    @property
+    def _default_preferences(self) -> dict:
+        """Define default preferences."""
+        return {
+            "AppleLanguages": [
+                "zh-Hans",
+                "en",
+            ],
+            "AppleLocale": "zh-Hans",
+        }
+
     def _setup_hooks(self):
         """Initialize the hooks."""
         self.emu.hooks.update(get_hooks())
@@ -29,12 +46,12 @@ class IosOs(BaseOs):
         """Initialize the system call handlers."""
         self.emu.syscall_handlers.update(get_syscall_handlers())
 
-    def _init_special_flag(self):
-        """Set a flag meaning the arch type, which will be read by functions
+    def _init_magic_vars(self):
+        """Set flags meaning the arch type and others, which will be read by functions
         such as `_os_unfair_recursive_lock_lock_with_options`."""
         self.emu.uc.mem_map(0xFFFFFC000, 1024)
 
-        # arch flag
+        # arch type
         self.emu.write_u64(0xFFFFFC023, 2)
 
         self.emu.write_u64(0xFFFFFC104, 0x100)
@@ -126,7 +143,7 @@ class IosOs(BaseOs):
         initialized = self.emu.find_symbol("__ZZ10_objc_initE11initialized")
         if not self.emu.read_u8(initialized.address):
             # As the initialization timing before program execution
-            self._init_special_flag()
+            self._init_magic_vars()
             self._init_program_vars()
             self._init_dyld_vars()
             self._init_objc_vars()
