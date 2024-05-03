@@ -30,12 +30,6 @@ def hook_sec_item(emu):
     emu.add_interceptor("_CFRelease", hook_retval(0))
 
 
-def hook_ui_device(emu):
-    emu.add_interceptor("-[UIDevice systemVersion]", hook_retval(pyobj2nsobj(emu, "14.4.0")))
-    emu.add_interceptor("-[UIDevice name]", hook_retval(pyobj2nsobj(emu, "iPhone")))
-    emu.add_interceptor("-[UIDevice model]", hook_retval(pyobj2nsobj(emu, "iPhone13,1")))
-
-
 def main():
     emu = Chomper(
         arch=ARCH_ARM64,
@@ -48,7 +42,6 @@ def main():
     objc = ObjC(emu)
 
     hook_sec_item(emu)
-    hook_ui_device(emu)
 
     emu.load_module(os.path.join(base_path, "ios/apps/com.ceair.b2m/ceair_iOS_branch"))
 
