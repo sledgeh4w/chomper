@@ -21,11 +21,12 @@ class IosOs(BaseOs):
 
         self.loader = MachoLoader(emu)
 
-        # By hooking functions:
-        # `__CFPreferencesCopyAppValueWithContainerAndConfiguration`,
-        # `___CFXPreferencesCopyCurrentApplicationStateWithDeadlockAvoidance`,
-        # enable the program to obtain preferences.
+        # By hooking CF preferences related functions,
+        # enable the program to get preferences.
         self.preferences = self._default_preferences.copy()
+
+        # By hooking `_MGCopyAnswer`, enable `UIDevice` to get device info.
+        self.device_info = self._default_device_info.copy()
 
     @property
     def _default_preferences(self) -> dict:
@@ -36,6 +37,15 @@ class IosOs(BaseOs):
                 "en",
             ],
             "AppleLocale": "zh-Hans",
+        }
+
+    @property
+    def _default_device_info(self) -> dict:
+        """Define default device info."""
+        return {
+            "UserAssignedDeviceName": "iPhone",
+            "DeviceName": "iPhone13,1",
+            "ProductVersion": "14.4.0",
         }
 
     def _setup_hooks(self):

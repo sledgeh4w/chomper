@@ -43,12 +43,6 @@ def hook_ns_bundle(emu):
     emu.add_interceptor("-[NSBundle infoDictionary]", hook_retval(pyobj2nsobj(emu, bundle_info)))
 
 
-def hook_ui_device(emu):
-    emu.add_interceptor("-[UIDevice systemVersion]", hook_retval(pyobj2nsobj(emu, "14.4.0")))
-    emu.add_interceptor("-[UIDevice name]", hook_retval(pyobj2nsobj(emu, "iPhone")))
-    emu.add_interceptor("-[UIDevice model]", hook_retval(pyobj2nsobj(emu, "iPhone13,1")))
-
-
 def main():
     emu = Chomper(
         arch=ARCH_ARM64,
@@ -61,7 +55,6 @@ def main():
     objc = ObjC(emu)
 
     hook_ns_bundle(emu)
-    hook_ui_device(emu)
 
     # Skip a file operation
     emu.add_interceptor("_fopen", hook_retval(0))

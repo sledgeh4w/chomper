@@ -8,6 +8,7 @@ from typing import Dict
 from unicorn.unicorn import UC_HOOK_CODE_TYPE
 
 from chomper.utils import pyobj2nsobj
+from chomper.objc import ObjC
 
 hooks: Dict[str, UC_HOOK_CODE_TYPE] = {}
 
@@ -431,13 +432,28 @@ def hook_os_log_type_enabled(uc, address, size, user_data):
     return 0
 
 
+@register_hook("_MGCopyAnswer")
+def hook_mg_copy_answer(uc, address, size, user_data):
+    emu = user_data["emu"]
+    objc = ObjC(emu)
+
+    str_ptr = objc.msg_send(emu.get_arg(0), "cStringUsingEncoding:", 4)
+    key = emu.read_string(str_ptr)
+
+    if key in emu.os.device_info:
+        return pyobj2nsobj(emu, emu.os.device_info[key])
+
+    return 0
+
+
 @register_hook("__CFPreferencesCopyAppValueWithContainerAndConfiguration")
 def hook_cf_preferences_copy_app_value_with_container_and_configuration(
     uc, address, size, user_data
 ):
     emu = user_data["emu"]
+    objc = ObjC(emu)
 
-    str_ptr = emu.read_pointer(emu.get_arg(0) + 0x10)
+    str_ptr = objc.msg_send(emu.get_arg(0), "cStringUsingEncoding:", 4)
     key = emu.read_string(str_ptr)
 
     if key in emu.os.preferences:
