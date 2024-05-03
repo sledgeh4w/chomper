@@ -4,6 +4,7 @@ import pytest
 
 from chomper import Chomper
 from chomper.const import ARCH_ARM, ARCH_ARM64, OS_IOS
+from chomper.objc import ObjC
 
 base_path = os.path.abspath(os.path.dirname(__file__))
 
@@ -19,13 +20,13 @@ com_xingin_xhs_path = os.path.join(base_path, "../examples/android/apps/com.xing
 
 
 @pytest.fixture(scope="module")
-def str_test():
+def input_str():
     yield "chomper"
 
 
 @pytest.fixture(scope="module")
-def bytes_test(str_test):
-    yield str_test.encode("utf-8")
+def input_bytes(input_str):
+    yield input_str.encode("utf-8")
 
 
 @pytest.fixture(scope="module")
@@ -89,3 +90,8 @@ def emu_ios():
         os_type=OS_IOS,
         rootfs_path=ios_rootfs_path,
     )
+
+
+@pytest.fixture(scope="module")
+def objc(emu_ios):
+    yield ObjC(emu_ios)
