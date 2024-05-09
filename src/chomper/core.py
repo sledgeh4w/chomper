@@ -193,6 +193,7 @@ class Chomper:
     def _start_emulate(self, address: int, *args: int) -> int:
         """Start emulate at the specified address."""
         context = self.uc.context_save()
+
         stop_addr = self.create_buffer(8)
 
         for index, value in enumerate(args):
@@ -215,6 +216,7 @@ class Chomper:
 
         finally:
             self.uc.context_restore(context)
+
             self.free(stop_addr)
 
         # Pass type hints
@@ -344,38 +346,33 @@ class Chomper:
         """Delete hook."""
         self.uc.hook_del(handle)
 
-    def log_registers(self):
-        """Log all register values."""
-        message = "Registers: "
-
-        for reg_index in range(31):
-            reg_id = getattr(arm64_const, f"UC_ARM64_REG_X{reg_index}")
-            reg_value = self.uc.reg_read(reg_id)
-
-            if reg_index:
-                message += ", "
-
-            message += f"x{reg_index}: 0x{reg_value:016x}"
-
-            if self.find_module(reg_value):
-                message += f" [{self.debug_symbol(reg_value)}]"
-
-        self.logger.info(message)
-
-    def log_trace(self):
-        """Log the trace stack."""
-        trace_stack = [self.debug_symbol(t[0]) for t in self.backtrace()]
-        message = "Trace stack: %s" % ", ".join(trace_stack)
-        self.logger.info(message)
-
     def crash(self, message: str, from_exc: Optional[Exception] = None):
         """Raise an emulator crashed exception and output debugging info.
 
         Raises:
             EmulatorCrashedException:
         """
-        self.log_registers()
-        self.log_trace()
+        # Log backtrace
+        trace_stack = [self.debug_symbol(t[0]) for t in self.backtrace()]
+        message_ = "Backtrace: %s" % ", ".join(trace_stack)
+        self.logger.info(message_)
+
+        # Log registers
+        message_ = "State: "
+
+        for reg_index in range(31):
+            reg_id = getattr(arm64_const, f"UC_ARM64_REG_X{reg_index}")
+            reg_value = self.uc.reg_read(reg_id)
+
+            if reg_index:
+                message_ += ", "
+
+            message_ += f"x{reg_index}: 0x{reg_value:016x}"
+
+            if self.find_module(reg_value):
+                message_ += f" [{self.debug_symbol(reg_value)}]"
+
+        self.logger.info(message_)
 
         address = self.uc.reg_read(self.arch.reg_pc)
         message = f"{message} at {self.debug_symbol(address)}"

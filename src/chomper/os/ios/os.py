@@ -2,7 +2,7 @@ import os
 from ctypes import sizeof
 from typing import List
 
-from chomper.abc import BaseOs
+from chomper.base import BaseOs
 from chomper.types import Module
 from chomper.utils import struct2bytes
 from chomper.os.ios import const
@@ -21,11 +21,8 @@ class IosOs(BaseOs):
 
         self.loader = MachoLoader(emu)
 
-        # By hooking CF preferences related functions,
-        # enable the program to get preferences.
         self.preferences = self._default_preferences.copy()
 
-        # By hooking `_MGCopyAnswer`, enable `UIDevice` to get device info.
         self.device_info = self._default_device_info.copy()
 
     @property
@@ -49,11 +46,11 @@ class IosOs(BaseOs):
         }
 
     def _setup_hooks(self):
-        """Initialize the hooks."""
+        """Initialize hooks."""
         self.emu.hooks.update(get_hooks())
 
     def _setup_syscall_handlers(self):
-        """Initialize the system call handlers."""
+        """Initialize system call handlers."""
         self.emu.syscall_handlers.update(get_syscall_handlers())
 
     def _init_magic_vars(self):
@@ -221,8 +218,13 @@ class IosOs(BaseOs):
                 continue
 
             module_path = self.search_module(module_name)
-            module = self.emu.load_module(module_path, exec_objc_init=False)
 
+            module = self.emu.load_module(
+                module_file=module_path,
+                exec_objc_init=False,
+            )
+
+            # Fixup must be executed before initializing Objective-C.
             fixup.install(module)
 
             self.init_objc(module)
@@ -283,7 +285,7 @@ class IosOs(BaseOs):
         self.resolve_modules(dependencies)
 
     def initialize(self):
-        """Initialize the environment."""
+        """Initialize environment."""
         self._setup_hooks()
         self._setup_syscall_handlers()
 

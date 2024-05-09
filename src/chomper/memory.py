@@ -59,6 +59,8 @@ class MemoryManager:
         self.uc.mem_map(pool.address, pool.size)
         self.address += pool.size
 
+        self.pools.append(pool)
+
         return pool
 
     def init_pools(self):
@@ -69,7 +71,7 @@ class MemoryManager:
         block_sizes = [8 * 2**i for i in range(10)]
 
         for block_size in block_sizes:
-            self.pools.append(self.create_pool(block_size))
+            self.create_pool(block_size)
 
     def alloc(self, size: int) -> int:
         """Allocate memory."""

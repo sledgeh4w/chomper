@@ -1,3 +1,4 @@
+# from contextlib import contextmanager
 from typing import Union
 
 
@@ -63,3 +64,12 @@ class ObjC:
     def release(self, obj: int):
         """Release object."""
         self.emu.call_symbol("_objc_release", obj)
+
+    # @contextmanager
+    # def autorelease_pool(self):
+    #     """Ensure Objetive-C objects are automatically released."""
+    #     context = self.emu.call_symbol("_objc_autoreleasePoolPush")
+    #     try:
+    #         yield context
+    #     finally:
+    #         self.emu.call_symbol("_objc_autoreleasePoolPop", context)

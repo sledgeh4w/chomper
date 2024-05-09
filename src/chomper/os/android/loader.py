@@ -6,7 +6,7 @@ from elftools.elf.elffile import ELFFile
 from elftools.elf.enums import ENUM_RELOC_TYPE_AARCH64, ENUM_RELOC_TYPE_ARM
 from elftools.elf.relocation import Relocation
 
-from chomper.abc import BaseLoader
+from chomper.base import BaseLoader
 from chomper.types import Module, Symbol, SymbolType
 from chomper.utils import aligned
 
