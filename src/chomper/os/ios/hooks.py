@@ -7,7 +7,7 @@ from typing import Dict
 
 from unicorn.unicorn import UC_HOOK_CODE_TYPE
 
-from chomper.utils import pyobj2nsobj
+from chomper.utils import pyobj2nsobj, pyobj2cfobj
 from chomper.objc import ObjC
 
 hooks: Dict[str, UC_HOOK_CODE_TYPE] = {}
@@ -372,11 +372,6 @@ def hook_dyld_program_sdk_at_least(uc, address, size, user_data):
     return 0
 
 
-@register_hook("__ZN11objc_object16rootAutorelease2Ev")
-def hook_objc_object_root_autorelease(uc, address, size, user_data):
-    pass
-
-
 @register_hook("_dispatch_async")
 def hook_dispatch_async(uc, address, size, user_data):
     return 0
@@ -457,7 +452,7 @@ def hook_cf_preferences_copy_app_value_with_container_and_configuration(
     key = emu.read_string(str_ptr)
 
     if key in emu.os.preferences:
-        return pyobj2nsobj(emu, emu.os.preferences[key])
+        return pyobj2cfobj(emu, emu.os.preferences[key])
 
     return 0
 
@@ -473,7 +468,7 @@ def hook_cf_x_preferences_copy_current_application_state_with_deadlock_avoidance
 ):
     emu = user_data["emu"]
 
-    return pyobj2nsobj(emu, emu.os.preferences)
+    return pyobj2cfobj(emu, emu.os.preferences)
 
 
 @register_hook("_CFNotificationCenterGetLocalCenter")
@@ -488,4 +483,44 @@ def hook_cf_prefs_client_log(uc, address, size, user_data):
 
 @register_hook("_NSLog")
 def hook_ns_log(uc, address, size, user_data):
+    return 0
+
+
+@register_hook("_SecItemCopyMatching")
+def hook_sec_item_copy_matching(uc, address, size, user_data):
+    emu = user_data["emu"]
+    objc = ObjC(emu)
+
+    a1 = emu.get_arg(0)
+    a2 = emu.get_arg(1)
+
+    sec_return_data = objc.msg_send(
+        a1,
+        "objectForKey:",
+        emu.read_pointer(emu.find_symbol("_kSecReturnData").address),
+    )
+
+    sec_return_attributes = objc.msg_send(
+        a1,
+        "objectForKey:",
+        emu.read_pointer(emu.find_symbol("_kSecReturnAttributes").address),
+    )
+
+    cf_boolean_true = emu.read_pointer(emu.find_symbol("_kCFBooleanTrue").address)
+
+    if sec_return_attributes == cf_boolean_true:
+        result = pyobj2cfobj(emu, {})
+    elif sec_return_data == cf_boolean_true:
+        result = pyobj2cfobj(emu, b"")
+    else:
+        result = None
+
+    if a2 and result:
+        emu.write_u64(a2, result)
+
+    return 0
+
+
+@register_hook("_SecItemUpdate")
+def hook_sec_item_update(uc, address, size, user_data):
     return 0

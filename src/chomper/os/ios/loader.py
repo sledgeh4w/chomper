@@ -146,9 +146,8 @@ class MachoLoader(BaseLoader):
                             reloc_addr = hooks_map[symbol_name]
 
                         self.emu.logger.info(
-                            'Hook import symbol "{}" at {}'.format(
-                                symbol_name,
-                                self.emu.debug_symbol(symbol.binding_info.address),
+                            'Hook import symbol "{}" at 0x{:x}'.format(
+                                symbol_name, symbol.binding_info.address
                             )
                         )
 
