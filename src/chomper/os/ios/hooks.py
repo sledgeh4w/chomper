@@ -486,6 +486,21 @@ def hook_ns_log(uc, address, size, user_data):
     return 0
 
 
+@register_hook("_SecItemAdd")
+def hook_sec_item_add(uc, address, size, user_data):
+    return 0
+
+
+@register_hook("_SecItemUpdate")
+def hook_sec_item_update(uc, address, size, user_data):
+    return 0
+
+
+@register_hook("_SecItemDelete")
+def hook_sec_item_delete(uc, address, size, user_data):
+    return 0
+
+
 @register_hook("_SecItemCopyMatching")
 def hook_sec_item_copy_matching(uc, address, size, user_data):
     emu = user_data["emu"]
@@ -506,21 +521,28 @@ def hook_sec_item_copy_matching(uc, address, size, user_data):
         emu.read_pointer(emu.find_symbol("_kSecReturnAttributes").address),
     )
 
+    sec_match_limit = objc.msg_send(
+        a1,
+        "objectForKey:",
+        emu.read_pointer(emu.find_symbol("_kSecMatchLimit").address),
+    )
+
     cf_boolean_true = emu.read_pointer(emu.find_symbol("_kCFBooleanTrue").address)
 
-    if sec_return_attributes == cf_boolean_true:
+    sec_match_limit_all = emu.read_pointer(
+        emu.find_symbol("_kSecMatchLimitAll").address
+    )
+
+    if sec_match_limit == sec_match_limit_all:
+        result = pyobj2cfobj(emu, [])
+    elif sec_return_attributes == cf_boolean_true:
         result = pyobj2cfobj(emu, {})
     elif sec_return_data == cf_boolean_true:
         result = pyobj2cfobj(emu, b"")
     else:
-        result = None
+        result = 0
 
-    if a2 and result:
+    if a2:
         emu.write_u64(a2, result)
 
-    return 0
-
-
-@register_hook("_SecItemUpdate")
-def hook_sec_item_update(uc, address, size, user_data):
     return 0
