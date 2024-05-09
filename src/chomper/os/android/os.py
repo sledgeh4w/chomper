@@ -1,4 +1,4 @@
-from chomper.abc import BaseOs
+from chomper.base import BaseOs
 from chomper.os.android.hooks import get_hooks
 from chomper.os.android.loader import ELFLoader
 
