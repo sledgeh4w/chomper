@@ -4,7 +4,7 @@ from typing import Dict, List, Tuple, Optional
 import lief
 from lief.MachO import BIND_TYPES, ARM64_RELOCATION
 
-from chomper.abc import BaseLoader
+from chomper.base import BaseLoader
 from chomper.types import Module, Symbol, Binding
 from chomper.utils import aligned
 
