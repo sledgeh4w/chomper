@@ -110,7 +110,11 @@ class MemoryManager:
             return address
 
         new_address = self.alloc(size)
-        self.uc.mem_write(new_address, bytes(self.uc.mem_read(address, block_size)))
+
+        data = self.uc.mem_read(address, block_size)
+        self.uc.mem_write(new_address, bytes(data))
+
+        self.free(address)
 
         return new_address
 

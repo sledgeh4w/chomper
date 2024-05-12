@@ -1,4 +1,4 @@
-# from contextlib import contextmanager
+from contextlib import contextmanager
 from typing import Union
 
 
@@ -41,14 +41,14 @@ class ObjC:
         receiver = self.get_class(receiver) if isinstance(receiver, str) else receiver
         sel = self.get_sel(sel) if isinstance(sel, str) else sel
 
-        str_ptrs = []
+        mem_ptrs = []
         new_args = []
 
         for arg in args:
             if isinstance(arg, str):
                 str_ptr = self.emu.create_string(arg)
 
-                str_ptrs.append(str_ptr)
+                mem_ptrs.append(str_ptr)
                 new_args.append(str_ptr)
 
             else:
@@ -58,18 +58,19 @@ class ObjC:
             return self.emu.call_symbol("_objc_msgSend", receiver, sel, *new_args)
 
         finally:
-            for str_ptr in str_ptrs:
-                self.emu.free(str_ptr)
+            for mem_ptr in mem_ptrs:
+                self.emu.free(mem_ptr)
 
     def release(self, obj: int):
         """Release object."""
         self.emu.call_symbol("_objc_release", obj)
 
-    # @contextmanager
-    # def autorelease_pool(self):
-    #     """Ensure Objetive-C objects are automatically released."""
-    #     context = self.emu.call_symbol("_objc_autoreleasePoolPush")
-    #     try:
-    #         yield context
-    #     finally:
-    #         self.emu.call_symbol("_objc_autoreleasePoolPop", context)
+    @contextmanager
+    def autorelease_pool(self):
+        """Ensure Objetive-C objects can be automatically released."""
+        context = self.emu.call_symbol("_objc_autoreleasePoolPush")
+
+        try:
+            yield context
+        finally:
+            self.emu.call_symbol("_objc_autoreleasePoolPop", context)
