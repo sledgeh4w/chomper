@@ -33,7 +33,7 @@ import uuid
 from chomper import Chomper
 from chomper.const import ARCH_ARM64, OS_IOS
 
-# The system libraries will be automatically loaded from `rootfs_path` on iOS
+# For iOS, system libraries will be automatically loaded from `rootfs_path`
 emu = Chomper(
     arch=ARCH_ARM64,
     os_type=OS_IOS,
@@ -76,15 +76,17 @@ objc = ObjC(emu)
 
 emu.load_module("examples/ios/apps/cn.com.scal.sichuanair/zsch")
 
-# Construct NSString object
-a1 = objc.msg_send("NSString", "stringWithUTF8String:", "test")
+# Use this context manager to ensure that Objective-C objects can be automatically released
+with objc.autorelease_pool():
+    # Construct NSString object
+    a1 = objc.msg_send("NSString", "stringWithUTF8String:", "test")
 
-# Call ObjC method
-req_sign = objc.msg_send("ZSCHRSA", "getReqSign:", a1)
+    # Call Objective-C method
+    req_sign = objc.msg_send("ZSCHRSA", "getReqSign:", a1)
 
-# Convert NSString object to C string
-result_ptr = objc.msg_send(req_sign, "cStringUsingEncoding:", 4)
-result = emu.read_string(result_ptr)
+    # Convert NSString object to C string
+    result_ptr = objc.msg_send(req_sign, "cStringUsingEncoding:", 4)
+    result = emu.read_string(result_ptr)
 ```
 
 Emulate Android native libraries.
@@ -114,25 +116,5 @@ result_size = emu.call_address(libszstone.base + 0x2F1C8, a1, a2, a3)
 result = emu.read_bytes(a3, result_size)
 ```
 
-Hook instructions.
-
-```python
-def hook_code(uc, address, size, user_data):
-    pass
-
-symbol = emu.find_symbol("strlen")
-emu.add_hook(symbol.address, hook_code)
-```
-
-Trace instructions.
-
-```python
-# Trace all instructions
-emu = Chomper(arch=ARCH_ARM64, os_type=OS_ANDROID, trace_instr=True)
-
-# Trace instructions in this module
-emu.load_module("examples/android/rootfs/system/lib64/libc.so", trace_inst=True)
-```
-
 ## Examples
-[Here](https://github.com/sledgeh4w/chomper/tree/main/examples) are a fews examples of encryption emulations for security vendors.
+[Here](https://github.com/sledgeh4w/chomper/tree/main/examples) are some encryption emulation examples for security vendors.
