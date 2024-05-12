@@ -9,8 +9,8 @@ Chomper is a lightweight emulation framework based on [Unicorn](https://github.c
 
 ## Features
 
-- Basic emulation of ELF and Mach-O
-- Support for a set of iOS system libraries (from iOS SDK 14.4.0)
+- Basic emulation for ELF and Mach-O
+- Support for a set of iOS system libraries (from iOS 14.4.0)
 
 ## Requirements
 
