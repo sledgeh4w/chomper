@@ -66,11 +66,12 @@ def main():
     app_key = "xPEj7uv0KuziQnXUyPIBNUjnDvvHuW09VOYFuLYBcY-jV6fgqmfy5B1y75_iSuRM5U2zNq7MRoR9N1F-UthTEgv-QBWk68gr95BrAySzWuDzt08FrkeBZWQCGyZ0iAybalYLOJEF7nkKBtmDGLewcw=="
     objc.msg_send(ali_tiger_tally_instance, "initialize:", pyobj2nsobj(emu, app_key))
 
-    encrypt_str = '{"biClassId":["2","3","4"]}'
-    encrypt_bytes = objc.msg_send(pyobj2nsobj(emu, encrypt_str), "dataUsingEncoding:", 1)
+    with objc.autorelease_pool():
+        encrypt_str = '{"biClassId":["2","3","4"]}'
+        encrypt_bytes = objc.msg_send(pyobj2nsobj(emu, encrypt_str), "dataUsingEncoding:", 1)
 
-    vmp_sign = objc.msg_send(ali_tiger_tally_instance, "vmpSign:", encrypt_bytes)
-    logger.info("vmp sign: %s", emu.read_string(objc.msg_send(vmp_sign, "cStringUsingEncoding:", 4)))
+        vmp_sign = objc.msg_send(ali_tiger_tally_instance, "vmpSign:", encrypt_bytes)
+        logger.info("vmpSign: %s", emu.read_string(objc.msg_send(vmp_sign, "cStringUsingEncoding:", 4)))
 
 
 if __name__ == "__main__":

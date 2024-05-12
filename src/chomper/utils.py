@@ -23,6 +23,8 @@ def pyobj2nsobj(emu, obj: object) -> int:
     """
     objc = ObjC(emu)
 
+    mem_ptrs = []
+
     if isinstance(obj, dict):
         ns_obj = objc.msg_send("NSMutableDictionary", "dictionary")
 
@@ -43,13 +45,20 @@ def pyobj2nsobj(emu, obj: object) -> int:
         ns_obj = objc.msg_send("NSString", "stringWithUTF8String:", obj)
 
     elif isinstance(obj, bytes):
-        buffer = emu.create_buffer(len(obj))
-        emu.write_bytes(buffer, obj)
+        if obj:
+            buffer = emu.create_buffer(len(obj))
+            emu.write_bytes(buffer, obj)
+            mem_ptrs.append(buffer)
+        else:
+            buffer = 0
 
         ns_obj = objc.msg_send("NSData", "dataWithBytes:length:", buffer, len(obj))
 
     else:
         raise TypeError(f"Unsupported type: {type(obj)}")
+
+    for mem_ptr in mem_ptrs:
+        emu.free(mem_ptr)
 
     return ns_obj
 
@@ -62,7 +71,7 @@ def pyobj2cfobj(emu, obj: object) -> int:
     """
     cf_allocator_system_default = emu.find_symbol("___kCFAllocatorSystemDefault")
 
-    str_ptrs = []
+    mem_ptrs = []
     cf_strs = []
 
     if isinstance(obj, dict):
@@ -106,7 +115,7 @@ def pyobj2cfobj(emu, obj: object) -> int:
 
     elif isinstance(obj, str):
         str_ptr = emu.create_string(obj)
-        str_ptrs.append(str_ptr)
+        mem_ptrs.append(str_ptr)
 
         cf_obj = emu.call_symbol(
             "_CFStringCreateWithCString",
@@ -119,6 +128,7 @@ def pyobj2cfobj(emu, obj: object) -> int:
         if obj:
             buffer = emu.create_buffer(len(obj))
             emu.write_bytes(buffer, obj)
+            mem_ptrs.append(buffer)
         else:
             buffer = 0
 
@@ -132,8 +142,8 @@ def pyobj2cfobj(emu, obj: object) -> int:
     else:
         raise TypeError(f"Unsupported type: {type(obj)}")
 
-    for str_ptr in str_ptrs:
-        emu.free(str_ptr)
+    for mem_ptr in mem_ptrs:
+        emu.free(mem_ptr)
 
     for cf_str in cf_strs:
         emu.call_symbol("_CFRelease", cf_str)

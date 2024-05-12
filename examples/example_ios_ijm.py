@@ -42,17 +42,18 @@ def main():
     # Skip a special check of ijm
     emu.add_interceptor(czair.base + 0x1038F0004, hook_retval(1))
 
-    # Encrypt
-    encrypt_str = '{"biClassId":["2","3","4"]}'
-    encrypt_result = objc.msg_send("JMBox125", "JMBox167:JMBox501:", pyobj2nsobj(emu, encrypt_str), 1)
+    with objc.autorelease_pool():
+        # Encrypt
+        encrypt_str = '{"biClassId":["2","3","4"]}'
+        encrypt_result = objc.msg_send("JMBox125", "JMBox167:JMBox501:", pyobj2nsobj(emu, encrypt_str), 1)
 
-    logger.info("encrypt_result: %s", emu.read_string(objc.msg_send(encrypt_result, "cStringUsingEncoding:", 4)))
+        logger.info("Encrypt result: %s", emu.read_string(objc.msg_send(encrypt_result, "cStringUsingEncoding:", 4)))
 
-    # Decrypt
-    decrypt_str = "XKQYFMCP9Eb0IUzrQ9KaRRvTeFcYYyLcInrS/IWp6be1+VZa14GanCrzeb3DR45HW+XH0xiZLA5WUjUcXnlpM+CC6EtauUDUxCLap3QPWRyewLUosCB/ESHE7341DQca6lx5KFcP0XCkBpGlEKpACR5v7TwNBxc62auNBDvmEY422LTAUEEBrC8FDE+Y4DS2IJTLN6h9f7hdmQ4zUnY4cwyZXwgdIoH+bVuNy6TSw1JjQaFF/fLLHVZOQovrMcjtTpMZGr8xOSoW/+msiZzKwET3"
-    decrypt_result = objc.msg_send("JMBox125", "JMBox167:JMBox501:", pyobj2nsobj(emu, decrypt_str), 1)
+        # Decrypt
+        decrypt_str = "XKQYFMCP9Eb0IUzrQ9KaRRvTeFcYYyLcInrS/IWp6be1+VZa14GanCrzeb3DR45HW+XH0xiZLA5WUjUcXnlpM+CC6EtauUDUxCLap3QPWRyewLUosCB/ESHE7341DQca6lx5KFcP0XCkBpGlEKpACR5v7TwNBxc62auNBDvmEY422LTAUEEBrC8FDE+Y4DS2IJTLN6h9f7hdmQ4zUnY4cwyZXwgdIoH+bVuNy6TSw1JjQaFF/fLLHVZOQovrMcjtTpMZGr8xOSoW/+msiZzKwET3"
+        decrypt_result = objc.msg_send("JMBox125", "JMBox167:JMBox501:", pyobj2nsobj(emu, decrypt_str), 1)
 
-    logger.info("decrypt_result: %s", emu.read_string(objc.msg_send(decrypt_result, "cStringUsingEncoding:", 4)))
+        logger.info("Decrypt result: %s", emu.read_string(objc.msg_send(decrypt_result, "cStringUsingEncoding:", 4)))
 
 
 if __name__ == "__main__":

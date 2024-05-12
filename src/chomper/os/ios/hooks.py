@@ -7,7 +7,7 @@ from typing import Dict
 
 from unicorn.unicorn import UC_HOOK_CODE_TYPE
 
-from chomper.utils import pyobj2nsobj, pyobj2cfobj
+from chomper.utils import pyobj2cfobj
 from chomper.objc import ObjC
 
 hooks: Dict[str, UC_HOOK_CODE_TYPE] = {}
@@ -436,7 +436,7 @@ def hook_mg_copy_answer(uc, address, size, user_data):
     key = emu.read_string(str_ptr)
 
     if key in emu.os.device_info:
-        return pyobj2nsobj(emu, emu.os.device_info[key])
+        return pyobj2cfobj(emu, emu.os.device_info[key])
 
     return 0
 
