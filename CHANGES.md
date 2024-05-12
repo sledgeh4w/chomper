@@ -1,8 +1,20 @@
+## v0.3.1
+
+Released: 2024-05-12
+
+- Fix an error when creating `NSURLRequest` object ([issue #68][issue_68]).
+- Add `ObjC` which provided friendly interface to Objective-C runtime.
+- Add hook for preferences related functions (`_CFPreferencesCopyAppValueWithContainerAndConfiguration`, `__CFXPreferencesCopyCurrentApplicationStateWithDeadlockAvoidance`).
+- Add hook for `MGCopyAnswe` which used by `UIDevice`.
+- Add hook for keychain related functions (`SecItemAdd`, `SecItemUpdate`, `SecItemDelete`, `SecItemCopyMatching`).
+
+[issue_68]: https://github.com/sledgeh4w/chomper/issues/68
+
 ## v0.3.0
 
 Released: 2024-04-12
 
-- Support emulate executable files on iOS.
+- Support emulating iOS executable files.
 - Support working with Objective-C.
 - Drop support for Python 3.7.
 
@@ -23,7 +35,7 @@ Released: 2022-11-21
 
 Released: 2022-09-17
 
-- Support emulate library files on arch ARM.
+- Support emulating ARM architecture libraries.
 
 ## v0.0.2
 
@@ -31,7 +43,7 @@ Released: 2022-09-10
 
 - Fix wrong ``end`` argument when calling ``Uc.hook_add``.
 - Add ``user_data`` param to ``add_hook`` to pass params to callback.
-- Support trace symbol calls by using ``trace_symbol_calls`` param.
+- Support tracing symbol calls by using ``trace_symbol_calls`` param.
 - Improve exception message of ``EmulatorCrashedException`` when missing symbol is required.
 - Add ``logger`` param to ``Infernum``.
 - Add ``free`` method to ``Infernum`` to release allocated memory.
