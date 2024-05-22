@@ -1,15 +1,12 @@
 import os
-from ctypes import sizeof
 from typing import List
 
 from chomper.base import BaseOs
 from chomper.types import Module
-from chomper.utils import struct2bytes
 from chomper.os.ios import const
 from chomper.os.ios.fixup import SystemModuleFixup
 from chomper.os.ios.hooks import get_hooks
 from chomper.os.ios.loader import MachoLoader
-from chomper.os.ios.structs import MachHeader64
 from chomper.os.ios.syscall import get_syscall_handlers
 
 
@@ -144,7 +141,10 @@ class IosOs(BaseOs):
 
         Calling `map_images` and `load_images` of `libobjc.A.dylib`.
         """
-        if not self.emu.find_module("libobjc.A.dylib") or not module.binary:
+        if not module.binary or not module.image_base:
+            return
+
+        if not self.emu.find_module("libobjc.A.dylib"):
             return
 
         initialized = self.emu.find_symbol("__ZZ10_objc_initE11initialized")
@@ -155,31 +155,19 @@ class IosOs(BaseOs):
             self._init_dyld_vars()
             self._init_objc_vars()
 
-        mach_header = MachHeader64(
-            magic=module.binary.header.magic.value,
-            cputype=module.binary.header.cpu_type.value,
-            cpusubtype=module.binary.header.cpu_subtype,
-            filetype=module.binary.header.file_type.value,
-            ncmds=module.binary.header.nb_cmds,
-            sizeofcmds=module.binary.header.sizeof_cmds,
-            flags=module.binary.header.flags,
-            reserved=module.binary.header.reserved,
-        )
+        text_segment = module.binary.get_segment("__TEXT")
 
-        mach_header_ptr = self.emu.create_buffer(sizeof(MachHeader64))
-        self.emu.write_bytes(mach_header_ptr, struct2bytes(mach_header))
-
+        mach_header_ptr = module.base - module.image_base + text_segment.virtual_address
         mach_header_ptrs = self.emu.create_buffer(self.emu.arch.addr_size)
+
         self.emu.write_pointer(mach_header_ptrs, mach_header_ptr)
 
         try:
             self.emu.call_symbol("_map_images", 1, 0, mach_header_ptrs)
-            self.emu.call_symbol("_load_images")
-
+            self.emu.call_symbol("_load_images", 0, mach_header_ptr)
         except Exception as e:
             self.emu.logger.error("Initialize Objective-C failed.")
             self.emu.logger.exception(e)
-
         finally:
             module.binary = None
 
@@ -243,6 +231,7 @@ class IosOs(BaseOs):
             "libcommonCrypto.dylib",
             "libc++abi.dylib",
             "libc++.1.dylib",
+            "libmacho.dylib",
             "libdyld.dylib",
             "libobjc.A.dylib",
             "libdispatch.dylib",

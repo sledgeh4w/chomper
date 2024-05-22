@@ -211,7 +211,6 @@ class MachoLoader(BaseLoader):
 
         begin = module_base + section.virtual_address
         end = begin + section.size
-
         values = self.emu.read_array(begin, end)
 
         return [addr for addr in values if addr]

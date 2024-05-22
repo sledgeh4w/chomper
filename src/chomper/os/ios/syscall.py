@@ -89,6 +89,11 @@ def handle_sys_csops(emu):
     return 0
 
 
+@register_syscall_handler(const.SYS_RLIMIT)
+def handle_sys_rlimit(emu):
+    return 0
+
+
 @register_syscall_handler(const.SYS_SYSCTL)
 def handle_sys_sysctl(emu):
     return 0
@@ -139,12 +144,15 @@ def handle_sys_issetugid(emu):
 
 @register_syscall_handler(const.SYS_PROC_INFO)
 def handle_sys_proc_info(emu):
+    # pid = emu.get_arg(1)
+    flavor = emu.get_arg(2)
     buffer = emu.get_arg(4)
 
-    process_path = (
-        "/private/var/containers/Bundle/Application/%s/App.app" % uuid.uuid4()
-    )
-    emu.write_string(buffer, process_path)
+    if flavor == 11:
+        emu.write_string(
+            buffer,
+            "/private/var/containers/Bundle/Application/%s/App.app" % uuid.uuid4(),
+        )
 
     clear_carry_flag(emu)
 
