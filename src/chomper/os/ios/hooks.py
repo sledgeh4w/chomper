@@ -7,8 +7,9 @@ from typing import Dict
 
 from unicorn.unicorn import UC_HOOK_CODE_TYPE
 
-from chomper.utils import pyobj2cfobj
+from chomper.exceptions import SymbolMissingException
 from chomper.objc import ObjC
+from chomper.utils import pyobj2cfobj
 
 hooks: Dict[str, UC_HOOK_CODE_TYPE] = {}
 
@@ -323,40 +324,6 @@ def hook_posix_memalign(uc, address, size, user_data):
     return 0
 
 
-@register_hook("_getsectiondata")
-def hook_getsectiondata(uc, address, size, user_data):
-    emu = user_data["emu"]
-    module = emu.modules[-1]
-
-    section_name = emu.read_string(emu.get_arg(2))
-    size_ptr = emu.get_arg(3)
-
-    section = module.binary.get_section(section_name)
-    if not section:
-        return 0
-
-    emu.write_u64(size_ptr, section.size)
-
-    return module.base - module.image_base + section.virtual_address
-
-
-@register_hook("_getsegmentdata")
-def hook_getsegmentdata(uc, address, size, user_data):
-    emu = user_data["emu"]
-    module = emu.modules[-1]
-
-    segment_name = emu.read_string(emu.get_arg(1))
-    size_ptr = emu.get_arg(2)
-
-    segment = module.binary.get_segment(segment_name)
-    if not segment:
-        return 0
-
-    emu.write_u64(size_ptr, segment.virtual_size)
-
-    return module.base - module.image_base + segment.virtual_address
-
-
 @register_hook("__os_activity_initiate")
 def hook_os_activity_initiate(uc, address, size, user_data):
     return 0
@@ -364,6 +331,21 @@ def hook_os_activity_initiate(uc, address, size, user_data):
 
 @register_hook("_notify_register_dispatch")
 def hook_notify_register_dispatch(uc, address, size, user_data):
+    return 0
+
+
+@register_hook("_dlsym")
+def hook_dlsym(uc, address, size, user_data):
+    emu = user_data["emu"]
+
+    symbol_name = f"_{emu.read_string(emu.get_arg(1))}"
+
+    try:
+        symbol = emu.find_symbol(symbol_name)
+        return symbol.address
+    except SymbolMissingException:
+        pass
+
     return 0
 
 
