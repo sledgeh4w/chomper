@@ -141,7 +141,7 @@ class IosOs(BaseOs):
 
         Calling `map_images` and `load_images` of `libobjc.A.dylib`.
         """
-        if not module.binary or not module.image_base:
+        if not module.binary or module.image_base is None:
             return
 
         if not self.emu.find_module("libobjc.A.dylib"):
