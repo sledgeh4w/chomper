@@ -51,7 +51,7 @@ def main():
 
         # Decrypt
         decrypt_str = "XKQYFMCP9Eb0IUzrQ9KaRRvTeFcYYyLcInrS/IWp6be1+VZa14GanCrzeb3DR45HW+XH0xiZLA5WUjUcXnlpM+CC6EtauUDUxCLap3QPWRyewLUosCB/ESHE7341DQca6lx5KFcP0XCkBpGlEKpACR5v7TwNBxc62auNBDvmEY422LTAUEEBrC8FDE+Y4DS2IJTLN6h9f7hdmQ4zUnY4cwyZXwgdIoH+bVuNy6TSw1JjQaFF/fLLHVZOQovrMcjtTpMZGr8xOSoW/+msiZzKwET3"
-        decrypt_result = objc.msg_send("JMBox125", "JMBox167:JMBox501:", pyobj2nsobj(emu, decrypt_str), 1)
+        decrypt_result = objc.msg_send("JMBox125", "JMBox153:JMBox501:", pyobj2nsobj(emu, decrypt_str), 1)
 
         logger.info("Decrypt result: %s", emu.read_string(objc.msg_send(decrypt_result, "cStringUsingEncoding:", 4)))
 
