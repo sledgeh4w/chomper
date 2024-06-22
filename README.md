@@ -5,7 +5,7 @@
 ![PyPI - Python Version](https://img.shields.io/pypi/pyversions/chomper)
 [![GitHub license](https://img.shields.io/github/license/sledgeh4w/chomper)](https://github.com/sledgeh4w/chomper/blob/main/LICENSE)
 
-Chomper is a lightweight emulation framework based on [Unicorn](https://github.com/unicorn-engine/unicorn). It is mainly used to emulate native programs on Android and iOS.
+Chomper is a lightweight emulation framework based on [Unicorn](https://github.com/unicorn-engine/unicorn). It is mainly used to emulate iOS executables and libraries. In addition, it also provides limited support for Android native libraries.
 
 ## Features
 
@@ -25,7 +25,7 @@ $ pip install chomper
 
 ## Usage
 
-Emulate iOS executable files.
+Emulate iOS executables.
 
 ```python
 import uuid
