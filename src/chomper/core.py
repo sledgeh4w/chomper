@@ -30,7 +30,7 @@ from .utils import aligned
 
 
 class Chomper:
-    """Lightweight emulation framework for emulating native programs on Android and iOS.
+    """Lightweight emulation framework for emulating iOS executables and libraries.
 
     Args:
         arch: The architecture to emulate, support ARM and ARM64.
