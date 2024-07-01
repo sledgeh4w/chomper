@@ -23,8 +23,8 @@ requires-python = ">=3.8"
 dependencies = [
     "pyelftools >= 0.29",
     "unicorn >= 2.0.0",
-    "capstone >= 4.0",
-    "lief",
+    "capstone >= 5.0.0.post1",
+    "lief >= 0.14.0",
 ]
 dynamic = ["version"]
 
