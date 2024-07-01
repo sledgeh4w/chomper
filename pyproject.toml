@@ -24,7 +24,7 @@ dependencies = [
     "pyelftools >= 0.29",
     "unicorn >= 2.0.0",
     "capstone >= 5.0.0.post1",
-    "lief >= 14.0.0",
+    "lief >= 0.14.0",
 ]
 dynamic = ["version"]
 
