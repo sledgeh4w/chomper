@@ -102,7 +102,7 @@ emu.load_module("examples/android/rootfs/system/lib64/libc.so")
 emu.load_module("examples/android/rootfs/system/lib64/libz.so")
 
 libszstone = emu.load_module(
-    "examples/apps/android/com.shizhuang.duapp/libszstone.so",
+    "examples/android/apps/com.shizhuang.duapp/libszstone.so",
     exec_init_array=True,
 )
 
