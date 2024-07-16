@@ -37,6 +37,19 @@ def test_ns_data(emu_ios, objc):
         assert data
 
 
+def test_ns_data_with_large_size(emu_ios, objc):
+    """When the size of `NSData` exceeds 64k, `vm_allocate` will be called."""
+    with objc.autorelease_pool():
+        data_bytes = bytes(1024 * 64)
+
+        buffer = emu_ios.create_buffer(len(data_bytes))
+        emu_ios.write_bytes(buffer, data_bytes)
+
+        data = objc.msg_send("NSData", "dataWithBytes:length:", buffer, len(data_bytes))
+
+        assert data
+
+
 def test_ns_url(emu_ios, objc):
     with objc.autorelease_pool():
         string = objc.msg_send(
