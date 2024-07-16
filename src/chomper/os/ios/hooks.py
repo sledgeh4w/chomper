@@ -528,3 +528,26 @@ def hook_sec_item_copy_matching(uc, address, size, user_data):
         emu.write_u64(a2, result)
 
     return 0
+
+
+@register_hook("_mach_vm_allocate")
+def hook_mach_vm_allocate(uc, address, size, user_data):
+    emu = user_data["emu"]
+
+    addr = emu.get_arg(1)
+    size = emu.get_arg(2)
+
+    mem = emu.memory_manager.alloc(size)
+    emu.write_pointer(addr, mem)
+
+    return 0
+
+
+@register_hook("_mach_vm_deallocate")
+def hook_mach_vm_deallocate(uc, address, size, user_data):
+    emu = user_data["emu"]
+
+    mem = emu.get_arg(1)
+    emu.memory_manager.free(mem)
+
+    return 0
