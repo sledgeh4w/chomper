@@ -640,15 +640,28 @@ class Chomper:
     def read_string(self, address: int) -> str:
         """Read string from the address."""
         data = bytes()
-        offset = 0
 
-        while True:
-            byte = self.read_bytes(address + offset, 1)
-            if byte == b"\x00":
-                break
+        block_size = 1024
+        end = b"\x00"
 
-            data += byte
-            offset += 1
+        try:
+            while True:
+                buf = self.read_bytes(address, block_size)
+                if buf.find(end) != -1:
+                    data += buf[: buf.index(end)]
+                    break
+
+                data += buf
+                address += block_size
+
+        except UcError:
+            for i in range(block_size):
+                buf = self.read_bytes(address + i, 1)
+                if buf == end:
+                    break
+
+                data += buf
+                address += 1
 
         return data.decode("utf-8")
 
