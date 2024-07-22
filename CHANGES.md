@@ -1,12 +1,21 @@
+## v0.3.2
+
+Released: 2024-07-22
+
+- Emulate `libmacho.dylib` instead of hooking.
+- Fix initialization of large-sized `NSData`.
+- Compatibility with lief 0.15.0.
+- Improve performance of `read_string`.
+
 ## v0.3.1
 
 Released: 2024-05-12
 
 - Fix an error when creating `NSURLRequest` object ([issue #68][issue_68]).
 - Add `ObjC` which provided friendly interface to Objective-C runtime.
-- Add hook for preferences related functions (`_CFPreferencesCopyAppValueWithContainerAndConfiguration`, `__CFXPreferencesCopyCurrentApplicationStateWithDeadlockAvoidance`).
+- Add hook for preferences related functions.
 - Add hook for `MGCopyAnswe` which used by `UIDevice`.
-- Add hook for keychain related functions (`SecItemAdd`, `SecItemUpdate`, `SecItemDelete`, `SecItemCopyMatching`).
+- Add hook for keychain related functions.
 
 [issue_68]: https://github.com/sledgeh4w/chomper/issues/68
 
