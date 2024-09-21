@@ -15,7 +15,6 @@ from unicorn import (
     arm64_const,
     arm_const,
 )
-from unicorn.unicorn import UC_HOOK_CODE_TYPE
 
 from . import const
 from .arch import arm_arch, arm64_arch
@@ -81,7 +80,7 @@ class Chomper:
 
         self.modules: List[Module] = []
 
-        self.hooks: Dict[str, UC_HOOK_CODE_TYPE] = {}
+        self.hooks: Dict[str, Callable] = {}
         self.syscall_handlers: Dict[int, Callable] = {}
 
         self.memory_manager = MemoryManager(
@@ -283,7 +282,7 @@ class Chomper:
     def add_hook(
         self,
         symbol_or_addr: Union[int, str],
-        callback: UC_HOOK_CODE_TYPE,
+        callback: Callable,
         user_data: Optional[dict] = None,
     ) -> int:
         """Add hook to the emulator.
@@ -322,7 +321,7 @@ class Chomper:
     def add_interceptor(
         self,
         symbol_or_addr: Union[int, str],
-        callback: UC_HOOK_CODE_TYPE,
+        callback: Callable,
         user_data: Optional[dict] = None,
     ):
         """Add interceptor to the emulator."""

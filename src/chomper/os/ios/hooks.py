@@ -3,18 +3,16 @@ import random
 import time
 import uuid
 from functools import wraps
-from typing import Dict
-
-from unicorn.unicorn import UC_HOOK_CODE_TYPE
+from typing import Callable, Dict
 
 from chomper.exceptions import SymbolMissingException
 from chomper.objc import ObjC
 from chomper.utils import pyobj2cfobj
 
-hooks: Dict[str, UC_HOOK_CODE_TYPE] = {}
+hooks: Dict[str, Callable] = {}
 
 
-def get_hooks() -> Dict[str, UC_HOOK_CODE_TYPE]:
+def get_hooks() -> Dict[str, Callable]:
     """Returns a dictionary of default hooks."""
     return hooks.copy()
 
