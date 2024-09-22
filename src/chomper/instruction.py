@@ -1,6 +1,6 @@
 import re
 
-from unicorn.unicorn import arm64_const
+from unicorn import arm64_const
 
 
 class AutomicInstruction:
@@ -44,34 +44,43 @@ class AutomicInstruction:
         else:
             self._op_bits = 64
 
+    def read_reg(self, reg_id: int) -> int:
+        if reg_id in (arm64_const.UC_ARM64_REG_WZR, arm64_const.UC_ARM64_REG_XZR):
+            return 0
+
+        return self.emu.uc.reg_read(reg_id)
+
+    def write_reg(self, reg_id: int, value: int):
+        self.emu.uc.reg_write(reg_id, value)
+
     def execute(self):
-        address = self.emu.uc.reg_read(self._regs[-1])
+        address = self.read_reg(self._regs[-1])
         value = self.emu.read_int(address, self._op_bits // 8)
 
         result = None
 
         if self._inst[2].startswith("ldxr"):
-            self.emu.uc.reg_write(self._regs[0], value)
+            self.write_reg(self._regs[0], value)
 
         elif self._inst[2].startswith("ldadd"):
-            self.emu.uc.reg_write(self._regs[1], value)
-            result = value + self.emu.uc.reg_read(self._regs[0])
+            self.write_reg(self._regs[1], value)
+            result = value + self.read_reg(self._regs[0])
 
         elif self._inst[2].startswith("ldset"):
-            self.emu.uc.reg_write(self._regs[1], value)
-            result = value | self.emu.uc.reg_read(self._regs[0])
+            self.write_reg(self._regs[1], value)
+            result = value | self.read_reg(self._regs[0])
 
         elif self._inst[2].startswith("swp"):
-            self.emu.uc.reg_write(self._regs[1], value)
-            result = self.emu.uc.reg_read(self._regs[0])
+            self.write_reg(self._regs[1], value)
+            result = self.read_reg(self._regs[0])
 
         elif self._inst[2].startswith("cas"):
-            n = self.emu.uc.reg_read(self._regs[0])
+            n = self.read_reg(self._regs[0])
 
-            self.emu.uc.reg_write(self._regs[0], value)
+            self.write_reg(self._regs[0], value)
 
             if n == value:
-                result = self.emu.uc.reg_read(self._regs[1])
+                result = self.read_reg(self._regs[1])
 
         if result is not None:
             result %= 2**self._op_bits
