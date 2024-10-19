@@ -17,7 +17,7 @@ class MachoLoader(BaseLoader):
         boundary = 0
 
         for segment in binary.segments:
-            if not segment.virtual_size:
+            if not segment.virtual_size or segment.name == "__PAGEZERO":
                 continue
 
             seg_addr = module_base + segment.virtual_address
