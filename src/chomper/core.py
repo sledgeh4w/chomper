@@ -150,14 +150,12 @@ class Chomper:
 
         if self.os_type == const.OS_IOS:
             self.uc.reg_write(arm64_const.UC_ARM64_REG_TPIDRRO_EL0, const.TLS_ADDRESS)
-
         else:
             if self.arch == arm_arch:
                 self.uc.reg_write(
                     arm_const.UC_ARM_REG_CP_REG,
                     (15, 0, 0, 13, 0, 0, 3, const.TLS_ADDRESS),  # type: ignore
                 )
-
             elif self.arch == arm64_arch:
                 self.uc.reg_write(arm64_const.UC_ARM64_REG_TPIDR_EL0, const.TLS_ADDRESS)
 
@@ -207,15 +205,11 @@ class Chomper:
         try:
             self.logger.info(f"Start emulate at {self.debug_symbol(address)}")
             self.uc.emu_start(address, stop_addr)
-
             return self.get_retval()
-
         except UcError as e:
-            self.crash("Unknown reason", from_exc=e)
-
+            self.crash("Unknown reason", exc=e)
         finally:
             self.uc.context_restore(context)
-
             self.free(stop_addr)
 
         # Pass type hints
@@ -227,7 +221,6 @@ class Chomper:
             if isinstance(name_or_addr, str):
                 if module.name == name_or_addr:
                     return module
-
             elif isinstance(name_or_addr, int):
                 if module.base <= name_or_addr < module.base + module.size:
                     return module
@@ -253,14 +246,16 @@ class Chomper:
 
         if module:
             offset = address - module.base + (module.image_base or 0)
-            return f"{module.name}!0x{offset:x}"
+            return f"{module.name}!{hex(offset)}"
 
-        return f"0x{address:x}"
+        return hex(address)
 
-    def backtrace(self) -> List[Tuple[int, Optional[Module]]]:
+    def backtrace(self) -> List[int]:
         """Backtrace call stack."""
-        stack = [self.uc.reg_read(self.arch.reg_pc)]
-        stack += [self.uc.reg_read(self.arch.reg_lr) - 4]
+        stack = [
+            self.uc.reg_read(self.arch.reg_pc),
+            self.uc.reg_read(self.arch.reg_lr) - 4,
+        ]
 
         frame = self.uc.reg_read(self.arch.reg_fp)
         limit = 32
@@ -277,7 +272,7 @@ class Chomper:
 
             stack.append(address - 4)
 
-        return [(address, self.find_module(address)) for address in stack if address]
+        return [address for address in stack if address]
 
     def add_hook(
         self,
@@ -302,7 +297,6 @@ class Chomper:
         """
         if isinstance(symbol_or_addr, int):
             hook_addr = symbol_or_addr
-
         else:
             symbol = self.find_symbol(symbol_or_addr)
             hook_addr = symbol.address
@@ -345,57 +339,36 @@ class Chomper:
         """Delete hook."""
         self.uc.hook_del(handle)
 
-    def crash(self, message: str, from_exc: Optional[Exception] = None):
+    def crash(self, message: str, exc: Optional[Exception] = None):
         """Raise an emulator crashed exception and output debugging info.
 
         Raises:
             EmulatorCrashedException:
         """
-        # Log backtrace
-        trace_stack = [self.debug_symbol(t[0]) for t in self.backtrace()]
-        message_ = "Backtrace: %s" % ", ".join(trace_stack)
-        self.logger.info(message_)
-
-        # Log registers
-        message_ = "State: "
-
-        for reg_index in range(31):
-            reg_id = getattr(arm64_const, f"UC_ARM64_REG_X{reg_index}")
-            reg_value = self.uc.reg_read(reg_id)
-
-            if reg_index:
-                message_ += ", "
-
-            message_ += f"x{reg_index}: 0x{reg_value:016x}"
-
-            if self.find_module(reg_value):
-                message_ += f" [{self.debug_symbol(reg_value)}]"
-
-        self.logger.info(message_)
-
         address = self.uc.reg_read(self.arch.reg_pc)
-        message = f"{message} at {self.debug_symbol(address)}"
 
-        if from_exc:
-            raise EmulatorCrashedException(message) from from_exc
+        self.logger.error(
+            "Emulator crashed from: %s",
+            ", ".join([self.debug_symbol(t) for t in self.backtrace()]),
+        )
 
-        raise EmulatorCrashedException(message)
+        raise EmulatorCrashedException(
+            f"{message} at {self.debug_symbol(address)}"
+        ) from exc
 
     def trace_symbol_call_callback(
         self, uc: Uc, address: int, size: int, user_data: dict
     ):
         """Trace symbol call."""
         symbol = user_data["symbol"]
+        ret_addr = self.uc.reg_read(self.arch.reg_lr)
 
-        if self.arch == arm_arch:
-            ret_addr = self.uc.reg_read(arm_const.UC_ARM_REG_LR)
+        if ret_addr:
+            self.logger.info(
+                f'Symbol "{symbol.name}" called from {self.debug_symbol(ret_addr)}'
+            )
         else:
-            ret_addr = self.uc.reg_read(arm64_const.UC_ARM64_REG_LR)
-
-        self.logger.info(
-            f'Symbol "{symbol.name}" called'
-            + (f" from {self.debug_symbol(ret_addr)}" if ret_addr else "")
-        )
+            self.logger.info(f'Symbol "{symbol.name}" called')
 
     def trace_inst_callback(self, uc: Uc, address: int, size: int, user_data: dict):
         """Trace instruction."""
@@ -428,7 +401,6 @@ class Chomper:
         if intno == 2:
             self._dispatch_syscall()
             return
-
         elif intno in (1, 4):
             # Handle cpu exceptions
             address = self.uc.reg_read(self.arch.reg_pc)
@@ -438,11 +410,10 @@ class Chomper:
                 AutomicInstruction(self, code).execute()
                 self.uc.reg_write(arm64_const.UC_ARM64_REG_PC, address + 4)
                 return
-
             except ValueError:
                 pass
 
-        self.crash("Unhandled interruption %s" % (intno,))
+        self.crash(f"Unhandled interruption {intno}")
 
     def _dispatch_syscall(self):
         """Dispatch system calls to the registered handlers of the OS."""
@@ -455,7 +426,6 @@ class Chomper:
 
                 if result is not None:
                     self.set_retval(result)
-
                 return
 
         self.crash("Unhandled system call")
@@ -477,13 +447,12 @@ class Chomper:
 
             try:
                 self.logger.info(
-                    "Execute initialization function %s" % self.debug_symbol(init_func)
+                    f"Execute initialization function {self.debug_symbol(init_func)}"
                 )
                 self.call_address(init_func)
-
             except Exception as e:
                 self.logger.warning(
-                    "c %s execute failed: %s" % (self.debug_symbol(init_func), repr(e))
+                    f"Execute {self.debug_symbol(init_func)} failed: {repr(e)}"
                 )
 
     def load_module(
@@ -652,7 +621,6 @@ class Chomper:
 
                 data += buf
                 address += block_size
-
         except UcError:
             for i in range(block_size):
                 buf = self.read_bytes(address + i, 1)
@@ -660,7 +628,6 @@ class Chomper:
                     break
 
                 data += buf
-                address += 1
 
         return data.decode("utf-8")
 
@@ -679,7 +646,6 @@ class Chomper:
         for offset in range(0, len(data), size):
             int_bytes = data[offset : offset + size]
             value = int.from_bytes(int_bytes, byteorder=self.endian)
-
             array.append(value)
 
         return array
@@ -749,7 +715,7 @@ class Chomper:
 
     def call_symbol(self, symbol_name: str, *args: int) -> int:
         """Call function with the symbol name."""
-        self.logger.info('Call symbol "%s"', symbol_name)
+        self.logger.info(f'Call symbol "{symbol_name}"')
 
         symbol = self.find_symbol(symbol_name)
         address = symbol.address

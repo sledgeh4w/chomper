@@ -104,15 +104,12 @@ class SystemModuleFixup:
 
                     self.fixup_class_struct(module_base, meta_class_ptr)
                     self.add_refs_relocation(meta_class_ptr)
-
             elif section_name == "__objc_catlist":
                 for value in values:
                     self.fixup_category_struct(module_base, value)
-
             elif section_name == "__objc_protolist":
                 for value in values:
                     self.fixup_protocol_struct(module_base, value)
-
             elif section_name == "__objc_protorefs":
                 for value in values:
                     self.relocate_pointer(module_base, module_base + value + 8)
@@ -162,7 +159,6 @@ class SystemModuleFixup:
 
                 # Fixup method IMPL
                 self.relocate_pointer(module_base, method_ptr + 0x10)
-
         else:
             for i in range(count):
                 sel_offset_ptr = method_list_ptr + 8 + i * 12
@@ -302,7 +298,6 @@ class SystemModuleFixup:
                     offset = 0x30 + 0x8 * i
                     address = self.emu.read_pointer(symbol.address + offset)
                     self.add_refs_relocation(address)
-
         except SymbolMissingException:
             pass
 

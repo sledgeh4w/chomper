@@ -82,7 +82,6 @@ class ELFLoader(BaseLoader):
 
             if symbol_map.get(symbol_name):
                 reloc_addr = symbol_map[symbol_name].address
-
             else:
                 # If the symbol is missing, let it jump to a specified address and
                 # the address has hooked to raise an exception with useful information.
@@ -94,7 +93,6 @@ class ELFLoader(BaseLoader):
                     user_data={"symbol_name": symbol_name},
                 )
                 self.emu.write_pointer(reloc_offset, hook_addr)
-
         elif reloc_type in (
             ENUM_RELOC_TYPE_ARM["R_ARM_RELATIVE"],
             ENUM_RELOC_TYPE_AARCH64["R_AARCH64_RELATIVE"],
@@ -131,7 +129,6 @@ class ELFLoader(BaseLoader):
             for tag in segment.iter_tags():
                 if tag.entry.d_tag == "DT_INIT_ARRAY":
                     init_array_addr = tag.entry.d_val
-
                 elif tag.entry.d_tag == "DT_INIT_ARRAYSZ":
                     init_array_size = tag.entry.d_val
 

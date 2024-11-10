@@ -52,7 +52,6 @@ class MemoryManager:
                 size=self.minimum_pool_size,
                 blocks=[0 for _ in range(self.minimum_pool_size // block_size)],
             )
-
         else:
             pool = MemoryPool(address=self.address, size=block_size, blocks=[0])
 
@@ -77,7 +76,6 @@ class MemoryManager:
         """Allocate memory."""
         if size > self.minimum_pool_size:
             block_size = aligned(size, 1024)
-
         else:
             block_size = 8
             while block_size < size:
@@ -89,7 +87,6 @@ class MemoryManager:
                     index = pool.blocks.index(0)
                     pool.blocks[index] = 1
                     return pool.address + index * pool.block_size
-
                 except ValueError:
                     continue
 

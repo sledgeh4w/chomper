@@ -14,7 +14,6 @@ class ObjC:
 
         try:
             return self.emu.call_symbol("_objc_getClass", name_ptr)
-
         finally:
             self.emu.free(name_ptr)
 
@@ -24,7 +23,6 @@ class ObjC:
 
         try:
             return self.emu.call_symbol("_sel_registerName", name_ptr)
-
         finally:
             self.emu.free(name_ptr)
 
@@ -50,13 +48,11 @@ class ObjC:
 
                 mem_ptrs.append(str_ptr)
                 new_args.append(str_ptr)
-
             else:
                 new_args.append(arg)
 
         try:
             return self.emu.call_symbol("_objc_msgSend", receiver, sel, *new_args)
-
         finally:
             for mem_ptr in mem_ptrs:
                 self.emu.free(mem_ptr)
