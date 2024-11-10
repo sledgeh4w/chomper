@@ -33,17 +33,14 @@ def pyobj2nsobj(emu, obj: object) -> int:
             ns_value = pyobj2nsobj(emu, value)
 
             objc.msg_send(ns_obj, "setObject:forKey:", ns_value, ns_key)
-
     elif isinstance(obj, list):
         ns_obj = objc.msg_send("NSMutableArray", "array")
 
         for item in obj:
             ns_item = pyobj2nsobj(emu, item)
             objc.msg_send(ns_obj, "addObject:", ns_item)
-
     elif isinstance(obj, str):
         ns_obj = objc.msg_send("NSString", "stringWithUTF8String:", obj)
-
     elif isinstance(obj, bytes):
         if obj:
             buffer = emu.create_buffer(len(obj))
@@ -53,7 +50,6 @@ def pyobj2nsobj(emu, obj: object) -> int:
             buffer = 0
 
         ns_obj = objc.msg_send("NSData", "dataWithBytes:length:", buffer, len(obj))
-
     else:
         raise TypeError(f"Unsupported type: {type(obj)}")
 
@@ -98,7 +94,6 @@ def pyobj2cfobj(emu, obj: object) -> int:
             cf_strs.append(cf_value)
 
             emu.call_symbol("_CFDictionaryAddValue", cf_obj, cf_key, cf_value)
-
     elif isinstance(obj, list):
         cf_type_array_callbacks = emu.find_symbol("_kCFTypeArrayCallBacks")
 
@@ -112,7 +107,6 @@ def pyobj2cfobj(emu, obj: object) -> int:
         for item in obj:
             cf_item = pyobj2cfobj(emu, item)
             emu.call_symbol("_CFArrayAppendValue", cf_obj, cf_item)
-
     elif isinstance(obj, str):
         str_ptr = emu.create_string(obj)
         mem_ptrs.append(str_ptr)
@@ -123,7 +117,6 @@ def pyobj2cfobj(emu, obj: object) -> int:
             str_ptr,
             0x8000100,
         )
-
     elif isinstance(obj, bytes):
         if obj:
             buffer = emu.create_buffer(len(obj))
@@ -138,7 +131,6 @@ def pyobj2cfobj(emu, obj: object) -> int:
             buffer,
             len(obj),
         )
-
     else:
         raise TypeError(f"Unsupported type: {type(obj)}")
 
