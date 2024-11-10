@@ -61,19 +61,15 @@ class AutomicInstruction:
 
         if self._inst[2].startswith("ldxr"):
             self.write_reg(self._regs[0], value)
-
         elif self._inst[2].startswith("ldadd"):
             self.write_reg(self._regs[1], value)
             result = value + self.read_reg(self._regs[0])
-
         elif self._inst[2].startswith("ldset"):
             self.write_reg(self._regs[1], value)
             result = value | self.read_reg(self._regs[0])
-
         elif self._inst[2].startswith("swp"):
             self.write_reg(self._regs[1], value)
             result = self.read_reg(self._regs[0])
-
         elif self._inst[2].startswith("cas"):
             n = self.read_reg(self._regs[0])
 

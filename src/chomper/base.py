@@ -65,10 +65,8 @@ class BaseLoader(ABC):
             # Hook symbol
             if self.emu.hooks.get(symbol.name):
                 self.emu.logger.info(
-                    'Hook export symbol "{}" at {}'.format(
-                        symbol.name,
-                        self.emu.debug_symbol(symbol.address),
-                    )
+                    f'Hook export symbol "{symbol.name}" '
+                    f"at {self.emu.debug_symbol(symbol.address)}"
                 )
 
                 self.emu.add_interceptor(symbol.address, self.emu.hooks[symbol.name])

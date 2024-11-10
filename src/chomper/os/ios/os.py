@@ -2,6 +2,7 @@ import os
 from typing import List
 
 from chomper.base import BaseOs
+from chomper.exceptions import EmulatorCrashedException
 from chomper.types import Module
 from chomper.os.ios import const
 from chomper.os.ios.fixup import SystemModuleFixup
@@ -165,14 +166,13 @@ class IosOs(BaseOs):
         try:
             self.emu.call_symbol("_map_images", 1, 0, mach_header_ptrs)
             self.emu.call_symbol("_load_images", 0, mach_header_ptr)
-        except Exception as e:
-            self.emu.logger.error("Initialize Objective-C failed.")
-            self.emu.logger.exception(e)
+        except EmulatorCrashedException:
+            self.emu.logger.warning("Initialize Objective-C failed.")
         finally:
             module.binary = None
 
-    def search_module(self, module_name: str) -> str:
-        """Search system module in rootfs directory.
+    def search_module_binary(self, module_name: str) -> str:
+        """Search system module binary in rootfs directory.
 
         raises:
             FileNotFoundError: If module not found.
@@ -205,10 +205,9 @@ class IosOs(BaseOs):
             if self.emu.find_module(module_name):
                 continue
 
-            module_path = self.search_module(module_name)
-
+            module_file = self.search_module_binary(module_name)
             module = self.emu.load_module(
-                module_file=module_path,
+                module_file=module_file,
                 exec_objc_init=False,
             )
 

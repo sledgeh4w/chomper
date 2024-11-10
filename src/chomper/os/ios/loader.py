@@ -91,14 +91,11 @@ class MachoLoader(BaseLoader):
         if symbol_map.get(f"{symbol_name}$VARIANT$armv81"):
             if not self.emu.hooks.get(symbol_name):
                 reloc_addr = symbol_map[f"{symbol_name}$VARIANT$armv81"].address
-
         elif symbol_name == "___chkstk_darwin":
             if symbol_map.get(f"_{symbol_name}"):
                 reloc_addr = symbol_map[f"_{symbol_name}"].address
-
         elif symbol_map.get(symbol_name):
             reloc_addr = symbol_map[symbol_name].address
-
         elif symbol_map.get(f"__platform{symbol_name}"):
             reloc_addr = symbol_map[f"__platform{symbol_name}"].address
 
@@ -140,16 +137,13 @@ class MachoLoader(BaseLoader):
                         self.emu.add_interceptor(
                             reloc_addr, self.emu.hooks[symbol_name]
                         )
-
                     else:
                         reloc_addr = hooks_map[symbol_name]
 
                     self.emu.logger.info(
-                        'Hook import symbol "{}" at 0x{:x}'.format(
-                            symbol_name, symbol.binding_info.address
-                        )
+                        f'Hook import symbol "{symbol_name}" '
+                        f"at {hex(symbol.binding_info.address)}"
                     )
-
                 else:
                     # self.emu.add_hook(
                     #     reloc_addr,

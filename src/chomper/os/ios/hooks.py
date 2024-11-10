@@ -74,7 +74,6 @@ def hook_sysctlbyname(uc, address, size, user_data):
     if name == "kern.boottime":
         emu.write_u64(oldp, int(time.time()) - 3600 * 24)
         emu.write_u64(oldp + 8, 0)
-
     elif name == "kern.osvariant_status":
         variant_status = 0
 
@@ -85,10 +84,8 @@ def hook_sysctlbyname(uc, address, size, user_data):
         variant_status |= 3 << 4
 
         emu.write_u64(oldp, variant_status)
-
     elif name == "hw.memsize":
         emu.write_u64(oldp, 4 * 1024 * 1024 * 1024)
-
     else:
         raise RuntimeError("Unhandled sysctl command: %s" % name)
 

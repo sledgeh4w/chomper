@@ -96,6 +96,15 @@ def handle_sys_rlimit(emu):
 
 @register_syscall_handler(const.SYS_SYSCTL)
 def handle_sys_sysctl(emu):
+    name = emu.get_arg(0)
+
+    ctl_type = emu.read_u32(name)
+    ctl_ident = emu.read_u32(name + 4)
+
+    if ctl_type == const.CTL_KERN:
+        if ctl_ident == const.KERN_PROC:
+            pass
+
     return 0
 
 
@@ -116,14 +125,11 @@ def handle_sys_sysctlbyname(emu):
     if name == "kern.boottime":
         emu.write_u64(oldp, int(time.time()) - 3600 * 24)
         emu.write_u64(oldp + 8, 0)
-
     elif name == "kern.osvariant_status":
         # internal_release_type = 3
         emu.write_u64(oldp, 0x30)
-
     elif name == "hw.memsize":
         emu.write_u64(oldp, 4 * 1024 * 1024 * 1024)
-
     else:
         emu.logger.warning("Unhandled sysctl command: %s" % name)
         # raise RuntimeError("Unhandled sysctl command: %s" % name)
