@@ -19,12 +19,12 @@ from unicorn import (
 from . import const
 from .arch import arm_arch, arm64_arch
 from .exceptions import EmulatorCrashedException, SymbolMissingException
+from .file import FileManager
 from .instruction import AutomicInstruction
 from .memory import MemoryManager
 from .types import Module, Symbol
 from .log import get_logger
-from .os.android import AndroidOs
-from .os.ios import IosOs
+from .os import AndroidOs, IosOs
 from .utils import aligned
 
 
@@ -67,7 +67,7 @@ class Chomper:
         self.uc = self._create_uc(arch, mode)
         self.cs = self._create_cs(arch, mode)
 
-        self.logger = logger or get_logger(self.__class__.__name__)
+        self.logger = logger or get_logger(__name__)
 
         self.os_type = os_type
         self.endian = endian
@@ -87,6 +87,11 @@ class Chomper:
             uc=self.uc,
             address=const.HEAP_ADDRESS,
             minimum_pool_size=const.MINIMUM_POOL_SIZE,
+        )
+
+        self.file_manager = FileManager(
+            emu=self,
+            rootfs_path=rootfs_path,
         )
 
         self._setup_emulator(enable_vfp=enable_vfp)
@@ -349,7 +354,7 @@ class Chomper:
 
         self.logger.error(
             "Emulator crashed from: %s",
-            ", ".join([self.debug_symbol(t) for t in self.backtrace()]),
+            " -> ".join([self.debug_symbol(t) for t in self.backtrace()]),
         )
 
         raise EmulatorCrashedException(

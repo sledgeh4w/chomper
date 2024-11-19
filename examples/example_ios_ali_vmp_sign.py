@@ -47,7 +47,6 @@ def main():
     emu = Chomper(
         arch=ARCH_ARM64,
         os_type=OS_IOS,
-        logger=logger,
         rootfs_path=os.path.join(base_path, "ios/rootfs"),
         enable_ui_kit=True,
     )
@@ -55,9 +54,6 @@ def main():
     objc = ObjC(emu)
 
     hook_ns_bundle(emu)
-
-    # Skip a file operation
-    emu.add_interceptor("_fopen", hook_retval(0))
 
     emu.load_module(os.path.join(base_path, "ios/apps/com.csair.MBP/CSMBP-AppStore-Package"))
 
