@@ -2,13 +2,15 @@ import os
 import random
 import time
 import threading
-import uuid
 from functools import wraps
 from typing import Callable, Dict
 
 from unicorn import arm64_const
 
-from chomper.os.ios import const
+from chomper.structs import Stat64
+from chomper.utils import struct2bytes
+
+from . import const
 
 
 syscall_handlers: Dict[int, Callable] = {}
@@ -45,7 +47,7 @@ def clear_carry_flag(emu):
 
 @register_syscall_handler(const.SYS_GETPID)
 def handle_sys_getpid(emu):
-    return os.getpid()
+    return emu.os.proc_info["pid"]
 
 
 @register_syscall_handler(const.SYS_GETUID)
@@ -94,6 +96,17 @@ def handle_sys_rlimit(emu):
     return 0
 
 
+@register_syscall_handler(const.SYS_LSEEK)
+def handle_sys_lseek(emu):
+    fd = emu.get_arg(0)
+    offset = emu.get_arg(1)
+    whence = emu.get_arg(2)
+
+    clear_carry_flag(emu)
+
+    return emu.file_manager.lseek(fd, offset, whence)
+
+
 @register_syscall_handler(const.SYS_SYSCTL)
 def handle_sys_sysctl(emu):
     name = emu.get_arg(0)
@@ -131,8 +144,7 @@ def handle_sys_sysctlbyname(emu):
     elif name == "hw.memsize":
         emu.write_u64(oldp, 4 * 1024 * 1024 * 1024)
     else:
-        emu.logger.warning("Unhandled sysctl command: %s" % name)
-        # raise RuntimeError("Unhandled sysctl command: %s" % name)
+        emu.logger.warning(f"Unhandled sysctl command: {name}")
 
     return 0
 
@@ -155,10 +167,7 @@ def handle_sys_proc_info(emu):
     buffer = emu.get_arg(4)
 
     if flavor == 11:
-        emu.write_string(
-            buffer,
-            "/private/var/containers/Bundle/Application/%s/App.app" % uuid.uuid4(),
-        )
+        emu.write_string(buffer, emu.os.proc_info["path"])
 
     clear_carry_flag(emu)
 
@@ -167,22 +176,87 @@ def handle_sys_proc_info(emu):
 
 @register_syscall_handler(const.SYS_STAT64)
 def handle_sys_stat64(emu):
-    # path = emu.read_string(emu.get_arg(0))
+    path = emu.read_string(emu.get_arg(0))
     stat = emu.get_arg(1)
 
-    # st_mode
-    emu.write_u32(stat + 4, 0x4000)
+    clear_carry_flag(emu)
+
+    # Bypass readability check of the process directory in NSLocale
+    if path == os.path.dirname(emu.os.proc_info["path"]):
+        stat_bytes = struct2bytes(
+            Stat64(
+                st_mode=0x4000,
+            )
+        )
+        emu.write_bytes(stat, stat_bytes)
+        return 0
+
+    try:
+        emu.write_bytes(stat, emu.file_manager.stat(path))
+        return 0
+    except FileNotFoundError:
+        return -1
+
+
+@register_syscall_handler(const.SYS_FSTAT64)
+def handle_sys_fstat64(emu):
+    fd = emu.get_arg(0)
+    stat = emu.get_arg(1)
+
+    clear_carry_flag(emu)
+
+    emu.write_bytes(stat, emu.file_manager.fstat(fd))
 
     return 0
 
 
 @register_syscall_handler(const.SYS_LSTAT64)
 def handle_sys_lstat64(emu):
-    # path = emu.read_string(emu.get_arg(0))
+    path = emu.read_string(emu.get_arg(0))
     stat = emu.get_arg(1)
 
-    # st_mode
-    emu.write_u32(stat + 4, 0x4000)
+    clear_carry_flag(emu)
+
+    try:
+        emu.write_bytes(stat, emu.file_manager.lstat(path))
+        return 0
+    except FileNotFoundError:
+        return -1
+
+
+@register_syscall_handler(const.SYS_READ_NOCANCEL)
+def handle_sys_read_nocancel(emu):
+    fd = emu.get_arg(0)
+    buf = emu.get_arg(1)
+    size = emu.get_arg(2)
+
+    data = emu.file_manager.read(fd, size)
+    emu.write_bytes(buf, data)
+
+    clear_carry_flag(emu)
+
+    return len(data)
+
+
+@register_syscall_handler(const.SYS_OPEN_NOCANCEL)
+def handle_sys_open_nocancel(emu):
+    path = emu.read_string(emu.get_arg(0))
+    flags = emu.get_arg(1)
+
+    clear_carry_flag(emu)
+
+    try:
+        return emu.file_manager.open(path, flags)
+    except FileNotFoundError:
+        return -1
+
+
+@register_syscall_handler(const.SYS_CLOSE_NOCANCEL)
+def handle_sys_close_nocancel(emu):
+    fd = emu.get_arg(0)
+    emu.file_manager.close(fd)
+
+    clear_carry_flag(emu)
 
     return 0
 

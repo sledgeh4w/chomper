@@ -36,30 +36,6 @@ def hook_os_unfair_lock_assert_owner(uc, address, size, user_data):
     pass
 
 
-@register_hook("_stat")
-def hook_stat(uc, address, size, user_data):
-    emu = user_data["emu"]
-
-    stat = emu.get_arg(1)
-
-    # st_mode
-    emu.write_u32(stat + 4, 0x4000)
-
-    return 0
-
-
-@register_hook("_lstat")
-def hook_lstat(uc, address, size, user_data):
-    emu = user_data["emu"]
-
-    stat = emu.get_arg(1)
-
-    # st_mode
-    emu.write_u32(stat + 4, 0x4000)
-
-    return 0
-
-
 @register_hook("___sysctlbyname")
 def hook_sysctlbyname(uc, address, size, user_data):
     emu = user_data["emu"]
