@@ -1,6 +1,7 @@
-from chomper.base import BaseOs
-from chomper.os.android.hooks import get_hooks
-from chomper.os.android.loader import ELFLoader
+from chomper.loader import ELFLoader
+from chomper.os import BaseOs
+
+from .hooks import get_hooks
 
 
 class AndroidOs(BaseOs):

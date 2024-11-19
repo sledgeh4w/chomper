@@ -1,5 +1,10 @@
+import inspect
+import os
 from ctypes import addressof, create_string_buffer, sizeof, memmove, Structure
+from functools import wraps
+from typing import Optional
 
+from .log import get_logger
 from .objc import ObjC
 
 
@@ -141,3 +146,44 @@ def pyobj2cfobj(emu, obj: object) -> int:
         emu.call_symbol("_CFRelease", cf_str)
 
     return cf_obj
+
+
+def log_call(func):
+    """Decorator to print function calls and parameters."""
+
+    current_frame = inspect.currentframe()
+    caller_frame = inspect.getouterframes(current_frame)[1]
+    module_name = caller_frame.frame.f_globals["__name__"]
+
+    @wraps(func)
+    def decorator(*args, **kwargs):
+        logger = get_logger(module_name)
+
+        sig = inspect.signature(func)
+        bound_args = sig.bind(*args, **kwargs)
+        bound_args.apply_defaults()
+
+        args_str = ""
+
+        for name, value in bound_args.arguments.items():
+            if name in ("self", "cls"):
+                continue
+            if args_str:
+                args_str += ", "
+            args_str += f"{name}={repr(value)}"
+
+        logger.info(f"{func.__name__} called: {args_str}")
+        return func(*args, **kwargs)
+
+    return decorator
+
+
+def safe_join(directory: str, *paths: str) -> Optional[str]:
+    """Safely join path to avoid escaping the base directory."""
+    full_path = os.path.join(directory, *paths)
+    abs_path = os.path.abspath(full_path)
+
+    if not abs_path.startswith(os.path.abspath(directory)):
+        return None
+
+    return abs_path

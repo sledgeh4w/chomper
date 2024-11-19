@@ -5,6 +5,8 @@ ignore =
     W503
 per-file-ignores =
     src/chomper/__init__.py: F401, F403
+    src/chomper/loader/__init__.py: F401
+    src/chomper/os/__init__.py: F401
     src/chomper/os/android/__init__.py: F401
     src/chomper/os/ios/__init__.py: F401
 exclude =

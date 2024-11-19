@@ -1,14 +1,17 @@
 import os
+import random
+import uuid
 from typing import List
 
-from chomper.base import BaseOs
 from chomper.exceptions import EmulatorCrashedException
+from chomper.loader import MachoLoader
+from chomper.os import BaseOs
 from chomper.types import Module
-from chomper.os.ios import const
-from chomper.os.ios.fixup import SystemModuleFixup
-from chomper.os.ios.hooks import get_hooks
-from chomper.os.ios.loader import MachoLoader
-from chomper.os.ios.syscall import get_syscall_handlers
+
+from . import const
+from .fixup import SystemModuleFixup
+from .hooks import get_hooks
+from .syscall import get_syscall_handlers
 
 
 class IosOs(BaseOs):
@@ -20,8 +23,12 @@ class IosOs(BaseOs):
         self.loader = MachoLoader(emu)
 
         self.preferences = self._default_preferences.copy()
-
         self.device_info = self._default_device_info.copy()
+
+        self.proc_info = self._init_proc_info()
+
+        working_dir = os.path.dirname(self.proc_info["path"])
+        self.emu.file_manager.set_working_dir(working_dir)
 
     @property
     def _default_preferences(self) -> dict:
@@ -41,6 +48,17 @@ class IosOs(BaseOs):
             "UserAssignedDeviceName": "iPhone",
             "DeviceName": "iPhone13,1",
             "ProductVersion": "14.4.0",
+        }
+
+    @staticmethod
+    def _init_proc_info() -> dict:
+        """Initialize process info."""
+        return {
+            "pid": random.randint(10000, 20000),
+            "path": (
+                f"/private/var/containers/Bundle/Application"
+                f"/{str(uuid.uuid4()).upper()}/demo.app"
+            ),
         }
 
     def _setup_hooks(self):

@@ -4,9 +4,10 @@ from typing import Dict, List, Tuple, Optional
 import lief
 from lief.MachO import ARM64_RELOCATION
 
-from chomper.base import BaseLoader
 from chomper.types import Module, Symbol, Binding
 from chomper.utils import aligned
+
+from .base import BaseLoader
 
 
 class MachoLoader(BaseLoader):

@@ -11,5 +11,6 @@ def get_logger(name: Optional[str] = None, level: int = logging.INFO) -> logging
     """Get default logger."""
     logger = logging.getLogger(name)
     logger.setLevel(level)
-    logger.addHandler(default_handler)
+    if not logger.hasHandlers():
+        logger.addHandler(default_handler)
     return logger

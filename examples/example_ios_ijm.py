@@ -28,7 +28,6 @@ def main():
     emu = Chomper(
         arch=ARCH_ARM64,
         os_type=OS_IOS,
-        logger=logger,
         rootfs_path=os.path.join(base_path, "ios/rootfs"),
     )
 
