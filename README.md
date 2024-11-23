@@ -37,11 +37,11 @@ from chomper.const import ARCH_ARM64, OS_IOS
 emu = Chomper(
     arch=ARCH_ARM64,
     os_type=OS_IOS,
-    rootfs_path="examples/ios/rootfs",
+    rootfs_path="examples/rootfs/ios",
 )
 
 # Load main program
-duapp = emu.load_module("examples/ios/apps/com.siwuai.duapp/DUApp")
+duapp = emu.load_module("examples/binaries/ios/com.siwuai.duapp/DUApp")
 
 s = "chomper"
 
@@ -69,12 +69,12 @@ from chomper.objc import ObjC
 emu = Chomper(
     arch=ARCH_ARM64,
     os_type=OS_IOS,
-    rootfs_path="examples/ios/rootfs",
+    rootfs_path="examples/rootfs/ios",
 )
 
 objc = ObjC(emu)
 
-emu.load_module("examples/ios/apps/cn.com.scal.sichuanair/zsch")
+emu.load_module("examples/binaries/ios/cn.com.scal.sichuanair/zsch")
 
 # Use this context manager to ensure that Objective-C objects can be automatically released
 with objc.autorelease_pool():
@@ -98,11 +98,11 @@ from chomper.const import ARCH_ARM64, OS_ANDROID
 emu = Chomper(arch=ARCH_ARM64, os_type=OS_ANDROID)
 
 # Load C standard and other libraries
-emu.load_module("examples/android/rootfs/system/lib64/libc.so")
-emu.load_module("examples/android/rootfs/system/lib64/libz.so")
+emu.load_module("examples/rootfs/android/system/lib64/libc.so")
+emu.load_module("examples/rootfs/android/system/lib64/libz.so")
 
 libszstone = emu.load_module(
-    "examples/android/apps/com.shizhuang.duapp/libszstone.so",
+    "examples/binaries/android/com.shizhuang.duapp/libszstone.so",
     exec_init_array=True,
 )
 
