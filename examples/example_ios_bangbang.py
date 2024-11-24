@@ -1,5 +1,7 @@
 import logging
 import os
+import urllib.request
+from pathlib import Path
 
 from chomper import Chomper
 from chomper.const import ARCH_ARM64, OS_IOS
@@ -17,17 +19,34 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+def retrieve_binary(url: str, filepath: str):
+    path = Path(filepath)
+    if path.exists():
+        return
+    if not path.parent.exists():
+        path.parent.mkdir(parents=True)
+    print(f"Retrieving binary: {url}")
+    urllib.request.urlretrieve(url, path)
+
+
 def main():
+    # Download example binary file from the Internet
+    binary_path = "binaries/ios/com.ceair.b2m/ceair_iOS_branch"
+    retrieve_binary(
+        url=f"https://sourceforge.net/projects/chomper-emu/files/examples/{binary_path}/download",
+        filepath=os.path.join(base_path, binary_path),
+    )
+
     emu = Chomper(
         arch=ARCH_ARM64,
         os_type=OS_IOS,
-        rootfs_path=os.path.join(base_path, "ios/rootfs"),
+        rootfs_path=os.path.join(base_path, "rootfs/ios"),
         enable_ui_kit=True,
     )
 
     objc = ObjC(emu)
 
-    emu.load_module(os.path.join(base_path, "ios/apps/com.ceair.b2m/ceair_iOS_branch"))
+    emu.load_module(os.path.join(base_path, binary_path))
 
     with objc.autorelease_pool():
         # Encrypt
