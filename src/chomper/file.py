@@ -1,6 +1,7 @@
 import os
 import sys
 from os import stat_result
+from typing import Optional
 
 from .structs import Stat64, Timespec
 from .utils import struct2bytes, log_call, safe_join
@@ -17,7 +18,7 @@ class FileManager:
         rootfs_path: As the root directory of the mapping file system.
     """
 
-    def __init__(self, emu, rootfs_path: str):
+    def __init__(self, emu, rootfs_path: Optional[str]):
         self.emu = emu
 
         self.rootfs_path = rootfs_path
@@ -38,8 +39,12 @@ class FileManager:
         """Mapping a path used by emulated programs to a real path.
 
         Raises:
+            RuntimeError: If `rootfs_path` not set
             ValueError: If unsafe path pass in.
         """
+        if not self.rootfs_path:
+            raise RuntimeError("Root directory not set")
+
         if not path.startswith("/"):
             path = os.path.join(self.working_dir, path)
 
@@ -53,7 +58,7 @@ class FileManager:
     def construct_stat64(st: stat_result) -> Stat64:
         """Construct stat64 struct based on stat_result.
 
-        Compatible with different host platforms.
+        Compatible with multiple host platforms.
         """
         if sys.platform == "win32":
             block_size = 4096
