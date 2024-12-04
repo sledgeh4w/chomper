@@ -1,27 +1,8 @@
-# Environment variables
-ENVIRON_VARS = r"""SHELL=/bin/sh
-PWD=/var/root
-LOGNAME=root
-HOME=/var/root
-LS_COLORS=rs=0:di=01
-CLICOLOR=
-SSH_CONNECTION=127.0.0.1 59540 127.0.0.1 22
-TERM=xterm
-USER=root
-SHLVL=1
-PS1=\h:\w \u\$
-SSH_CLIENT=127.0.0.1 59540 22
-PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/bin/X11:/usr/games
-MAIL=/var/mail/root
-SSH_TTY=/dev/ttys000
-_=/usr/bin/env
-SBUS_INSERT_LIBRARIES=/usr/lib/substitute-inserter.dylib
-__CF_USER_TEXT_ENCODING=0x0:0:0
-CFN_USE_HTTP3=0
-CFStringDisableROM=1"""
-
 # System call numbers
 
+SYS_READ = 0x3
+SYS_OPEN = 0x5
+SYS_CLOSE = 0x6
 SYS_GETPID = 0x14
 SYS_GETUID = 0x18
 SYS_GETEUID = 0x19
@@ -36,6 +17,7 @@ SYS_SYSCTL = 0xCA
 SYS_SHM_OPEN = 0x10A
 SYS_SYSCTLBYNAME = 0x112
 SYS_GETTID = 0x11E
+SYS_PSYNCH_MUTEXWAIT = 0x12D
 SYS_ISSETUGID = 0x147
 SYS_PROC_INFO = 0x150
 SYS_STAT64 = 0x152
