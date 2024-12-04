@@ -1,4 +1,5 @@
 import logging
+import os
 from functools import wraps
 from typing import Callable, Dict, List, Optional, Tuple, Union
 
@@ -354,7 +355,7 @@ class Chomper:
 
         self.logger.error(
             "Emulator crashed from: %s",
-            " -> ".join([self.debug_symbol(t) for t in self.backtrace()]),
+            " <- ".join([self.debug_symbol(t) for t in self.backtrace()]),
         )
 
         raise EmulatorCrashedException(
@@ -480,6 +481,21 @@ class Chomper:
                 assembly instructions, so this will slow down the emulation.
             trace_symbol_calls: Output log when the symbols in this module are called.
         """
+        if isinstance(self.os, IosOs):
+            self.os.executable_path = module_file
+
+            application_path = os.path.dirname(self.os.proc_info["path"])
+            parent_path = os.path.dirname(self.os.executable_path)
+
+            self.file_manager.forward_path(
+                src_path=self.os.proc_info["path"],
+                dst_path=self.os.executable_path,
+            )
+            self.file_manager.forward_path(
+                src_path=f"{application_path}/Info.plist",
+                dst_path=os.path.join(parent_path, "Info.plist"),
+            )
+
         if not self.modules:
             module_base = const.MODULE_ADDRESS
         else:

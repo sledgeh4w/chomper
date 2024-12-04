@@ -23,7 +23,7 @@ def test_missing_symbol_required_exception(input_bytes):
     with pytest.raises(EmulatorCrashedException, match=r"Missing symbol.*"):
         binary_path = "examples/binaries/android/com.shizhuang.duapp/libszstone.so"
         module_path = os.path.join(conftest.base_path, "..", binary_path)
-        conftest.retrieve_binary(
+        conftest.download_file(
             url=conftest.BINARY_URL % binary_path,
             filepath=module_path,
         )

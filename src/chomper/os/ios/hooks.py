@@ -1,4 +1,5 @@
 import datetime
+import os
 import random
 import time
 import uuid
@@ -60,6 +61,10 @@ def hook_sysctlbyname(uc, address, size, user_data):
         variant_status |= 3 << 4
 
         emu.write_u64(oldp, variant_status)
+    elif name == "hw.machine":
+        machine = emu.os.device_info["DeviceName"]
+        emu.write_string(oldp, machine)
+        emu.write_u64(oldlenp, len(machine))
     elif name == "hw.memsize":
         emu.write_u64(oldp, 4 * 1024 * 1024 * 1024)
     else:
@@ -140,6 +145,11 @@ def hook_pthread_rwlock_rdlock(uc, address, size, user_data):
 
 @register_hook("_pthread_rwlock_unlock")
 def hook_pthread_rwlock_unlock(uc, address, size, user_data):
+    return 0
+
+
+@register_hook("_pthread_mutex_lock")
+def hook_pthread_mutex_lock(uc, address, size, user_data):
     return 0
 
 
@@ -365,6 +375,16 @@ def hook_uloc_get_display_language(uc, address, size, user_data):
     return 0
 
 
+@register_hook("_uloc_addLikelySubtags")
+def hook_uloc_add_likely_subtags(uc, address, size, user_data):
+    return 0
+
+
+@register_hook("_ualoc_localizationsToUse")
+def hook_ualoc_localizations_to_use(uc, address, size, user_data):
+    return 0
+
+
 @register_hook("_uenum_next")
 def hook_uenum_next(uc, address, size, user_data):
     return 0
@@ -412,6 +432,32 @@ def hook_cf_preferences_copy_app_value_with_container_and_configuration(
 
 @register_hook("__CFBundleCreateInfoDictFromMainExecutable")
 def hook_cf_bundle_create_info_dict_from_main_executable(uc, address, size, user_data):
+    emu = user_data["emu"]
+
+    application_path = os.path.dirname(emu.os.executable_path)
+    info_path = os.path.join(application_path, "Info.plist")
+
+    if not os.path.exists(info_path):
+        raise FileNotFoundError(
+            "File 'Info.plist' not found, please ensure that 'Info.plist' "
+            "and executable file are in the same directory."
+        )
+
+    with open(info_path, "rb") as f:
+        info_content = f.read()
+
+    info_data = emu.create_buffer(len(info_content) + 100)
+    emu.write_bytes(info_data, info_content)
+
+    cf_bundle = emu.call_symbol(
+        "__CFBundleCreateInfoDictFromData", info_data, len(info_content)
+    )
+
+    return cf_bundle
+
+
+@register_hook("__CFBundleResourceLogger")
+def hook_cf_bundle_resource_logger(uc, address, size, user_data):
     return 0
 
 

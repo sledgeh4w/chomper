@@ -8,10 +8,32 @@ from chomper.loader import MachoLoader
 from chomper.os import BaseOs
 from chomper.types import Module
 
-from . import const
 from .fixup import SystemModuleFixup
 from .hooks import get_hooks
 from .syscall import get_syscall_handlers
+
+
+# Environment variables
+ENVIRON_VARS = r"""SHELL=/bin/sh
+PWD=/var/root
+LOGNAME=root
+HOME=/var/root
+LS_COLORS=rs=0:di=01
+CLICOLOR=
+SSH_CONNECTION=127.0.0.1 59540 127.0.0.1 22
+TERM=xterm
+USER=root
+SHLVL=1
+PS1=\h:\w \u\$
+SSH_CLIENT=127.0.0.1 59540 22
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/bin/X11:/usr/games
+MAIL=/var/mail/root
+SSH_TTY=/dev/ttys000
+_=/usr/bin/env
+SBUS_INSERT_LIBRARIES=/usr/lib/substitute-inserter.dylib
+__CF_USER_TEXT_ENCODING=0x0:0:0
+CFN_USE_HTTP3=0
+CFStringDisableROM=1"""
 
 
 class IosOs(BaseOs):
@@ -29,6 +51,8 @@ class IosOs(BaseOs):
 
         working_dir = os.path.dirname(self.proc_info["path"])
         self.emu.file_manager.set_working_dir(working_dir)
+
+        self.executable_path = None
 
     @property
     def _default_preferences(self) -> dict:
@@ -53,12 +77,15 @@ class IosOs(BaseOs):
     @staticmethod
     def _init_proc_info() -> dict:
         """Initialize process info."""
+        application_path = (
+            f"/private/var/containers/Bundle/Application/{str(uuid.uuid4()).upper()}"
+        )
+        bundle_identifier = "com.yourcompany.ProductName"
+        bundle_executable = "ProductName"
+
         return {
             "pid": random.randint(10000, 20000),
-            "path": (
-                f"/private/var/containers/Bundle/Application"
-                f"/{str(uuid.uuid4()).upper()}/demo.app"
-            ),
+            "path": f"{application_path}/{bundle_identifier}/{bundle_executable}",
         }
 
     def _setup_hooks(self):
@@ -81,7 +108,7 @@ class IosOs(BaseOs):
 
     def _construct_environ(self) -> int:
         """Construct a structure that contains environment variables."""
-        lines = const.ENVIRON_VARS.split("\n")
+        lines = ENVIRON_VARS.split("\n")
 
         size = self.emu.arch.addr_size * (len(lines) + 1)
         buffer = self.emu.create_buffer(size)
