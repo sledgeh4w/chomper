@@ -19,22 +19,27 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def retrieve_binary(url: str, filepath: str):
+def download_file(url: str, filepath: str):
     path = Path(filepath)
     if path.exists():
         return
     if not path.parent.exists():
         path.parent.mkdir(parents=True)
-    print(f"Retrieving binary: {url}")
+    print(f"Downloading file: {url}")
     urllib.request.urlretrieve(url, path)
 
 
 def main():
-    # Download example binary file from the Internet
     binary_path = "binaries/ios/com.ceair.b2m/ceair_iOS_branch"
-    retrieve_binary(
+
+    # Download example binary file from the Internet
+    download_file(
         url=f"https://sourceforge.net/projects/chomper-emu/files/examples/{binary_path}/download",
         filepath=os.path.join(base_path, binary_path),
+    )
+    download_file(
+        url=f"https://sourceforge.net/projects/chomper-emu/files/examples/{binary_path}/../Info.plist/download",
+        filepath=os.path.join(base_path, binary_path, "../Info.plist"),
     )
 
     emu = Chomper(
@@ -43,7 +48,6 @@ def main():
         rootfs_path=os.path.join(base_path, "rootfs/ios"),
         enable_ui_kit=True,
     )
-
     objc = ObjC(emu)
 
     emu.load_module(os.path.join(base_path, binary_path))

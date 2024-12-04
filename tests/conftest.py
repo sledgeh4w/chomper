@@ -21,13 +21,13 @@ android_binaries_path = os.path.join(base_path, "../examples/binaries/android")
 ios_binaries_path = os.path.join(base_path, "../examples/binaries/ios")
 
 
-def retrieve_binary(url: str, filepath: str):
+def download_file(url: str, filepath: str):
     path = Path(filepath)
     if path.exists():
         return
     if not path.parent.exists():
         path.parent.mkdir(parents=True)
-    print(f"Retrieving binary: {url}")
+    print(f"Downloading file: {url}")
     urllib.request.urlretrieve(url, path)
 
 
@@ -61,7 +61,7 @@ def libdusanwa_v4856_arm(emu_arm):
     """From com.shizhuang.duapp v4.85.6"""
     binary_path = "examples/binaries/android/com.shizhuang.duapp/libdusanwa.so"
     module_path = os.path.join(base_path, "..", binary_path)
-    retrieve_binary(
+    download_file(
         url=BINARY_URL % binary_path,
         filepath=module_path,
     )
@@ -92,7 +92,7 @@ def libszstone_v4945_arm64(emu_arm64):
     """From com.shizhuang.duapp v4.94.5"""
     binary_path = "examples/binaries/android/com.shizhuang.duapp/libszstone.so"
     module_path = os.path.join(base_path, "..", binary_path)
-    retrieve_binary(
+    download_file(
         url=BINARY_URL % binary_path,
         filepath=module_path,
     )
@@ -108,7 +108,7 @@ def libtiny_v73021_arm64(emu_arm64):
     """From com.xingin.xhs v7.30.2.1"""
     binary_path = "examples/binaries/android/com.xingin.xhs/libtiny.so"
     module_path = os.path.join(base_path, "..", binary_path)
-    retrieve_binary(
+    download_file(
         url=BINARY_URL % binary_path,
         filepath=module_path,
     )

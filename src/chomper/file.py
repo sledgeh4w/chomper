@@ -1,8 +1,9 @@
 import os
 import sys
 from os import stat_result
-from typing import Optional
+from typing import Dict, Optional
 
+from .log import get_logger
 from .structs import Stat64, Timespec
 from .utils import struct2bytes, log_call, safe_join
 
@@ -20,9 +21,12 @@ class FileManager:
 
     def __init__(self, emu, rootfs_path: Optional[str]):
         self.emu = emu
+        self.logger = get_logger(__name__)
 
         self.rootfs_path = rootfs_path
         self.working_dir = ""
+
+        self.path_map: Dict[str, str] = {}
 
     def set_working_dir(self, path: str):
         """Set current working directory.
@@ -45,6 +49,11 @@ class FileManager:
         if not self.rootfs_path:
             raise RuntimeError("Root directory not set")
 
+        forwarding_path = self.path_map.get(path)
+        if forwarding_path:
+            self.logger.info(f"Forward path '{path}' -> '{forwarding_path}'")
+            return forwarding_path
+
         if not path.startswith("/"):
             path = os.path.join(self.working_dir, path)
 
@@ -53,6 +62,10 @@ class FileManager:
             raise ValueError(f"Unsafe path: {path}")
 
         return full_path
+
+    def forward_path(self, src_path: str, dst_path: str):
+        """Forward all access to `src_path` to `dst_path`."""
+        self.path_map[src_path] = dst_path
 
     @staticmethod
     def construct_stat64(st: stat_result) -> Stat64:
@@ -98,6 +111,24 @@ class FileManager:
         )
 
     @log_call
+    def read(self, fd: int, size: int) -> bytes:
+        return os.read(fd, size)
+
+    @log_call
+    def open(self, path: str, flags: int) -> int:
+        real_path = self.get_real_path(path)
+        return os.open(real_path, flags)
+
+    @log_call
+    def close(self, fd: int):
+        os.close(fd)
+
+    @log_call
+    def access(self, path: str, mode: int) -> int:
+        real_path = self.get_real_path(path)
+        return os.access(real_path, mode)
+
+    @log_call
     def lseek(self, fd: int, offset: int, whence: int) -> int:
         return os.lseek(fd, offset, whence)
 
@@ -116,16 +147,3 @@ class FileManager:
     def lstat(self, path: str) -> bytes:
         struct = self.construct_stat64(os.lstat(path))
         return struct2bytes(struct)
-
-    @log_call
-    def read(self, fd: int, size: int) -> bytes:
-        return os.read(fd, size)
-
-    @log_call
-    def open(self, path: str, flags: int) -> int:
-        real_path = self.get_real_path(path)
-        return os.open(real_path, flags)
-
-    @log_call
-    def close(self, fd: int):
-        os.close(fd)

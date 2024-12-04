@@ -1,7 +1,6 @@
 import logging
 import os
 import urllib.request
-import uuid
 from pathlib import Path
 
 from chomper import Chomper
@@ -20,47 +19,27 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def hook_skip(uc, address, size, user_data):
-    pass
-
-
-def hook_retval(retval):
-    def decorator(uc, address, size, user_data):
-        return retval
-
-    return decorator
-
-
-def hook_ns_bundle(emu):
-    executable_path = f"/var/containers/Bundle/Application/{uuid.uuid4()}/com.ceair.b2m/ceair_iOS_branch"
-
-    bundle_info = {
-        "CFBundleShortVersionString": "9.4.7",
-        "CFBundleExecutable": executable_path,
-    }
-
-    emu.add_interceptor("-[NSBundle initWithPath:]", hook_skip)
-    emu.add_interceptor("-[NSBundle bundleIdentifier]", hook_retval(pyobj2nsobj(emu, "com.ceair.b2m")))
-    emu.add_interceptor("-[NSBundle executablePath]", hook_retval(pyobj2nsobj(emu, executable_path)))
-    emu.add_interceptor("-[NSBundle infoDictionary]", hook_retval(pyobj2nsobj(emu, bundle_info)))
-
-
-def retrieve_binary(url: str, filepath: str):
+def download_file(url: str, filepath: str):
     path = Path(filepath)
     if path.exists():
         return
     if not path.parent.exists():
         path.parent.mkdir(parents=True)
-    print(f"Retrieving binary: {url}")
+    print(f"Downloading file: {url}")
     urllib.request.urlretrieve(url, path)
 
 
 def main():
-    # Download example binary file from the Internet
     binary_path = "binaries/ios/com.csair.MBP/CSMBP-AppStore-Package"
-    retrieve_binary(
+
+    # Download example binary file from the Internet
+    download_file(
         url=f"https://sourceforge.net/projects/chomper-emu/files/examples/{binary_path}/download",
         filepath=os.path.join(base_path, binary_path),
+    )
+    download_file(
+        url=f"https://sourceforge.net/projects/chomper-emu/files/examples/{binary_path}/../Info.plist/download",
+        filepath=os.path.join(base_path, binary_path, "../Info.plist"),
     )
 
     emu = Chomper(
@@ -68,11 +47,9 @@ def main():
         os_type=OS_IOS,
         rootfs_path=os.path.join(base_path, "rootfs/ios"),
         enable_ui_kit=True,
+        logger=logger,
     )
-
     objc = ObjC(emu)
-
-    hook_ns_bundle(emu)
 
     emu.load_module(os.path.join(base_path, binary_path))
 

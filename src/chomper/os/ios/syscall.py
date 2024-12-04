@@ -12,7 +12,6 @@ from chomper.utils import struct2bytes
 
 from . import const
 
-
 syscall_handlers: Dict[int, Callable] = {}
 
 
@@ -35,14 +34,58 @@ def register_syscall_handler(syscall_no: int):
     return wrapper
 
 
-def clear_carry_flag(emu):
-    """Clear the carry flag.
+def clear_carry_flag(func):
+    """Decorator to clear the carry flag after called.
 
     Some system functions will check the carry flag after system calls,
     such as `_csops` and `proc_pidpath`.
     """
-    nzcv = emu.uc.reg_read(arm64_const.UC_ARM64_REG_NZCV)
-    emu.uc.reg_write(arm64_const.UC_ARM64_REG_NZCV, nzcv & ~(1 << 29))
+
+    @wraps(func)
+    def decorator(emu):
+        retval = func(emu)
+        nzcv = emu.uc.reg_read(arm64_const.UC_ARM64_REG_NZCV)
+        emu.uc.reg_write(arm64_const.UC_ARM64_REG_NZCV, nzcv & ~(1 << 29))
+        return retval
+
+    return decorator
+
+
+@register_syscall_handler(const.SYS_READ)
+@register_syscall_handler(const.SYS_READ_NOCANCEL)
+@clear_carry_flag
+def handle_sys_read(emu):
+    fd = emu.get_arg(0)
+    buf = emu.get_arg(1)
+    size = emu.get_arg(2)
+
+    data = emu.file_manager.read(fd, size)
+    emu.write_bytes(buf, data)
+
+    return len(data)
+
+
+@register_syscall_handler(const.SYS_OPEN)
+@register_syscall_handler(const.SYS_OPEN_NOCANCEL)
+@clear_carry_flag
+def handle_sys_open(emu):
+    path = emu.read_string(emu.get_arg(0))
+    flags = emu.get_arg(1)
+
+    try:
+        return emu.file_manager.open(path, flags)
+    except FileNotFoundError:
+        return -1
+
+
+@register_syscall_handler(const.SYS_CLOSE)
+@register_syscall_handler(const.SYS_CLOSE_NOCANCEL)
+@clear_carry_flag
+def handle_sys_close(emu):
+    fd = emu.get_arg(0)
+    emu.file_manager.close(fd)
+
+    return 0
 
 
 @register_syscall_handler(const.SYS_GETPID)
@@ -62,7 +105,13 @@ def handle_sys_geteuid(emu):
 
 @register_syscall_handler(const.SYS_ACCESS)
 def handle_sys_access(emu):
-    return 0
+    path = emu.read_string(emu.get_arg(0))
+    mode = emu.get_arg(1)
+
+    if path == os.path.dirname(emu.os.proc_info["path"]):
+        return 0
+
+    return emu.file_manager.access(path, mode)
 
 
 @register_syscall_handler(const.SYS_GETEGID)
@@ -81,12 +130,10 @@ def handle_sys_gettimeofday(emu):
 
 
 @register_syscall_handler(const.SYS_CSOPS)
+@clear_carry_flag
 def handle_sys_csops(emu):
     useraddr = emu.get_arg(2)
-
     emu.write_u32(useraddr, 0x4000800)
-
-    clear_carry_flag(emu)
 
     return 0
 
@@ -97,12 +144,11 @@ def handle_sys_rlimit(emu):
 
 
 @register_syscall_handler(const.SYS_LSEEK)
+@clear_carry_flag
 def handle_sys_lseek(emu):
     fd = emu.get_arg(0)
     offset = emu.get_arg(1)
     whence = emu.get_arg(2)
-
-    clear_carry_flag(emu)
 
     return emu.file_manager.lseek(fd, offset, whence)
 
@@ -155,12 +201,19 @@ def handle_sys_gettid(emu):
     return thread.ident
 
 
+@register_syscall_handler(const.SYS_PSYNCH_MUTEXWAIT)
+@clear_carry_flag
+def handle_sys_psynch_mutexwait(emu):
+    return 0
+
+
 @register_syscall_handler(const.SYS_ISSETUGID)
 def handle_sys_issetugid(emu):
     return 0
 
 
 @register_syscall_handler(const.SYS_PROC_INFO)
+@clear_carry_flag
 def handle_sys_proc_info(emu):
     # pid = emu.get_arg(1)
     flavor = emu.get_arg(2)
@@ -169,17 +222,14 @@ def handle_sys_proc_info(emu):
     if flavor == 11:
         emu.write_string(buffer, emu.os.proc_info["path"])
 
-    clear_carry_flag(emu)
-
     return 0
 
 
 @register_syscall_handler(const.SYS_STAT64)
+@clear_carry_flag
 def handle_sys_stat64(emu):
     path = emu.read_string(emu.get_arg(0))
     stat = emu.get_arg(1)
-
-    clear_carry_flag(emu)
 
     # Bypass readability check of the process directory in NSLocale
     if path == os.path.dirname(emu.os.proc_info["path"]):
@@ -199,11 +249,10 @@ def handle_sys_stat64(emu):
 
 
 @register_syscall_handler(const.SYS_FSTAT64)
+@clear_carry_flag
 def handle_sys_fstat64(emu):
     fd = emu.get_arg(0)
     stat = emu.get_arg(1)
-
-    clear_carry_flag(emu)
 
     emu.write_bytes(stat, emu.file_manager.fstat(fd))
 
@@ -211,54 +260,16 @@ def handle_sys_fstat64(emu):
 
 
 @register_syscall_handler(const.SYS_LSTAT64)
+@clear_carry_flag
 def handle_sys_lstat64(emu):
     path = emu.read_string(emu.get_arg(0))
     stat = emu.get_arg(1)
-
-    clear_carry_flag(emu)
 
     try:
         emu.write_bytes(stat, emu.file_manager.lstat(path))
         return 0
     except FileNotFoundError:
         return -1
-
-
-@register_syscall_handler(const.SYS_READ_NOCANCEL)
-def handle_sys_read_nocancel(emu):
-    fd = emu.get_arg(0)
-    buf = emu.get_arg(1)
-    size = emu.get_arg(2)
-
-    data = emu.file_manager.read(fd, size)
-    emu.write_bytes(buf, data)
-
-    clear_carry_flag(emu)
-
-    return len(data)
-
-
-@register_syscall_handler(const.SYS_OPEN_NOCANCEL)
-def handle_sys_open_nocancel(emu):
-    path = emu.read_string(emu.get_arg(0))
-    flags = emu.get_arg(1)
-
-    clear_carry_flag(emu)
-
-    try:
-        return emu.file_manager.open(path, flags)
-    except FileNotFoundError:
-        return -1
-
-
-@register_syscall_handler(const.SYS_CLOSE_NOCANCEL)
-def handle_sys_close_nocancel(emu):
-    fd = emu.get_arg(0)
-    emu.file_manager.close(fd)
-
-    clear_carry_flag(emu)
-
-    return 0
 
 
 @register_syscall_handler(const.SYS_GETENTROPY)
