@@ -22,7 +22,7 @@ ios_binaries_path = os.path.join(base_path, "../examples/binaries/ios")
 
 
 def download_file(url: str, filepath: str):
-    path = Path(filepath)
+    path = Path(filepath).resolve()
     if path.exists():
         return
     if not path.parent.exists():

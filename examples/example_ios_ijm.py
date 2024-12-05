@@ -27,7 +27,7 @@ def hook_retval(retval):
 
 
 def download_file(url: str, filepath: str):
-    path = Path(filepath)
+    path = Path(filepath).resolve()
     if path.exists():
         return
     if not path.parent.exists():

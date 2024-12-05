@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 
 def download_file(url: str, filepath: str):
-    path = Path(filepath)
+    path = Path(filepath).resolve()
     if path.exists():
         return
     if not path.parent.exists():
@@ -47,7 +47,6 @@ def main():
         os_type=OS_IOS,
         rootfs_path=os.path.join(base_path, "rootfs/ios"),
         enable_ui_kit=True,
-        logger=logger,
     )
     objc = ObjC(emu)
 
