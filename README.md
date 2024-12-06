@@ -5,7 +5,7 @@
 ![PyPI - Python Version](https://img.shields.io/pypi/pyversions/chomper)
 [![GitHub license](https://img.shields.io/github/license/sledgeh4w/chomper)](https://github.com/sledgeh4w/chomper/blob/main/LICENSE)
 
-Chomper is a lightweight emulation framework based on [Unicorn](https://github.com/unicorn-engine/unicorn). It is mainly used to emulate encryption of iOS executables and libraries. In addition, it also provides limited support for Android native libraries.
+Chomper is a lightweight emulation framework based on [Unicorn](https://github.com/unicorn-engine/unicorn). It is mainly used to emulate security algorithms of iOS executables and libraries. In addition, it also provides limited support for Android native libraries.
 
 ## Features
 
@@ -117,6 +117,4 @@ result = emu.read_bytes(a3, result_size)
 ```
 
 ## Examples
-[Here](https://github.com/sledgeh4w/chomper/tree/main/examples) are some encryption emulation examples.
-
-You can download all example binary files from [SourceForge](https://sourceforge.net/projects/chomper-emu/files/examples/binaries/).
+There are some security algorithm emulation codes in the [examples](https://github.com/sledgeh4w/chomper/tree/main/examples), and you can download all example binary files from [SourceForge](https://sourceforge.net/projects/chomper-emu/files/examples/binaries/).
