@@ -1,8 +1,19 @@
+## v0.3.3
+
+Released: 2024-12-06
+
+- Compatibility with unicorn 2.1.0.
+- Fix no memory to map ([issue #93][issue_93]).
+- Support more system calls (`read`, `open`, `close`, `lseek`, `stat`).
+- Support `NSBundle` initialization.
+
+[issue_93]: https://github.com/sledgeh4w/chomper/issues/93
+
 ## v0.3.2
 
 Released: 2024-07-22
 
-- Emulate `libmacho.dylib` instead of hooking.
+- Load `libmacho.dylib` instead of mocking.
 - Fix initialization of large-sized `NSData`.
 - Compatibility with lief 0.15.0.
 - Improve performance of `read_string`.
