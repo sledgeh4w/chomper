@@ -1,5 +1,6 @@
 import os
 import random
+import sys
 import time
 import threading
 from functools import wraps
@@ -60,7 +61,7 @@ def handle_sys_open(emu):
     path = emu.read_string(emu.get_arg(0))
     flags = emu.get_arg(1)
 
-    if not (flags & os.O_TEXT):
+    if sys.platform == "win32":
         flags |= os.O_BINARY
 
     try:
