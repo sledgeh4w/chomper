@@ -1,23 +1,23 @@
-from ctypes import Structure, c_int32, c_int64, c_uint16, c_uint32, c_uint64
+import ctypes
 
 
-class MachHeader64(Structure):
+class MachHeader64(ctypes.Structure):
     _fields_ = [
-        ("magic", c_uint32),
-        ("cputype", c_uint32),
-        ("cpusubtype", c_uint32),
-        ("filetype", c_uint32),
-        ("ncmds", c_uint32),
-        ("sizeofcmds", c_uint32),
-        ("flags", c_uint32),
-        ("reserved", c_uint32),
+        ("magic", ctypes.c_uint32),
+        ("cputype", ctypes.c_uint32),
+        ("cpusubtype", ctypes.c_uint32),
+        ("filetype", ctypes.c_uint32),
+        ("ncmds", ctypes.c_uint32),
+        ("sizeofcmds", ctypes.c_uint32),
+        ("flags", ctypes.c_uint32),
+        ("reserved", ctypes.c_uint32),
     ]
 
 
-class Timespec(Structure):
+class Timespec(ctypes.Structure):
     _fields_ = [
-        ("tv_sec", c_int64),
-        ("tv_nsec", c_int64),
+        ("tv_sec", ctypes.c_int64),
+        ("tv_nsec", ctypes.c_int64),
     ]
 
     @classmethod
@@ -29,46 +29,57 @@ class Timespec(Structure):
         )
 
 
-class Stat(Structure):
+class Stat(ctypes.Structure):
     _fields_ = [
-        ("st_dev", c_int32),
-        ("st_ino", c_uint32),
-        ("st_mode", c_uint16),
-        ("st_nlink", c_uint16),
-        ("st_uid", c_uint32),
-        ("st_gid", c_uint32),
-        ("st_rdev", c_int32),
+        ("st_dev", ctypes.c_int32),
+        ("st_ino", ctypes.c_uint32),
+        ("st_mode", ctypes.c_uint16),
+        ("st_nlink", ctypes.c_uint16),
+        ("st_uid", ctypes.c_uint32),
+        ("st_gid", ctypes.c_uint32),
+        ("st_rdev", ctypes.c_int32),
         ("st_atimespec", Timespec),
         ("st_mtimespec", Timespec),
         ("st_ctimespec", Timespec),
-        ("st_size", c_int64),
-        ("st_blocks", c_int64),
-        ("st_blksize", c_int32),
-        ("st_flags", c_uint32),
-        ("st_gen", c_uint32),
-        ("st_lspare", c_int32),
-        ("st_qspare", c_int64 * 2),
+        ("st_size", ctypes.c_int64),
+        ("st_blocks", ctypes.c_int64),
+        ("st_blksize", ctypes.c_int32),
+        ("st_flags", ctypes.c_uint32),
+        ("st_gen", ctypes.c_uint32),
+        ("st_lspare", ctypes.c_int32),
+        ("st_qspare", ctypes.c_int64 * 2),
     ]
 
 
-class Stat64(Structure):
+class Stat64(ctypes.Structure):
     _fields_ = [
-        ("st_dev", c_int32),
-        ("st_mode", c_uint16),
-        ("st_nlink", c_uint16),
-        ("st_ino", c_uint64),
-        ("st_uid", c_uint32),
-        ("st_gid", c_uint32),
-        ("st_rdev", c_int32),
+        ("st_dev", ctypes.c_int32),
+        ("st_mode", ctypes.c_uint16),
+        ("st_nlink", ctypes.c_uint16),
+        ("st_ino", ctypes.c_uint64),
+        ("st_uid", ctypes.c_uint32),
+        ("st_gid", ctypes.c_uint32),
+        ("st_rdev", ctypes.c_int32),
         ("st_atimespec", Timespec),
         ("st_mtimespec", Timespec),
         ("st_ctimespec", Timespec),
         ("st_birthtimespec", Timespec),
-        ("st_size", c_int64),
-        ("st_blocks", c_int64),
-        ("st_blksize", c_int32),
-        ("st_flags", c_uint32),
-        ("st_gen", c_uint32),
-        ("st_lspare", c_int32),
-        ("st_qspare", c_int64 * 2),
+        ("st_size", ctypes.c_int64),
+        ("st_blocks", ctypes.c_int64),
+        ("st_blksize", ctypes.c_int32),
+        ("st_flags", ctypes.c_uint32),
+        ("st_gen", ctypes.c_uint32),
+        ("st_lspare", ctypes.c_int32),
+        ("st_qspare", ctypes.c_int64 * 2),
+    ]
+
+
+class Dirent(ctypes.Structure):
+    _fields_ = [
+        ("d_ino", ctypes.c_uint64),
+        ("d_seekoff", ctypes.c_uint64),
+        ("d_reclen", ctypes.c_uint16),
+        ("d_namlen", ctypes.c_uint16),
+        ("d_type", ctypes.c_uint8),
+        ("d_name", ctypes.c_char * 1024),
     ]
