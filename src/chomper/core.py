@@ -427,6 +427,13 @@ class Chomper:
             syscall_no = self.uc.reg_read(arm64_const.UC_ARM64_REG_X16)
             syscall_handler = self.syscall_handlers.get(syscall_no)
 
+            address = self.uc.reg_read(self.arch.reg_pc)
+
+            self.logger.info(
+                f"System call 0x{syscall_no:X} invoked "
+                f"from {self.debug_symbol(address)}"
+            )
+
             if syscall_handler:
                 result = syscall_handler(self)
 

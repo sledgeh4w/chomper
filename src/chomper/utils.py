@@ -172,8 +172,17 @@ def log_call(func):
                 args_str += ", "
             args_str += f"{name}={repr(value)}"
 
-        logger.info(f"{func.__name__} called: {args_str}")
-        return func(*args, **kwargs)
+        log_prefix = f"Monitor '{func.__name__}' "
+        logger.info(f"{log_prefix}call: {args_str}")
+
+        retval = func(*args, **kwargs)
+
+        if isinstance(retval, int):
+            logger.info(f"{log_prefix}return: {retval}")
+        else:
+            logger.info(f"{log_prefix}return")
+
+        return retval
 
     return decorator
 

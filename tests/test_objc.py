@@ -1,3 +1,6 @@
+from chomper.utils import pyobj2nsobj
+
+
 def test_ns_string(emu_ios, objc):
     with objc.autorelease_pool():
         string = objc.msg_send("NSString", "stringWithUTF8String:", "chomper")
@@ -52,24 +55,24 @@ def test_ns_data_with_large_size(emu_ios, objc):
 
 def test_ns_url(emu_ios, objc):
     with objc.autorelease_pool():
-        string = objc.msg_send(
-            "NSString", "stringWithUTF8String:", "https://google.com"
+        url_str = objc.msg_send(
+            "NSString", "stringWithUTF8String:", "https://github.com/sledgeh4w/chomper"
         )
 
         url = objc.msg_send("NSURL", "alloc")
-        objc.msg_send(url, "initWithString:", string)
+        objc.msg_send(url, "initWithString:", url_str)
 
         assert url
 
 
 def test_ns_request(emu_ios, objc):
     with objc.autorelease_pool():
-        string = objc.msg_send(
-            "NSString", "stringWithUTF8String:", "https://google.com"
+        url_str = objc.msg_send(
+            "NSString", "stringWithUTF8String:", "https://github.com/sledgeh4w/chomper"
         )
 
         url = objc.msg_send("NSURL", "alloc")
-        objc.msg_send(url, "initWithString:", string)
+        objc.msg_send(url, "initWithString:", url_str)
 
         request = objc.msg_send("NSMutableURLRequest", "requestWithURL:", url)
 
@@ -85,7 +88,7 @@ def test_ns_locale(emu_ios, objc):
         preferred_language = objc.msg_send(preferred_languages, "firstObject")
         str_ptr = objc.msg_send(preferred_language, "cStringUsingEncoding:", 4)
 
-        assert len(emu_ios.read_string(str_ptr)) > 0
+        assert len(emu_ios.read_string(str_ptr))
 
 
 def test_ns_user_defaults(emu_ios, objc):
@@ -99,4 +102,52 @@ def test_ns_user_defaults(emu_ios, objc):
         apple_locale = objc.msg_send(user_defaults, "stringForKey:", key)
         str_ptr = objc.msg_send(apple_locale, "cStringUsingEncoding:", 4)
 
-        assert len(emu_ios.read_string(str_ptr)) > 0
+        assert len(emu_ios.read_string(str_ptr))
+
+
+def test_ns_date(emu_ios, objc):
+    with objc.autorelease_pool():
+        date = objc.msg_send("NSDate", "date")
+
+        assert date
+
+
+def test_ns_date_formatter(emu_ios, objc):
+    with objc.autorelease_pool():
+        date_formatter = objc.msg_send("NSDateFormatter", "alloc")
+        date_formatter = objc.msg_send(date_formatter, "init")
+
+        assert date_formatter
+
+        format_str = pyobj2nsobj(emu_ios, "yyyy-MM-dd HH:mm:ss")
+        objc.msg_send(date_formatter, "setDateFormat:", format_str)
+
+        current_date = objc.msg_send("NSDate", "date")
+
+        date_str = objc.msg_send(date_formatter, "stringFromDate:", current_date)
+        str_ptr = objc.msg_send(date_str, "cStringUsingEncoding:", 4)
+
+        assert len(emu_ios.read_string(str_ptr))
+
+        date = objc.msg_send(date_formatter, "dateFromString:", date_str)
+
+        assert date
+
+
+def test_ns_time_zone(emu_ios, objc):
+    with objc.autorelease_pool():
+        time_zone = objc.msg_send("NSTimeZone", "defaultTimeZone")
+
+        name = objc.msg_send(time_zone, "name")
+        str_ptr = objc.msg_send(name, "cStringUsingEncoding:", 4)
+
+        assert len(emu_ios.read_string(str_ptr))
+
+        name_shanghai = pyobj2nsobj(emu_ios, "Asia/Shanghai")
+        time_zone_shanghai = objc.msg_send(
+            "NSTimeZone", "timeZoneWithName:", name_shanghai
+        )
+
+        assert time_zone_shanghai
+
+        objc.msg_send("NSTimeZone", "setDefaultTimeZone:", time_zone_shanghai)

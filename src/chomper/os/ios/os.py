@@ -12,7 +12,6 @@ from .fixup import SystemModuleFixup
 from .hooks import get_hooks
 from .syscall import get_syscall_handlers
 
-
 # Environment variables
 ENVIRON_VARS = r"""SHELL=/bin/sh
 PWD=/var/root
@@ -34,6 +33,59 @@ SBUS_INSERT_LIBRARIES=/usr/lib/substitute-inserter.dylib
 __CF_USER_TEXT_ENCODING=0x0:0:0
 CFN_USE_HTTP3=0
 CFStringDisableROM=1"""
+
+# Dependent libraries of ObjC
+OBJC_DEPENDENCIES = [
+    "libsystem_platform.dylib",
+    "libsystem_kernel.dylib",
+    "libsystem_c.dylib",
+    "libsystem_pthread.dylib",
+    "libsystem_info.dylib",
+    "libsystem_darwin.dylib",
+    "libsystem_featureflags.dylib",
+    "libsystem_m.dylib",
+    "libcorecrypto.dylib",
+    "libcommonCrypto.dylib",
+    "libc++abi.dylib",
+    "libc++.1.dylib",
+    "libmacho.dylib",
+    "libdyld.dylib",
+    "libobjc.A.dylib",
+    "libdispatch.dylib",
+    "libsystem_blocks.dylib",
+    "libsystem_trace.dylib",
+    "libsystem_sandbox.dylib",
+    "libnetwork.dylib",
+    "libicucore.A.dylib",
+    "libcache.dylib",
+    "CoreFoundation",
+    "CFNetwork",
+    "Foundation",
+    "Security",
+]
+
+# Dependent libraries of UIKit
+UI_KIT_DEPENDENCIES = [
+    "QuartzCore",
+    "BaseBoard",
+    "FrontBoardServices",
+    "PrototypeTools",
+    "TextInput",
+    "PhysicsKit",
+    "CoreAutoLayout",
+    "UIFoundation",
+    "UIKitServices",
+    "UIKitCore",
+]
+
+# Define symbolic links in the file system
+SYMBOLIC_LINKS = {
+    "/usr/share/zoneinfo": "/var/db/timezone/zoneinfo",
+    "/var/db/timezone/icutz": "/var/db/timezone/tz/2024a.1.0/icutz/",
+    "/var/db/timezone/localtime": "/var/db/timezone/zoneinfo/Asia/Shanghai",
+    "/var/db/timezone/tz_latest": " /var/db/timezone/tz/2024a.1.0/",
+    "/var/db/timezone/zoneinfo": "/var/db/timezone/tz/2024a.1.0/zoneinfo/",
+}
 
 
 class IosOs(BaseOs):
@@ -163,8 +215,8 @@ class IosOs(BaseOs):
         self.emu.write_pointer(dyld_all_images.address + 0x50, platform_ptr)
 
     def _init_objc_vars(self):
-        """Initialize global variables in `libobjc.A.dylib while
-        calling `__objc_init`."""
+        """Initialize global variables in `libobjc.A.dylib
+        while calling `__objc_init`."""
         prototypes = self.emu.find_symbol("__ZL10prototypes")
         self.emu.write_u64(prototypes.address, 0)
 
@@ -259,37 +311,13 @@ class IosOs(BaseOs):
             # Fixup must be executed before initializing Objective-C.
             fixup.install(module)
 
+            # TODO: `__pthread_init` in `libsystem_pthread.dylib`
+
             self.init_objc(module)
 
     def _enable_objc(self):
         """Enable Objective-C support."""
-        dependencies = [
-            "libsystem_platform.dylib",
-            "libsystem_kernel.dylib",
-            "libsystem_c.dylib",
-            "libsystem_pthread.dylib",
-            "libsystem_info.dylib",
-            "libsystem_darwin.dylib",
-            "libsystem_featureflags.dylib",
-            "libcorecrypto.dylib",
-            "libcommonCrypto.dylib",
-            "libc++abi.dylib",
-            "libc++.1.dylib",
-            "libmacho.dylib",
-            "libdyld.dylib",
-            "libobjc.A.dylib",
-            "libdispatch.dylib",
-            "libsystem_blocks.dylib",
-            "libsystem_trace.dylib",
-            "libsystem_sandbox.dylib",
-            "libnetwork.dylib",
-            "CoreFoundation",
-            "CFNetwork",
-            "Foundation",
-            "Security",
-        ]
-
-        self.resolve_modules(dependencies)
+        self.resolve_modules(OBJC_DEPENDENCIES)
 
         # Call initialize function of `CoreFoundation`
         self.emu.call_symbol("___CFInitialize")
@@ -302,25 +330,19 @@ class IosOs(BaseOs):
 
         Mainly used to load `UIDevice` class, which is used to get device info.
         """
-        dependencies = [
-            "QuartzCore",
-            "BaseBoard",
-            "FrontBoardServices",
-            "PrototypeTools",
-            "TextInput",
-            "PhysicsKit",
-            "CoreAutoLayout",
-            "UIFoundation",
-            "UIKitServices",
-            "UIKitCore",
-        ]
+        self.resolve_modules(UI_KIT_DEPENDENCIES)
 
-        self.resolve_modules(dependencies)
+    def _init_symbolic_links(self):
+        """Initialize symbol links."""
+        for src, dst in SYMBOLIC_LINKS.items():
+            self.emu.file_manager.set_symbolic_link(src, dst)
 
     def initialize(self):
         """Initialize environment."""
         self._setup_hooks()
         self._setup_syscall_handlers()
+
+        self._init_symbolic_links()
 
         if self.emu.enable_objc:
             self._enable_objc()

@@ -26,7 +26,14 @@ def register_syscall_handler(syscall_no: int):
     def wrapper(func):
         @wraps(func)
         def decorator(emu):
-            return func(emu)
+            retval = func(emu)
+
+            # Clear the carry flag after called, many functions will
+            # check it after system calls.
+            nzcv = emu.uc.reg_read(arm64_const.UC_ARM64_REG_NZCV)
+            emu.uc.reg_write(arm64_const.UC_ARM64_REG_NZCV, nzcv & ~(1 << 29))
+
+            return retval
 
         syscall_handlers[syscall_no] = decorator
         return func
@@ -34,26 +41,8 @@ def register_syscall_handler(syscall_no: int):
     return wrapper
 
 
-def clear_carry_flag(func):
-    """Decorator to clear the carry flag after called.
-
-    Some system functions will check the carry flag after system calls,
-    such as `_csops` and `proc_pidpath`.
-    """
-
-    @wraps(func)
-    def decorator(emu):
-        retval = func(emu)
-        nzcv = emu.uc.reg_read(arm64_const.UC_ARM64_REG_NZCV)
-        emu.uc.reg_write(arm64_const.UC_ARM64_REG_NZCV, nzcv & ~(1 << 29))
-        return retval
-
-    return decorator
-
-
 @register_syscall_handler(const.SYS_READ)
 @register_syscall_handler(const.SYS_READ_NOCANCEL)
-@clear_carry_flag
 def handle_sys_read(emu):
     fd = emu.get_arg(0)
     buf = emu.get_arg(1)
@@ -67,10 +56,12 @@ def handle_sys_read(emu):
 
 @register_syscall_handler(const.SYS_OPEN)
 @register_syscall_handler(const.SYS_OPEN_NOCANCEL)
-@clear_carry_flag
 def handle_sys_open(emu):
     path = emu.read_string(emu.get_arg(0))
     flags = emu.get_arg(1)
+
+    if not (flags & os.O_TEXT):
+        flags |= os.O_BINARY
 
     try:
         return emu.file_manager.open(path, flags)
@@ -80,7 +71,6 @@ def handle_sys_open(emu):
 
 @register_syscall_handler(const.SYS_CLOSE)
 @register_syscall_handler(const.SYS_CLOSE_NOCANCEL)
-@clear_carry_flag
 def handle_sys_close(emu):
     fd = emu.get_arg(0)
     emu.file_manager.close(fd)
@@ -114,6 +104,35 @@ def handle_sys_access(emu):
     return emu.file_manager.access(path, mode)
 
 
+@register_syscall_handler(const.SYS_READLINK)
+def handle_sys_readlink(emu):
+    path = emu.read_string(emu.get_arg(0))
+    buf = emu.get_arg(1)
+    buf_size = emu.get_arg(2)
+
+    result = emu.file_manager.readlink(path)
+    if result is None or len(result) > buf_size:
+        return -1
+
+    emu.write_string(buf, result)
+
+    return 0
+
+
+@register_syscall_handler(const.SYS_MUNMAP)
+def handle_sys_munmap(emu):
+    addr = emu.get_arg(0)
+
+    emu.free(addr)
+
+    return 0
+
+
+@register_syscall_handler(const.SYS_MADVISE)
+def handle_sys_madvise(emu):
+    return 0
+
+
 @register_syscall_handler(const.SYS_GETEGID)
 def handle_sys_getegid(emu):
     return 1
@@ -130,7 +149,6 @@ def handle_sys_gettimeofday(emu):
 
 
 @register_syscall_handler(const.SYS_CSOPS)
-@clear_carry_flag
 def handle_sys_csops(emu):
     useraddr = emu.get_arg(2)
     emu.write_u32(useraddr, 0x4000800)
@@ -143,8 +161,29 @@ def handle_sys_rlimit(emu):
     return 0
 
 
+@register_syscall_handler(const.SYS_MMAP)
+def handle_sys_mmap(emu):
+    length = emu.get_arg(1)
+    fd = emu.get_arg(4)
+    offset = emu.get_arg(5)
+
+    buf = emu.create_buffer(length)
+
+    chunk_size = 1024 * 1024
+    content = b""
+
+    while True:
+        chunk = os.read(fd, chunk_size)
+        if not chunk:
+            break
+        content += chunk
+
+    emu.write_bytes(buf, content[offset:])
+
+    return buf
+
+
 @register_syscall_handler(const.SYS_LSEEK)
-@clear_carry_flag
 def handle_sys_lseek(emu):
     fd = emu.get_arg(0)
     offset = emu.get_arg(1)
@@ -202,7 +241,6 @@ def handle_sys_gettid(emu):
 
 
 @register_syscall_handler(const.SYS_PSYNCH_MUTEXWAIT)
-@clear_carry_flag
 def handle_sys_psynch_mutexwait(emu):
     return 0
 
@@ -213,7 +251,6 @@ def handle_sys_issetugid(emu):
 
 
 @register_syscall_handler(const.SYS_PROC_INFO)
-@clear_carry_flag
 def handle_sys_proc_info(emu):
     # pid = emu.get_arg(1)
     flavor = emu.get_arg(2)
@@ -226,7 +263,6 @@ def handle_sys_proc_info(emu):
 
 
 @register_syscall_handler(const.SYS_STAT64)
-@clear_carry_flag
 def handle_sys_stat64(emu):
     path = emu.read_string(emu.get_arg(0))
     stat = emu.get_arg(1)
@@ -249,7 +285,6 @@ def handle_sys_stat64(emu):
 
 
 @register_syscall_handler(const.SYS_FSTAT64)
-@clear_carry_flag
 def handle_sys_fstat64(emu):
     fd = emu.get_arg(0)
     stat = emu.get_arg(1)
@@ -260,7 +295,6 @@ def handle_sys_fstat64(emu):
 
 
 @register_syscall_handler(const.SYS_LSTAT64)
-@clear_carry_flag
 def handle_sys_lstat64(emu):
     path = emu.read_string(emu.get_arg(0))
     stat = emu.get_arg(1)
@@ -285,7 +319,7 @@ def handle_sys_getentropy(emu):
 
 @register_syscall_handler(const.MACH_ABSOLUTE_TIME_TRAP)
 def handle_mach_absolute_time_trap(emu):
-    emu.set_retval(int(time.time_ns() % (3600 * 10**9)))
+    return int(time.time_ns() % (3600 * 10**9))
 
 
 @register_syscall_handler(const.MACH_TIMEBASE_INFO_TRAP)
