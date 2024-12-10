@@ -15,3 +15,4 @@ repos:
       - id: fix-byte-order-marker
       - id: trailing-whitespace
       - id: end-of-file-fixer
+        exclude: ^examples/

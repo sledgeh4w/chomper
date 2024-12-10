@@ -87,7 +87,29 @@ def hook_getcwd(uc, address, size, user_data):
 
 @register_hook("_opendir")
 def hook_opendir(uc, address, size, user_data):
-    return 0
+    emu = user_data["emu"]
+
+    path = emu.read_string(emu.get_arg(0))
+
+    return emu.file_manager.opendir(path)
+
+
+@register_hook("_readdir")
+def hook_readdir(uc, address, size, user_data):
+    emu = user_data["emu"]
+
+    dirp = emu.get_arg(0)
+
+    return emu.file_manager.readdir(dirp)
+
+
+@register_hook("_closedir")
+def hook_closedir(uc, address, size, user_data):
+    emu = user_data["emu"]
+
+    dirp = emu.get_arg(0)
+
+    return emu.file_manager.closedir(dirp)
 
 
 @register_hook("_time")
@@ -139,11 +161,19 @@ def hook_pthread_self(uc, address, size, user_data):
 
 
 @register_hook("_pthread_rwlock_rdlock")
+@register_hook("_pthread_rwlock_rdlock$VARIANT$armv81")
 def hook_pthread_rwlock_rdlock(uc, address, size, user_data):
     return 0
 
 
+@register_hook("_pthread_rwlock_wrlock")
+@register_hook("_pthread_rwlock_wrlock$VARIANT$armv81")
+def hook_pthread_rwlock_wrlock(uc, address, size, user_data):
+    return 0
+
+
 @register_hook("_pthread_rwlock_unlock")
+@register_hook("_pthread_rwlock_unlock$VARIANT$armv81")
 def hook_pthread_rwlock_unlock(uc, address, size, user_data):
     return 0
 
@@ -340,63 +370,18 @@ def hook_dispatch_async(uc, address, size, user_data):
     return 0
 
 
-@register_hook("_uloc_getLanguage")
-def hook_uloc_get_language(uc, address, size, user_data):
-    return 0
-
-
-@register_hook("_uloc_getScript")
-def hook_uloc_get_script(uc, address, size, user_data):
-    return 0
-
-
-@register_hook("_uloc_getCountry")
-def hook_uloc_get_country(uc, address, size, user_data):
-    return 0
-
-
-@register_hook("_uloc_getVariant")
-def hook_uloc_get_variant(uc, address, size, user_data):
-    return 0
-
-
-@register_hook("_uloc_openKeywords")
-def hook_uloc_open_keywords(uc, address, size, user_data):
-    return 0
-
-
-@register_hook("_uloc_getDisplayName")
-def hook_uloc_get_display_name(uc, address, size, user_data):
-    return 0
-
-
-@register_hook("_uloc_getDisplayLanguage")
-def hook_uloc_get_display_language(uc, address, size, user_data):
-    return 0
-
-
-@register_hook("_uloc_addLikelySubtags")
-def hook_uloc_add_likely_subtags(uc, address, size, user_data):
-    return 0
-
-
-@register_hook("_ualoc_localizationsToUse")
-def hook_ualoc_localizations_to_use(uc, address, size, user_data):
-    return 0
-
-
-@register_hook("_uenum_next")
-def hook_uenum_next(uc, address, size, user_data):
-    return 0
-
-
-@register_hook("_uenum_close")
-def hook_uenum_close(uc, address, size, user_data):
+@register_hook("_dispatch_resume")
+def hook_dispatch_resume(uc, address, size, user_data):
     return 0
 
 
 @register_hook("_os_log_type_enabled")
 def hook_os_log_type_enabled(uc, address, size, user_data):
+    return 0
+
+
+@register_hook("_os_log_create")
+def hook_os_log_create(uc, address, size, user_data):
     return 0
 
 
@@ -472,6 +457,16 @@ def hook_cf_x_preferences_copy_current_application_state_with_deadlock_avoidance
 
 @register_hook("_CFNotificationCenterGetLocalCenter")
 def hook_cf_notification_center_get_local_center(uc, address, size, user_data):
+    return 0
+
+
+@register_hook("_CFNotificationCenterAddObserver")
+def hook_cf_notification_center_add_observer(uc, address, size, user_data):
+    return 0
+
+
+@register_hook("_CFNotificationCenterPostNotification")
+def hook_cf_notification_center_post_notification(uc, address, size, user_data):
     return 0
 
 

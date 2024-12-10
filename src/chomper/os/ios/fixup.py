@@ -239,6 +239,9 @@ class SystemModuleFixup:
         class_methods_ptr = address + 0x18
         self.fixup_method_list(module_base, class_methods_ptr)
 
+        protocols_ptr = address + 0x20
+        self.fixup_protocol_list(module_base, protocols_ptr)
+
     def fixup_cstring_section(self, binary: lief.MachO.Binary):
         """Fixup the `__cstring` section."""
         section = binary.get_section("__cstring")
@@ -301,9 +304,48 @@ class SystemModuleFixup:
         except SymbolMissingException:
             pass
 
+    def fixup_data_const_segment(self, binary: lief.MachO.Binary):
+        """Fixup pointers in the `__DATA_CONST` segment."""
+        section = binary.get_section("__DATA_CONST", "__const")
+        if not section:
+            return
+
+        section_content = bytes(section.content)
+        if not section_content:
+            return
+
+        text_section = binary.get_section("__TEXT", "__text")
+        text_begin = text_section.virtual_address
+        text_end = text_begin + text_section.size
+
+        const_section = binary.get_section("__TEXT", "__const")
+        const_begin = const_section.virtual_address
+        const_end = const_begin + const_section.size
+
+        for offset in range(0, section.size, 8):
+            address = int.from_bytes(section_content[offset : offset + 8], "little")
+            if (
+                text_begin < address < text_end
+                or const_begin < address < const_end
+                or section.virtual_address
+                < address
+                < section.virtual_address + section.size
+            ):
+                self.add_refs_relocation(address)
+
+    def fixup_stubs_refs(self, binary: lief.MachO.Binary):
+        """Fixup references to the `__stubs` section."""
+        section = binary.get_section("__stubs")
+        if not section:
+            return
+
+        for offset in range(0, section.size, 12):
+            self.add_refs_relocation(section.virtual_address + offset)
+
     def install(self, module: Module):
         """Fixup image for the module."""
         if not module.binary:
+            self.emu.logger.warning("Fixup install failed due to empty binary.")
             return
 
         module_base = module.base - (module.image_base or 0)
@@ -316,6 +358,8 @@ class SystemModuleFixup:
         self.fixup_cfstring_section(module.binary, module_base)
         self.fixup_cf_uni_char_string(module.binary)
         self.fixup_dispatch_vtable()
+        self.fixup_data_const_segment(module.binary)
+        self.fixup_stubs_refs(module.binary)
 
         self.relocate_refs(module.binary, module_base)
 
