@@ -1,6 +1,6 @@
 import pytest
 
-from chomper.exceptions import SymbolMissingException
+from chomper.exceptions import SymbolMissing
 
 emu_names = ["emu_arm", "emu_arm64", "emu_ios"]
 
@@ -11,7 +11,7 @@ def call_symbol(emu, emu_name, symbol_name, *args):
 
         try:
             emu.find_symbol(symbol_name)
-        except SymbolMissingException:
+        except SymbolMissing:
             symbol_name = f"__platform{symbol_name}"
 
     return emu.call_symbol(symbol_name, *args)
@@ -38,44 +38,49 @@ def test_free(request, emu_name):
 
 @pytest.mark.usefixtures("libc_arm", "libc_arm64")
 @pytest.mark.parametrize("emu_name", emu_names)
-def test_memcpy(request, emu_name, input_str):
+def test_memcpy(request, emu_name):
     emu = request.getfixturevalue(emu_name)
 
-    v1 = emu.create_buffer(16)
-    v2 = emu.create_string(input_str)
+    sample_str = "chomper"
 
-    call_symbol(emu, emu_name, "memcpy", v1, v2, len(input_str) + 1)
+    v1 = emu.create_buffer(16)
+    v2 = emu.create_string(sample_str)
+
+    call_symbol(emu, emu_name, "memcpy", v1, v2, len(sample_str) + 1)
     result = emu.read_string(v1)
 
-    assert result == input_str
+    assert result == sample_str
 
 
 @pytest.mark.usefixtures("libc_arm", "libc_arm64")
 @pytest.mark.parametrize("emu_name", emu_names)
-def test_memcmp(request, emu_name, input_str):
+def test_memcmp(request, emu_name):
     emu = request.getfixturevalue(emu_name)
 
-    v1 = emu.create_string(input_str)
-    v2 = emu.create_string(input_str)
-    v3 = emu.create_string(input_str[::-1])
+    sample_str = "chomper"
 
-    result = call_symbol(emu, emu_name, "memcmp", v1, v2, len(input_str))
+    v1 = emu.create_string(sample_str)
+    v2 = emu.create_string(sample_str)
+    v3 = emu.create_string(sample_str[::-1])
+
+    result = call_symbol(emu, emu_name, "memcmp", v1, v2, len(sample_str))
 
     assert result == 0
 
-    result = call_symbol(emu, emu_name, "memcmp", v1, v3, len(input_str))
+    result = call_symbol(emu, emu_name, "memcmp", v1, v3, len(sample_str))
 
     assert result != 0
 
 
 @pytest.mark.usefixtures("libc_arm", "libc_arm64")
 @pytest.mark.parametrize("emu_name", emu_names)
-def test_memset(request, emu_name, input_str):
+def test_memset(request, emu_name):
     emu = request.getfixturevalue(emu_name)
 
-    size = len(input_str)
+    sample_str = "chomper"
+    size = len(sample_str)
 
-    v1 = emu.create_string(input_str)
+    v1 = emu.create_string(sample_str)
 
     call_symbol(emu, emu_name, "memset", v1, 0, size)
     result = emu.read_bytes(v1, size)
@@ -85,75 +90,85 @@ def test_memset(request, emu_name, input_str):
 
 @pytest.mark.usefixtures("libc_arm", "libc_arm64")
 @pytest.mark.parametrize("emu_name", emu_names)
-def test_strncpy(request, emu_name, input_str):
+def test_strncpy(request, emu_name):
     emu = request.getfixturevalue(emu_name)
 
+    sample_str = "chomper"
+
     v1 = emu.create_buffer(16)
-    v2 = emu.create_string(input_str)
+    v2 = emu.create_string(sample_str)
     v3 = 5
 
     call_symbol(emu, emu_name, "strncpy", v1, v2, v3)
     result = emu.read_string(v1)
 
-    assert result == input_str[:v3]
+    assert result == sample_str[:v3]
 
 
 @pytest.mark.usefixtures("libc_arm", "libc_arm64")
 @pytest.mark.parametrize("emu_name", emu_names)
-def test_strncmp(request, emu_name, input_str):
+def test_strncmp(request, emu_name):
     emu = request.getfixturevalue(emu_name)
 
-    v1 = emu.create_string(input_str)
-    v2 = emu.create_string(input_str[:-1] + " ")
+    sample_str = "chomper"
 
-    result = call_symbol(emu, emu_name, "strncmp", v1, v2, len(input_str) - 1)
+    v1 = emu.create_string(sample_str)
+    v2 = emu.create_string(sample_str[:-1] + " ")
+
+    result = call_symbol(emu, emu_name, "strncmp", v1, v2, len(sample_str) - 1)
 
     assert result == 0
 
-    result = call_symbol(emu, emu_name, "strncmp", v1, v2, len(input_str))
+    result = call_symbol(emu, emu_name, "strncmp", v1, v2, len(sample_str))
 
     assert result != 0
 
 
 @pytest.mark.usefixtures("libc_arm", "libc_arm64")
 @pytest.mark.parametrize("emu_name", emu_names)
-def test_strncat(request, emu_name, input_str):
+def test_strncat(request, emu_name):
     emu = request.getfixturevalue(emu_name)
 
+    sample_str = "chomper"
+
     v1 = emu.create_buffer(32)
-    v2 = emu.create_string(input_str)
+    v2 = emu.create_string(sample_str)
     v3 = 5
 
-    emu.write_string(v1, input_str)
+    emu.write_string(v1, sample_str)
 
     call_symbol(emu, emu_name, "strncat", v1, v2, v3)
     result = emu.read_string(v1)
 
-    assert result == input_str + input_str[:v3]
+    assert result == sample_str + sample_str[:v3]
 
 
 @pytest.mark.usefixtures("libc_arm", "libc_arm64")
 @pytest.mark.parametrize("emu_name", emu_names)
-def test_strcpy(request, emu_name, input_str):
+def test_strcpy(request, emu_name):
     emu = request.getfixturevalue(emu_name)
 
+    sample_str = "chomper"
+
     v1 = emu.create_buffer(16)
-    v2 = emu.create_string(input_str)
+    v2 = emu.create_string(sample_str)
 
     call_symbol(emu, emu_name, "strcpy", v1, v2)
     result = emu.read_string(v1)
 
-    assert result == input_str
+    assert result == sample_str
 
 
 @pytest.mark.usefixtures("libc_arm", "libc_arm64")
 @pytest.mark.parametrize("emu_name", emu_names)
-def test_strcmp(request, emu_name, input_str):
+def test_strcmp(request, emu_name):
     emu = request.getfixturevalue(emu_name)
 
-    v1 = emu.create_string(input_str)
-    v2 = emu.create_string(input_str)
-    v3 = emu.create_string(input_str[:-1] + " ")
+    sample_str = "chomper"
+
+    v1 = emu.create_string(sample_str)
+    v2 = emu.create_string(sample_str)
+    v3 = emu.create_string(sample_str[:-1] + " ")
 
     result = call_symbol(emu, emu_name, "strcmp", v1, v2)
 
@@ -166,59 +181,64 @@ def test_strcmp(request, emu_name, input_str):
 
 @pytest.mark.usefixtures("libc_arm", "libc_arm64")
 @pytest.mark.parametrize("emu_name", emu_names)
-def test_strcat(request, emu_name, input_str):
+def test_strcat(request, emu_name):
     emu = request.getfixturevalue(emu_name)
 
-    v1 = emu.create_buffer(32)
-    v2 = emu.create_string(input_str)
+    sample_str = "chomper"
 
-    emu.write_string(v1, input_str)
+    v1 = emu.create_buffer(32)
+    v2 = emu.create_string(sample_str)
+
+    emu.write_string(v1, sample_str)
 
     call_symbol(emu, emu_name, "strcat", v1, v2)
     result = emu.read_string(v1)
 
-    assert result == input_str + input_str
+    assert result == sample_str + sample_str
 
 
 @pytest.mark.usefixtures("libc_arm", "libc_arm64")
 @pytest.mark.parametrize("emu_name", emu_names)
-def test_strlen(request, emu_name, input_str):
+def test_strlen(request, emu_name):
     emu = request.getfixturevalue(emu_name)
 
-    v1 = emu.create_string(input_str)
+    sample_str = "chomper"
 
+    v1 = emu.create_string(sample_str)
     result = call_symbol(emu, emu_name, "strlen", v1)
 
-    assert result == len(input_str)
+    assert result == len(sample_str)
 
 
 @pytest.mark.usefixtures("libc_arm", "libc_arm64")
 @pytest.mark.parametrize("emu_name", ["emu_arm", "emu_arm64"])
-def test_sprintf(request, emu_name, input_str):
+def test_sprintf(request, emu_name):
     emu = request.getfixturevalue(emu_name)
 
+    sample_str = "chomper"
     fmt = "%d%s"
 
     v1 = emu.create_buffer(16)
     v2 = emu.create_string(fmt)
-    v3 = len(input_str)
-    v4 = emu.create_string(input_str)
+    v3 = len(sample_str)
+    v4 = emu.create_string(sample_str)
 
     call_symbol(emu, emu_name, "sprintf", v1, v2, v3, v4)
     result = emu.read_string(v1)
 
-    assert result == f"{len(input_str)}{input_str}"
+    assert result == f"{len(sample_str)}{sample_str}"
 
 
 @pytest.mark.usefixtures("libc_arm", "libc_arm64")
 @pytest.mark.parametrize("emu_name", ["emu_arm", "emu_arm64"])
-def test_printf(request, emu_name, input_str):
+def test_printf(request, emu_name):
     emu = request.getfixturevalue(emu_name)
 
+    sample_str = "chomper"
     fmt = "%d%s"
 
     v1 = emu.create_string(fmt)
-    v2 = len(input_str)
-    v3 = emu.create_string(input_str)
+    v2 = len(sample_str)
+    v3 = emu.create_string(sample_str)
 
     call_symbol(emu, emu_name, "printf", v1, v2, v3)

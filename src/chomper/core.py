@@ -19,7 +19,7 @@ from unicorn import (
 
 from . import const
 from .arch import arm_arch, arm64_arch
-from .exceptions import EmulatorCrashedException, SymbolMissingException
+from .exceptions import EmulatorCrashed, SymbolMissing
 from .file import FileManager
 from .instruction import AutomicInstruction
 from .memory import MemoryManager
@@ -244,7 +244,7 @@ class Chomper:
                 if symbol.name == symbol_name:
                     return symbol
 
-        raise SymbolMissingException(f"{symbol_name} not found")
+        raise SymbolMissing(f"{symbol_name} not found")
 
     def debug_symbol(self, address: int) -> str:
         """Format address to `libtest.so!0x1000` or `0x10000`."""
@@ -352,15 +352,12 @@ class Chomper:
             EmulatorCrashedException:
         """
         address = self.uc.reg_read(self.arch.reg_pc)
-
         self.logger.error(
             "Emulator crashed from: %s",
             " <- ".join([self.debug_symbol(t) for t in self.backtrace()]),
         )
 
-        raise EmulatorCrashedException(
-            f"{message} at {self.debug_symbol(address)}"
-        ) from exc
+        raise EmulatorCrashed(f"{message} at {self.debug_symbol(address)}") from exc
 
     def trace_symbol_call_callback(
         self, uc: Uc, address: int, size: int, user_data: dict
@@ -389,8 +386,8 @@ class Chomper:
         user_data = args[-1]
         symbol_name = user_data["symbol_name"]
 
-        raise EmulatorCrashedException(
-            f'Missing symbol "{symbol_name}" is required, '
+        raise EmulatorCrashed(
+            f"Missing symbol '{symbol_name}' is required, "
             f"you should load the library that contains it."
         )
 

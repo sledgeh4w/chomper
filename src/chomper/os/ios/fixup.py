@@ -1,6 +1,6 @@
 import lief
 
-from chomper.exceptions import SymbolMissingException
+from chomper.exceptions import SymbolMissing
 from chomper.types import Module
 
 
@@ -301,7 +301,7 @@ class SystemModuleFixup:
                     offset = 0x30 + 0x8 * i
                     address = self.emu.read_pointer(symbol.address + offset)
                     self.add_refs_relocation(address)
-        except SymbolMissingException:
+        except SymbolMissing:
             pass
 
     def fixup_data_const_segment(self, binary: lief.MachO.Binary):

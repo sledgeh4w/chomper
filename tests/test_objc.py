@@ -8,6 +8,23 @@ def test_ns_string(emu_ios, objc):
         assert string
 
 
+def test_ns_mutable_string(emu_ios, objc):
+    with objc.autorelease_pool():
+        sample_str = "chomper"
+
+        string = objc.msg_send("NSMutableString", "string")
+
+        objc.msg_send(string, "setString:", pyobj2nsobj(emu_ios, sample_str))
+        str_ptr = objc.msg_send(string, "cStringUsingEncoding:", 4)
+
+        assert emu_ios.read_string(str_ptr) == sample_str
+
+        objc.msg_send(string, "appendString:", pyobj2nsobj(emu_ios, sample_str))
+        str_ptr = objc.msg_send(string, "cStringUsingEncoding:", 4)
+
+        assert emu_ios.read_string(str_ptr) == sample_str * 2
+
+
 def test_ns_array(emu_ios, objc):
     with objc.autorelease_pool():
         array = objc.msg_send("NSMutableArray", "array")
