@@ -3,7 +3,7 @@ import random
 import uuid
 from typing import List
 
-from chomper.exceptions import EmulatorCrashedException
+from chomper.exceptions import EmulatorCrashed
 from chomper.loader import MachoLoader
 from chomper.os import BaseOs
 from chomper.types import Module
@@ -263,7 +263,7 @@ class IosOs(BaseOs):
         try:
             self.emu.call_symbol("_map_images", 1, 0, mach_header_ptrs)
             self.emu.call_symbol("_load_images", 0, mach_header_ptr)
-        except EmulatorCrashedException:
+        except EmulatorCrashed:
             self.emu.logger.warning("Initialize Objective-C failed.")
         finally:
             module.binary = None
