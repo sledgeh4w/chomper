@@ -50,8 +50,8 @@ def test_create_buffer(emu_arm64):
     assert result is not None
 
 
-def test_create_string(emu_arm64, input_str):
-    result = emu_arm64.create_string(input_str)
+def test_create_string(emu_arm64):
+    result = emu_arm64.create_string("chomper")
 
     assert result is not None
 
@@ -71,22 +71,26 @@ def test_read_and_write_int(emu_arm64):
     assert result == value
 
 
-def test_read_and_write_bytes(emu_arm64, input_bytes):
+def test_read_and_write_bytes(emu_arm64):
+    sample_bytes = b"chomper"
+
     addr = emu_arm64.create_buffer(1024)
 
-    emu_arm64.write_bytes(addr, input_bytes)
-    result = emu_arm64.read_bytes(addr, len(input_bytes))
+    emu_arm64.write_bytes(addr, sample_bytes)
+    result = emu_arm64.read_bytes(addr, len(sample_bytes))
 
-    assert result == input_bytes
+    assert result == sample_bytes
 
 
-def test_read_and_write_string(emu_arm64, input_str):
+def test_read_and_write_string(emu_arm64):
+    sample_str = "chomper"
+
     addr = emu_arm64.create_buffer(1024)
 
-    emu_arm64.write_string(addr, input_str)
+    emu_arm64.write_string(addr, sample_str)
     result = emu_arm64.read_string(addr)
 
-    assert result == input_str
+    assert result == sample_str
 
 
 @pytest.mark.usefixtures("libz_arm64")

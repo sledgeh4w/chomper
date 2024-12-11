@@ -1,6 +1,14 @@
-class EmulatorCrashedException(Exception):
+class ChomperException(Exception):
+    """Base class for all Chomper exceptions."""
+
+
+class EmulatorCrashed(ChomperException):
     """Emulate failed when calling functions."""
 
 
-class SymbolMissingException(Exception):
+class SymbolMissing(ChomperException):
     """Symbol not found from loaded modules."""
+
+
+class ObjCUnrecognizedSelector(ChomperException):
+    """Unrecognized selector sent when calling ObjC."""

@@ -6,7 +6,7 @@ import uuid
 from functools import wraps
 from typing import Callable, Dict
 
-from chomper.exceptions import SymbolMissingException
+from chomper.exceptions import SymbolMissing, ObjCUnrecognizedSelector
 from chomper.objc import ObjC
 from chomper.utils import pyobj2cfobj
 
@@ -354,7 +354,7 @@ def hook_dlsym(uc, address, size, user_data):
     try:
         symbol = emu.find_symbol(symbol_name)
         return symbol.address
-    except SymbolMissingException:
+    except SymbolMissing:
         pass
 
     return 0
@@ -563,3 +563,13 @@ def hook_mach_vm_deallocate(uc, address, size, user_data):
     emu.memory_manager.free(mem)
 
     return 0
+
+
+@register_hook("+[NSObject(NSObject) doesNotRecognizeSelector:]")
+@register_hook("-[NSObject(NSObject) doesNotRecognizeSelector:]")
+def ns_object_does_not_recognize_selector(uc, address, size, user_data):
+    emu = user_data["emu"]
+
+    selector = emu.read_string(emu.get_arg(2))
+
+    raise ObjCUnrecognizedSelector(f"Unrecognized selector '{selector}'")
