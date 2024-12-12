@@ -1,7 +1,7 @@
 import logging
 import os
 from functools import wraps
-from typing import Callable, Dict, List, Optional, Tuple, Union
+from typing import Callable, Dict, List, Optional, Sequence, Tuple, Union
 
 from capstone import CS_ARCH_ARM, CS_ARCH_ARM64, CS_MODE_ARM, CS_MODE_THUMB, Cs
 from unicorn import (
@@ -193,14 +193,17 @@ class Chomper:
         if self.arch == arm_arch and enable_vfp:
             self._enable_vfp()
 
-    def _start_emulate(self, address: int, *args: int) -> int:
+    def _start_emulate(
+        self,
+        address: int,
+        *args: int,
+        va_list: Optional[Sequence[int]] = None,
+    ) -> int:
         """Start emulate at the specified address."""
         context = self.uc.context_save()
-
         stop_addr = self.create_buffer(8)
 
-        for index, value in enumerate(args):
-            self.set_arg(index, value)
+        self.set_args(args, va_list=va_list)
 
         # Set the value of register LR to the stop address of the emulation,
         # so that when the function returns, it will jump to this address.
@@ -563,6 +566,21 @@ class Chomper:
         else:
             self.write_int(reg_or_addr, value, self.arch.addr_size)
 
+    def set_args(self, args: Sequence[int], va_list: Optional[Sequence[int]] = None):
+        """Set arguments before call function.
+
+        Args:
+            args: General arguments.
+            va_list: Variable number of arguments.
+        """
+        for index, value in enumerate(args):
+            self.set_arg(index, value)
+
+        if va_list:
+            for index, value in enumerate(va_list):
+                self.set_arg(self.arch.addr_size + index, value)
+            self.set_arg(self.arch.addr_size + len(va_list), 0)
+
     def get_retval(self) -> int:
         """Get return value."""
         return self.uc.reg_read(self.arch.reg_retval)
@@ -738,15 +756,25 @@ class Chomper:
 
         self.write_bytes(address, data)
 
-    def call_symbol(self, symbol_name: str, *args: int) -> int:
+    def call_symbol(
+        self,
+        symbol_name: str,
+        *args: int,
+        va_list: Optional[Sequence[int]] = None,
+    ) -> int:
         """Call function with the symbol name."""
         self.logger.info(f'Call symbol "{symbol_name}"')
 
         symbol = self.find_symbol(symbol_name)
         address = symbol.address
 
-        return self._start_emulate(address, *args)
+        return self._start_emulate(address, *args, va_list=va_list)
 
-    def call_address(self, address: int, *args: int) -> int:
+    def call_address(
+        self,
+        address: int,
+        *args: int,
+        va_list: Optional[Sequence[int]] = None,
+    ) -> int:
         """Call function at the address."""
-        return self._start_emulate(address, *args)
+        return self._start_emulate(address, *args, va_list=va_list)
