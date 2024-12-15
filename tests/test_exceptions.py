@@ -6,7 +6,7 @@ from . import conftest
 
 from chomper import Chomper
 from chomper.const import ARCH_ARM64
-from chomper.exceptions import EmulatorCrashed
+from chomper.exceptions import EmulatorCrashed, SymbolMissing, ObjCUnrecognizedSelector
 
 
 def test_unhandled_system_call_exception():
@@ -35,4 +35,25 @@ def test_missing_symbol_required_exception():
         a3 = emu.create_buffer(1024)
 
         emu.write_bytes(a1, sample_bytes)
-        emu.call_address(libszstone.base + 0x289A4, a1, a2, a3)
+
+        try:
+            emu.call_address(libszstone.base + 0x289A4, a1, a2, a3)
+        finally:
+            emu.free(a1)
+            emu.free(a3)
+
+
+def test_symbol_missing_exception(emu_ios):
+    with pytest.raises(SymbolMissing):
+        emu_ios.find_symbol("_undefined_symbol")
+
+
+def test_objc_unrecognized_selector_exception(emu_ios, objc):
+    with pytest.raises(ObjCUnrecognizedSelector):
+        with objc.autorelease_pool():
+            objc.msg_send("NSString", "undefinedSelector")
+
+    with pytest.raises(ObjCUnrecognizedSelector):
+        with objc.autorelease_pool():
+            string = objc.msg_send("NSString", "stringWithUTF8String:", "")
+            objc.msg_send(string, "undefinedSelector")
