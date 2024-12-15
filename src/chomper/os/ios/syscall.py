@@ -8,9 +8,6 @@ from typing import Callable, Dict
 
 from unicorn import arm64_const
 
-from chomper.structs import Stat64
-from chomper.utils import struct2bytes
-
 from . import const
 
 syscall_handlers: Dict[int, Callable] = {}
@@ -81,7 +78,7 @@ def handle_sys_close(emu):
 
 @register_syscall_handler(const.SYS_GETPID)
 def handle_sys_getpid(emu):
-    return emu.os.proc_info["pid"]
+    return emu.os.proc_id
 
 
 @register_syscall_handler(const.SYS_GETUID)
@@ -98,9 +95,6 @@ def handle_sys_geteuid(emu):
 def handle_sys_access(emu):
     path = emu.read_string(emu.get_arg(0))
     mode = emu.get_arg(1)
-
-    if path == os.path.dirname(emu.os.proc_info["path"]):
-        return 0
 
     return emu.file_manager.access(path, mode)
 
@@ -193,6 +187,24 @@ def handle_sys_lseek(emu):
     return emu.file_manager.lseek(fd, offset, whence)
 
 
+@register_syscall_handler(const.SYS_FCNTL)
+@register_syscall_handler(const.SYS_FCNTL_NOCANCEL)
+def handle_sys_fcntl(emu):
+    fd = emu.get_arg(0)
+    cmd = emu.get_arg(1)
+    arg = emu.get_arg(2)
+
+    if cmd == const.F_GETPATH:
+        path = emu.file_manager.dir_fds.get(fd)
+        if not path:
+            path = emu.file_manager.fd_path_map.get(fd)
+
+        if path:
+            emu.write_string(arg, path)
+
+    return 0
+
+
 @register_syscall_handler(const.SYS_SYSCTL)
 def handle_sys_sysctl(emu):
     name = emu.get_arg(0)
@@ -258,7 +270,7 @@ def handle_sys_proc_info(emu):
     buffer = emu.get_arg(4)
 
     if flavor == 11:
-        emu.write_string(buffer, emu.os.proc_info["path"])
+        emu.write_string(buffer, emu.os.proc_path)
 
     return 0
 
@@ -267,16 +279,6 @@ def handle_sys_proc_info(emu):
 def handle_sys_stat64(emu):
     path = emu.read_string(emu.get_arg(0))
     stat = emu.get_arg(1)
-
-    # Bypass readability check of the process directory in NSLocale
-    if path == os.path.dirname(emu.os.proc_info["path"]):
-        stat_bytes = struct2bytes(
-            Stat64(
-                st_mode=0x4000,
-            )
-        )
-        emu.write_bytes(stat, stat_bytes)
-        return 0
 
     try:
         emu.write_bytes(stat, emu.file_manager.stat(path))

@@ -1,5 +1,4 @@
 import logging
-import os
 from functools import wraps
 from typing import Callable, Dict, List, Optional, Sequence, Tuple, Union
 
@@ -283,6 +282,13 @@ class Chomper:
 
         return [address for address in stack if address]
 
+    def log_backtrace(self):
+        """Output backtrace log."""
+        self.logger.info(
+            "Backtrace: %s",
+            " <- ".join([self.debug_symbol(t) for t in self.backtrace()]),
+        )
+
     def add_hook(
         self,
         symbol_or_addr: Union[int, str],
@@ -489,19 +495,7 @@ class Chomper:
             trace_symbol_calls: Output log when the symbols in this module are called.
         """
         if isinstance(self.os, IosOs):
-            self.os.executable_path = module_file
-
-            application_path = os.path.dirname(self.os.proc_info["path"])
-            parent_path = os.path.dirname(self.os.executable_path)
-
-            self.file_manager.forward_path(
-                src_path=self.os.proc_info["path"],
-                dst_path=self.os.executable_path,
-            )
-            self.file_manager.forward_path(
-                src_path=f"{application_path}/Info.plist",
-                dst_path=os.path.join(parent_path, "Info.plist"),
-            )
+            self.os.set_main_executable(module_file)
 
         if not self.modules:
             module_base = const.MODULE_ADDRESS

@@ -1,4 +1,5 @@
 import os
+import plistlib
 import random
 import uuid
 from typing import List
@@ -87,6 +88,11 @@ SYMBOLIC_LINKS = {
     "/var/db/timezone/zoneinfo": "/var/db/timezone/tz/2024a.1.0/zoneinfo/",
 }
 
+# Default bundle values until an executable with Info.plist is loaded
+DEFAULT_BUNDLE_UUID = "43E5FB44-22FC-4DC2-9D9E-E2702A988A2E"
+DEFAULT_BUNDLE_IDENTIFIER = "com.yourcompany.ProductName"
+DEFAULT_BUNDLE_EXECUTABLE = "ProductName"
+
 
 class IosOs(BaseOs):
     """Provide iOS runtime environment."""
@@ -99,10 +105,8 @@ class IosOs(BaseOs):
         self.preferences = self._default_preferences.copy()
         self.device_info = self._default_device_info.copy()
 
-        self.proc_info = self._init_proc_info()
-
-        working_dir = os.path.dirname(self.proc_info["path"])
-        self.emu.file_manager.set_working_dir(working_dir)
+        self.proc_id = None
+        self.proc_path = None
 
         self.executable_path = None
 
@@ -126,19 +130,14 @@ class IosOs(BaseOs):
             "ProductVersion": "14.4.0",
         }
 
-    @staticmethod
-    def _init_proc_info() -> dict:
+    def _setup_proc_info(self):
         """Initialize process info."""
-        application_path = (
-            f"/private/var/containers/Bundle/Application/{str(uuid.uuid4()).upper()}"
+        self.proc_id = random.randint(10000, 20000)
+        self.proc_path = (
+            f"/private/var/containers/Bundle/Application"
+            f"/{str(uuid.uuid4()).upper()}"
+            f"/{DEFAULT_BUNDLE_IDENTIFIER}/{DEFAULT_BUNDLE_EXECUTABLE}"
         )
-        bundle_identifier = "com.yourcompany.ProductName"
-        bundle_executable = "ProductName"
-
-        return {
-            "pid": random.randint(10000, 20000),
-            "path": f"{application_path}/{bundle_identifier}/{bundle_executable}",
-        }
 
     def _setup_hooks(self):
         """Initialize hooks."""
@@ -332,17 +331,83 @@ class IosOs(BaseOs):
         """
         self.resolve_modules(UI_KIT_DEPENDENCIES)
 
-    def _init_symbolic_links(self):
-        """Initialize symbol links."""
+    def _setup_symbolic_links(self):
+        """Setup symbolic links."""
         for src, dst in SYMBOLIC_LINKS.items():
             self.emu.file_manager.set_symbolic_link(src, dst)
+
+    def _setup_bundle_dir(self):
+        """Setup bundle directory."""
+        bundle_path = os.path.dirname(self.proc_path)
+        container_path = os.path.dirname(bundle_path)
+
+        self.emu.file_manager.set_working_dir(bundle_path)
+
+        local_container_path = os.path.join(
+            self.rootfs_path,
+            "private",
+            "var",
+            "containers",
+            "Bundle",
+            "Application",
+            DEFAULT_BUNDLE_UUID,
+        )
+        local_bundle_path = os.path.join(
+            local_container_path, DEFAULT_BUNDLE_IDENTIFIER
+        )
+
+        self.emu.file_manager.forward_path(container_path, local_container_path)
+        self.emu.file_manager.forward_path(bundle_path, local_bundle_path)
+
+    def set_main_executable(self, executable_path: str):
+        """Set main executable path."""
+        self.executable_path = executable_path
+
+        bundle_path = os.path.dirname(self.proc_path)
+        container_path = os.path.dirname(bundle_path)
+
+        executable_dir = os.path.dirname(self.executable_path)
+        info_path = os.path.join(executable_dir, "Info.plist")
+
+        if os.path.exists(info_path):
+            with open(info_path, "rb") as f:
+                info_data = plistlib.load(f)
+
+            bundle_identifier = info_data["CFBundleIdentifier"]
+            bundle_executable = info_data["CFBundleExecutable"]
+
+            bundle_path = f"{container_path}/{bundle_identifier}"
+            self.proc_path = f"{bundle_path}/{bundle_executable}"
+
+            self._setup_bundle_dir()
+
+            cf_progname = self.emu.find_symbol("___CFprogname")
+            cf_process_path = self.emu.find_symbol("___CFProcessPath")
+
+            cf_progname_str = self.emu.create_string(self.proc_path.split("/")[-1])
+            cf_process_path_str = self.emu.create_string(self.proc_path)
+
+            self.emu.write_pointer(cf_progname.address, cf_progname_str)
+            self.emu.write_pointer(cf_process_path.address, cf_process_path_str)
+
+        # Set path forwarding to executable and Info.plist
+        self.emu.file_manager.forward_path(
+            src_path=self.proc_path,
+            dst_path=self.executable_path,
+        )
+        self.emu.file_manager.forward_path(
+            src_path=f"{bundle_path}/Info.plist",
+            dst_path=info_path,
+        )
 
     def initialize(self):
         """Initialize environment."""
         self._setup_hooks()
         self._setup_syscall_handlers()
 
-        self._init_symbolic_links()
+        self._setup_proc_info()
+        self._setup_symbolic_links()
+        self._setup_bundle_dir()
 
         if self.emu.enable_objc:
             self._enable_objc()

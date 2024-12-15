@@ -2,7 +2,6 @@ import datetime
 import os
 import random
 import time
-import uuid
 from functools import wraps
 from typing import Callable, Dict
 
@@ -69,18 +68,6 @@ def hook_sysctlbyname(uc, address, size, user_data):
         emu.write_u64(oldp, 4 * 1024 * 1024 * 1024)
     else:
         raise RuntimeError("Unhandled sysctl command: %s" % name)
-
-    return 0
-
-
-@register_hook("_getcwd")
-def hook_getcwd(uc, address, size, user_data):
-    emu = user_data["emu"]
-
-    path = f"/private/var/containers/Bundle/Application/{uuid.uuid4()}/"
-
-    buf = emu.get_arg(0)
-    emu.write_string(buf, path)
 
     return 0
 
@@ -419,8 +406,8 @@ def hook_cf_preferences_copy_app_value_with_container_and_configuration(
 def hook_cf_bundle_create_info_dict_from_main_executable(uc, address, size, user_data):
     emu = user_data["emu"]
 
-    application_path = os.path.dirname(emu.os.executable_path)
-    info_path = os.path.join(application_path, "Info.plist")
+    executable_dir = os.path.dirname(emu.os.executable_path)
+    info_path = os.path.join(executable_dir, "Info.plist")
 
     if not os.path.exists(info_path):
         raise FileNotFoundError(
