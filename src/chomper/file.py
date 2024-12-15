@@ -1,7 +1,7 @@
 import ctypes
 import os
 import sys
-from os import stat_result, DirEntry
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from .log import get_logger
@@ -33,8 +33,15 @@ class FileManager:
 
         self.symbolic_links: Dict[str, str] = {}
 
-        self.dir_ptrs: Dict[int, Any] = {}
+        # Iterate over files in a directory, used by opendir and readdir.
+        self.dir_entry_iterators: Dict[int, Any] = {}
         self.dir_entry_buffers: Dict[int, List[int]] = {}
+
+        self.dir_fds: Dict[int, str] = {}
+
+        # Record the relationship between fd and file path,
+        # used by fcntl with command F_GETPATH.
+        self.fd_path_map: Dict[int, str] = {}
 
     def set_working_dir(self, path: str):
         """Set current working directory.
@@ -48,12 +55,34 @@ class FileManager:
         self.working_dir = path
 
     def resolve_link(self, path: str) -> str:
-        for src, dst in self.symbolic_links.items():
+        src_list = sorted(
+            self.symbolic_links.keys(),
+            key=lambda t: len(t),
+            reverse=True,
+        )
+        for src in src_list:
+            dst = self.symbolic_links[src]
             if path.startswith(src):
                 path = path.replace(src, dst.rstrip("/"), 1)
                 path = self.resolve_link(path)
                 break
         return path
+
+    def get_absolute_path(self, path: str) -> str:
+        """Convert a path to absolute path."""
+        if path == ".":
+            path = self.working_dir
+        elif path == "..":
+            path = Path(self.working_dir).parent.as_posix()
+
+        path = self.resolve_link(path)
+
+        if not path.startswith("/"):
+            relative_path = os.path.join(self.working_dir, path)
+        else:
+            relative_path = path
+
+        return relative_path
 
     def get_real_path(self, path: str) -> str:
         """Mapping a path used by emulated programs to a real path.
@@ -65,19 +94,14 @@ class FileManager:
         if not self.rootfs_path:
             raise RuntimeError("Root directory not set")
 
-        path = self.resolve_link(path)
+        absolute_path = self.get_absolute_path(path)
 
-        forwarding_path = self.path_map.get(path)
+        forwarding_path = self.path_map.get(absolute_path)
         if forwarding_path:
             self.logger.info(f"Forward path '{path}' -> '{forwarding_path}'")
             return forwarding_path
 
-        if not path.startswith("/"):
-            relative_path = os.path.join(self.working_dir, path)
-        else:
-            relative_path = path
-
-        full_path = safe_join(self.rootfs_path, relative_path[1:])
+        full_path = safe_join(self.rootfs_path, absolute_path[1:])
         if full_path is None:
             raise ValueError(f"Unsafe path: {path}")
 
@@ -92,8 +116,20 @@ class FileManager:
         """Set a symbolic link to specified path."""
         self.symbolic_links[src_path] = dst_path
 
+    def get_dir_fd(self, path: str) -> int:
+        """Generate a virtual directory file descriptor.
+
+        On Windows, unable to obtain a file descriptor for a directory.
+        """
+        for index in range(1, self.MAX_OPEN_DIR_NUM + 1):
+            dir_fd = 10000 + index
+            if dir_fd not in self.dir_fds:
+                self.dir_fds[dir_fd] = self.get_absolute_path(path)
+                return dir_fd
+        return 0
+
     @staticmethod
-    def construct_stat64(st: stat_result) -> Stat64:
+    def construct_stat64(st: os.stat_result) -> Stat64:
         """Construct stat64 struct based on `stat_result`."""
         if sys.platform == "win32":
             block_size = 4096
@@ -133,14 +169,14 @@ class FileManager:
         )
 
     @staticmethod
-    def construct_dirent(entry: DirEntry) -> Dirent:
+    def construct_dirent(entry: os.DirEntry) -> Dirent:
         """Construct dirent struct based on `DirEntry`."""
         return Dirent(
             d_ino=entry.inode(),
             d_seekoff=0,
             d_reclen=0,
             d_namlen=len(entry.name),
-            d_type=0,
+            d_type=(4 if entry.is_dir() else 0),
             d_name=entry.name.encode("utf-8"),
         )
 
@@ -151,17 +187,28 @@ class FileManager:
     @log_call
     def open(self, path: str, flags: int) -> int:
         real_path = self.get_real_path(path)
-        return os.open(real_path, flags)
+
+        if os.path.isdir(real_path):
+            return self.get_dir_fd(path)
+
+        fd = os.open(real_path, flags)
+        self.fd_path_map[fd] = self.get_absolute_path(path)
+        return fd
 
     @log_call
     def close(self, fd: int) -> int:
+        if fd in self.dir_fds:
+            del self.dir_fds[fd]
+            return 0
+
+        del self.fd_path_map[fd]
         os.close(fd)
         return 0
 
     @log_call
     def access(self, path: str, mode: int) -> int:
         real_path = self.get_real_path(path)
-        return os.access(real_path, mode)
+        return 0 if os.access(real_path, mode) else 1
 
     @log_call
     def readlink(self, path: str) -> Optional[str]:
@@ -179,6 +226,10 @@ class FileManager:
 
     @log_call
     def fstat(self, fd: int) -> bytes:
+        if fd in self.dir_fds:
+            path = self.dir_fds[fd]
+            return self.stat(path)
+
         struct = self.construct_stat64(os.fstat(fd))
         return struct2bytes(struct)
 
@@ -194,27 +245,31 @@ class FileManager:
         if not os.path.isdir(real_path):
             return 0
 
-        if len(self.dir_ptrs) >= self.MAX_OPEN_DIR_NUM:
+        if len(self.dir_fds) >= self.MAX_OPEN_DIR_NUM:
             return 0
 
         for index in range(1, self.MAX_OPEN_DIR_NUM + 1):
-            if index not in self.dir_ptrs:
-                dir_ptr = os.scandir(real_path)
-                self.dir_ptrs[index] = dir_ptr
-                self.dir_entry_buffers[index] = []
-                return index
+            dir_fd = self.get_dir_fd(path)
+            if dir_fd:
+                dir_ptr = self.emu.create_buffer(8)
+                self.emu.write_u64(dir_ptr, dir_fd)
+
+                self.dir_entry_iterators[dir_ptr] = os.scandir(real_path)
+                self.dir_entry_buffers[dir_ptr] = []
+
+                return dir_ptr
 
         return 0
 
     @log_call
     def readdir(self, dirp: int) -> int:
-        if dirp not in self.dir_ptrs:
+        if dirp not in self.dir_entry_iterators:
             return 0
 
-        dir_ptr = self.dir_ptrs[dirp]
+        dir_entry_iterator = self.dir_entry_iterators[dirp]
 
         try:
-            entry = next(dir_ptr)
+            entry = next(dir_entry_iterator)
         except StopIteration:
             return 0
 
@@ -230,13 +285,17 @@ class FileManager:
 
     @log_call
     def closedir(self, dirp: int) -> int:
-        if dirp not in self.dir_ptrs:
+        if dirp not in self.dir_entry_iterators:
             return -1
+
+        dir_fd = self.emu.read_u64(dirp)
+        self.emu.free(dirp)
 
         for buf in self.dir_entry_buffers[dirp]:
             self.emu.free(buf)
 
-        del self.dir_ptrs[dirp]
+        del self.dir_fds[dir_fd]
+        del self.dir_entry_iterators[dirp]
         del self.dir_entry_buffers[dirp]
 
         return 0
