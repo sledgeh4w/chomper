@@ -31,7 +31,7 @@ class ObjC:
         receiver: Union[int, str],
         sel: Union[int, str],
         *args: Union[int, str],
-        va_list: Optional[Sequence[int]] = None
+        va_list: Optional[Sequence[int]] = None,
     ) -> int:
         """Send message to Objective-C runtime.
 
