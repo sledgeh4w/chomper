@@ -16,7 +16,7 @@ logging.basicConfig(
     level=logging.INFO,
 )
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger()
 
 
 def download_sample_file(binary_path: str) -> str:
