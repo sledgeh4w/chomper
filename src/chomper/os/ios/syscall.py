@@ -184,6 +184,10 @@ def handle_sys_lseek(emu):
     offset = emu.get_arg(1)
     whence = emu.get_arg(2)
 
+    # Convert to signed integer
+    offset_bytes = offset.to_bytes(8, "little")
+    offset = int.from_bytes(offset_bytes, "little", signed=True)
+
     return emu.file_manager.lseek(fd, offset, whence)
 
 
