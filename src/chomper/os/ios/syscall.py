@@ -96,7 +96,25 @@ def handle_sys_access(emu):
     path = emu.read_string(emu.get_arg(0))
     mode = emu.get_arg(1)
 
-    return emu.file_manager.access(path, mode)
+    if not emu.file_manager.access(path, mode):
+        return -1
+
+    return 0
+
+
+@register_syscall_handler(const.SYS_GETPPID)
+def handle_sys_getppid(emu):
+    return 1
+
+
+@register_syscall_handler(const.SYS_SIGACTION)
+def handle_sys_sigaction(emu):
+    return 0
+
+
+@register_syscall_handler(const.SYS_SIGALTSTACK)
+def handle_sys_sigaltstack(emu):
+    return 0
 
 
 @register_syscall_handler(const.SYS_READLINK)
@@ -139,6 +157,16 @@ def handle_sys_gettimeofday(emu):
 
     emu.write_u64(tv, int(time.time()))
     emu.write_u64(tv + 8, 0)
+
+    return 0
+
+
+@register_syscall_handler(const.SYS_MKDIR)
+def handle_sys_mkdir(emu):
+    path = emu.read_string(emu.get_arg(0))
+    mode = emu.get_arg(1)
+
+    emu.file_manager.mkdir(path, mode)
 
     return 0
 
@@ -212,15 +240,43 @@ def handle_sys_fcntl(emu):
 @register_syscall_handler(const.SYS_SYSCTL)
 def handle_sys_sysctl(emu):
     name = emu.get_arg(0)
+    oldp = emu.get_arg(2)
 
     ctl_type = emu.read_u32(name)
     ctl_ident = emu.read_u32(name + 4)
 
     if ctl_type == const.CTL_KERN:
-        if ctl_ident == const.KERN_PROC:
+        if ctl_ident == const.KERN_OSTYPE:
+            emu.write_string(oldp, "Darwin")
+        elif ctl_ident == const.KERN_OSRELEASE:
+            emu.write_string(oldp, "20.1.0")
+        elif ctl_ident == const.KERN_OSVERSION:
+            emu.write_string(
+                oldp,
+                "Darwin Kernel Version 20.1.0: Fri Oct 30 00:34:17 PDT 2020; "
+                "root:xnu-7195.42.3~1/RELEASE_ARM64_T8101",
+            )
+        elif ctl_ident == const.KERN_HOSTNAME:
+            emu.write_string(oldp, "iPhone")
+        elif ctl_ident == const.KERN_PROC:
             pass
+    elif ctl_type == const.CTL_HW:
+        if ctl_ident == const.KERN_OSTYPE:
+            emu.write_string(oldp, "iPhone13,1")
 
     return 0
+
+
+@register_syscall_handler(const.SYS_GETATTRLIST)
+def handle_sys_getattrlist(emu):
+    path = emu.read_string(emu.get_arg(0))
+    stat = emu.get_arg(2)
+
+    try:
+        emu.write_bytes(stat, emu.file_manager.stat(path))
+        return 0
+    except FileNotFoundError:
+        return -1
 
 
 @register_syscall_handler(const.SYS_SHM_OPEN)
@@ -313,6 +369,11 @@ def handle_sys_lstat64(emu):
         return -1
 
 
+@register_syscall_handler(const.SYS_BSDTHREAD_CREATE)
+def handle_sys_bsdthread_create(emu):
+    return 0
+
+
 @register_syscall_handler(const.SYS_GETENTROPY)
 def handle_sys_getentropy(emu):
     buffer = emu.get_arg(0)
@@ -320,6 +381,16 @@ def handle_sys_getentropy(emu):
 
     rand_bytes = bytes([random.randint(0, 255) for _ in range(size)])
     emu.write_bytes(buffer, rand_bytes)
+
+    return 0
+
+
+@register_syscall_handler(const.SYS_MKDIRAT)
+def handle_sys_mkdirat(emu):
+    path = emu.read_string(emu.get_arg(1))
+    mode = emu.get_arg(2)
+
+    emu.file_manager.mkdir(path, mode)
 
     return 0
 
