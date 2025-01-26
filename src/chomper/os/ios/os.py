@@ -56,9 +56,11 @@ OBJC_DEPENDENCIES = [
     "libsystem_blocks.dylib",
     "libsystem_trace.dylib",
     "libsystem_sandbox.dylib",
+    "libsystem_coreservices.dylib",
     "libnetwork.dylib",
     "libicucore.A.dylib",
     "libcache.dylib",
+    "libz.1.dylib",
     "CoreFoundation",
     "CFNetwork",
     "Foundation",
@@ -127,7 +129,7 @@ class IosOs(BaseOs):
         return {
             "UserAssignedDeviceName": "iPhone",
             "DeviceName": "iPhone13,1",
-            "ProductVersion": "14.4.0",
+            "ProductVersion": "14.2.1",
         }
 
     def _setup_proc_info(self):
