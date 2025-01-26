@@ -201,14 +201,17 @@ class FileManager:
             del self.dir_fds[fd]
             return 0
 
+        if fd not in self.fd_path_map:
+            return 0
+
         del self.fd_path_map[fd]
         os.close(fd)
         return 0
 
     @log_call
-    def access(self, path: str, mode: int) -> int:
+    def access(self, path: str, mode: int) -> bool:
         real_path = self.get_real_path(path)
-        return 0 if os.access(real_path, mode) else 1
+        return os.access(real_path, mode)
 
     @log_call
     def readlink(self, path: str) -> Optional[str]:
@@ -299,3 +302,8 @@ class FileManager:
         del self.dir_entry_buffers[dirp]
 
         return 0
+
+    @log_call
+    def mkdir(self, path: str, mode: int):
+        real_path = self.get_real_path(path)
+        os.mkdir(real_path, mode)
