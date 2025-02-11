@@ -92,7 +92,7 @@ SYMBOLIC_LINKS = {
 
 # Default bundle values until an executable with Info.plist is loaded
 DEFAULT_BUNDLE_UUID = "43E5FB44-22FC-4DC2-9D9E-E2702A988A2E"
-DEFAULT_BUNDLE_IDENTIFIER = "com.sh4w.chomper"
+DEFAULT_BUNDLE_IDENTIFIER = "com.sledgeh4w.chomper"
 DEFAULT_BUNDLE_EXECUTABLE = "Chomper"
 
 

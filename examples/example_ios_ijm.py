@@ -53,7 +53,7 @@ def main():
     emu = Chomper(
         arch=ARCH_ARM64,
         os_type=OS_IOS,
-        rootfs_path=os.path.join(base_path, "rootfs/ios"),
+        rootfs_path=os.path.join(base_path, "../rootfs/ios"),
     )
     objc = ObjC(emu)
 
