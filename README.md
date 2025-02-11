@@ -37,7 +37,7 @@ from chomper.const import ARCH_ARM64, OS_IOS
 emu = Chomper(
     arch=ARCH_ARM64,
     os_type=OS_IOS,
-    rootfs_path="examples/rootfs/ios",
+    rootfs_path="rootfs/ios",
 )
 
 # Load main program
@@ -69,7 +69,7 @@ from chomper.objc import ObjC
 emu = Chomper(
     arch=ARCH_ARM64,
     os_type=OS_IOS,
-    rootfs_path="examples/rootfs/ios",
+    rootfs_path="rootfs/ios",
 )
 
 objc = ObjC(emu)

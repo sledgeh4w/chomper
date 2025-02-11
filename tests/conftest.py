@@ -10,10 +10,10 @@ from chomper.objc import ObjC
 
 base_path = os.path.abspath(os.path.dirname(__file__))
 
-android_lib_path = os.path.join(base_path, "../examples/rootfs/android/system/lib")
-android_lib64_path = os.path.join(base_path, "../examples/rootfs/android/system/lib64")
+android_lib_path = os.path.join(base_path, "../rootfs/android/system/lib")
+android_lib64_path = os.path.join(base_path, "../rootfs/android/system/lib64")
 
-ios_rootfs_path = os.path.join(base_path, "../examples/rootfs/ios")
+ios_rootfs_path = os.path.join(base_path, "../rootfs/ios")
 
 android_binaries_path = os.path.join(base_path, "../examples/binaries/android")
 ios_binaries_path = os.path.join(base_path, "../examples/binaries/ios")
