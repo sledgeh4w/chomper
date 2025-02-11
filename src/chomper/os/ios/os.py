@@ -1,7 +1,6 @@
 import os
 import plistlib
 import random
-import uuid
 from typing import List
 
 from chomper.exceptions import EmulatorCrashed
@@ -47,6 +46,7 @@ OBJC_DEPENDENCIES = [
     "libsystem_m.dylib",
     "libcorecrypto.dylib",
     "libcommonCrypto.dylib",
+    "libcompiler_rt.dylib",
     "libc++abi.dylib",
     "libc++.1.dylib",
     "libmacho.dylib",
@@ -92,8 +92,8 @@ SYMBOLIC_LINKS = {
 
 # Default bundle values until an executable with Info.plist is loaded
 DEFAULT_BUNDLE_UUID = "43E5FB44-22FC-4DC2-9D9E-E2702A988A2E"
-DEFAULT_BUNDLE_IDENTIFIER = "com.yourcompany.ProductName"
-DEFAULT_BUNDLE_EXECUTABLE = "ProductName"
+DEFAULT_BUNDLE_IDENTIFIER = "com.sh4w.chomper"
+DEFAULT_BUNDLE_EXECUTABLE = "Chomper"
 
 
 class IosOs(BaseOs):
@@ -137,8 +137,9 @@ class IosOs(BaseOs):
         self.proc_id = random.randint(10000, 20000)
         self.proc_path = (
             f"/private/var/containers/Bundle/Application"
-            f"/{str(uuid.uuid4()).upper()}"
-            f"/{DEFAULT_BUNDLE_IDENTIFIER}/{DEFAULT_BUNDLE_EXECUTABLE}"
+            f"/{DEFAULT_BUNDLE_UUID}"
+            f"/{DEFAULT_BUNDLE_IDENTIFIER}"
+            f"/{DEFAULT_BUNDLE_EXECUTABLE}"
         )
 
     def _setup_hooks(self):
