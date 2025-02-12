@@ -139,7 +139,7 @@ def hook_localtime_r(uc, address, size, user_data):
 
 @register_hook("___srefill")
 def hook_srefill(uc, address, size, user_data):
-    return 0
+    return 1
 
 
 @register_hook("_pthread_self")

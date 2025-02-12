@@ -270,6 +270,36 @@ def test_sprintf(request, emu_name):
 
 
 @pytest.mark.usefixtures("libc_arm", "libc_arm64")
+@pytest.mark.parametrize("emu_name", ["emu_ios"])
+def test_sscanf(request, emu_name):
+    emu = request.getfixturevalue(emu_name)
+
+    num = 1024
+    s = "chomper"
+
+    fmt = "%d%s"
+
+    v1 = emu.create_string(f"{num}{s}")
+    v2 = emu.create_string(fmt)
+    v3 = emu.create_buffer(4)
+    v4 = emu.create_buffer(64)
+
+    try:
+        call_symbol(emu, "sscanf", v1, v2, va_list=(v3, v4))
+
+        result = emu.read_u32(v3)
+        assert result == num
+
+        result = emu.read_string(v4)
+        assert result == s
+    finally:
+        emu.free(v1)
+        emu.free(v2)
+        emu.free(v3)
+        emu.free(v4)
+
+
+@pytest.mark.usefixtures("libc_arm", "libc_arm64")
 @pytest.mark.parametrize("emu_name", ["emu_arm", "emu_arm64"])
 def test_printf(request, emu_name):
     emu = request.getfixturevalue(emu_name)
