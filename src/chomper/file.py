@@ -238,7 +238,8 @@ class FileManager:
 
     @log_call
     def lstat(self, path: str) -> bytes:
-        struct = self.construct_stat64(os.lstat(path))
+        real_path = self.get_real_path(path)
+        struct = self.construct_stat64(os.lstat(real_path))
         return struct2bytes(struct)
 
     @log_call
