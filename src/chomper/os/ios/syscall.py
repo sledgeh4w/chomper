@@ -1,3 +1,4 @@
+import ctypes
 import os
 import random
 import sys
@@ -8,7 +9,10 @@ from typing import Callable, Dict
 
 from unicorn import arm64_const
 
+from chomper.utils import struct2bytes
+
 from . import const
+from .sysctl import sysctl, sysctlbyname
 
 syscall_handlers: Dict[int, Callable] = {}
 
@@ -245,24 +249,17 @@ def handle_sys_sysctl(emu):
     ctl_type = emu.read_u32(name)
     ctl_ident = emu.read_u32(name + 4)
 
-    if ctl_type == const.CTL_KERN:
-        if ctl_ident == const.KERN_OSTYPE:
-            emu.write_string(oldp, "Darwin")
-        elif ctl_ident == const.KERN_OSRELEASE:
-            emu.write_string(oldp, "20.1.0")
-        elif ctl_ident == const.KERN_OSVERSION:
-            emu.write_string(
-                oldp,
-                "Darwin Kernel Version 20.1.0: Fri Oct 30 00:34:17 PDT 2020; "
-                "root:xnu-7195.42.3~1/RELEASE_ARM64_T8101",
-            )
-        elif ctl_ident == const.KERN_HOSTNAME:
-            emu.write_string(oldp, "iPhone")
-        elif ctl_ident == const.KERN_PROC:
-            pass
-    elif ctl_type == const.CTL_HW:
-        if ctl_ident == const.KERN_OSTYPE:
-            emu.write_string(oldp, "iPhone13,1")
+    result = sysctl(ctl_type, ctl_ident)
+    if result is None:
+        emu.logger.warning(f"Unhandled sysctl command: {ctl_type}, {ctl_ident}")
+        return -1
+
+    if isinstance(result, ctypes.Structure):
+        emu.write_bytes(oldp, struct2bytes(result))
+    elif isinstance(result, str):
+        emu.write_string(oldp, result)
+    elif isinstance(result, int):
+        emu.write_u64(oldp, result)
 
     return 0
 
@@ -293,16 +290,17 @@ def handle_sys_sysctlbyname(emu):
     if not oldp or not oldlenp:
         return 0
 
-    if name == "kern.boottime":
-        emu.write_u64(oldp, int(time.time()) - 3600 * 24)
-        emu.write_u64(oldp + 8, 0)
-    elif name == "kern.osvariant_status":
-        # internal_release_type = 3
-        emu.write_u64(oldp, 0x30)
-    elif name == "hw.memsize":
-        emu.write_u64(oldp, 4 * 1024 * 1024 * 1024)
-    else:
+    result = sysctlbyname(name)
+    if result is None:
         emu.logger.warning(f"Unhandled sysctl command: {name}")
+        return -1
+
+    if isinstance(result, ctypes.Structure):
+        emu.write_bytes(oldp, struct2bytes(result))
+    elif isinstance(result, str):
+        emu.write_string(oldp, result)
+    elif isinstance(result, int):
+        emu.write_u64(oldp, result)
 
     return 0
 
