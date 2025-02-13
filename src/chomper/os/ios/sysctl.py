@@ -4,96 +4,41 @@ import uuid
 
 from chomper.structs import Timespec
 
-
-# CTL Types
-
-CTL_UNSPEC = 0
-CTL_KERN = 1
-CTL_VM = 2
-CTL_VFS = 3
-CTL_NET = 4
-CTL_DEBUG = 5
-CTL_HW = 6
-CTL_MACHDEP = 7
-CTL_USER = 8
-CTL_MAXID = 9
-
-# CTL_KERN identifiers
-
-KERN_OSTYPE = 1
-KERN_OSRELEASE = 2
-KERN_MAXVNODES = 5
-KERN_MAXPROC = 6
-KERN_ARGMAX = 8
-KERN_HOSTNAME = 10
-KERN_HOSTID = 11
-KERN_CLOCKRATE = 12
-KERN_NGROUPS = 18
-KERN_SAVED_IDS = 20
-KERN_BOOTTIME = 21
-KERN_NISDOMAINNAME = 22
-KERN_MAXFILESPERPROC = 29
-KERN_USRSTACK32 = 35
-KERN_USRSTACK64 = 59
-KERN_OSVERSION = 65
-
-
-# CTL_HW identifiers
-
-HW_MACHINE = 1
-HW_MODEL = 2
-HW_NCPU = 3
-HW_BYTEORDER = 4
-HW_PHYSMEM = 5
-HW_USERMEM = 6
-HW_PAGESIZE = 7
-HW_VECTORUNIT = 13
-HW_CACHELINE = 16
-HW_L1ICACHESIZE = 17
-HW_L1DCACHESIZE = 18
-HW_L2SETTINGS = 19
-HW_L2CACHESIZE = 20
-HW_TB_FREQ = 23
-HW_MEMSIZE = 24
-HW_AVAILCPU = 25
-HW_TARGET = 26
-HW_PRODUCT = 27
+from . import const
 
 # CTL Type map
-
 CTL_TYPE_MAP = {
-    (CTL_KERN, KERN_OSTYPE): "kern.ostype",
-    (CTL_KERN, KERN_OSRELEASE): "kern.osrelease",
-    (CTL_KERN, KERN_MAXVNODES): "kern.maxvnodes",
-    (CTL_KERN, KERN_MAXPROC): "kern.maxproc",
-    (CTL_KERN, KERN_ARGMAX): "kern.argmax",
-    (CTL_KERN, KERN_HOSTNAME): "kern.hostname",
-    (CTL_KERN, KERN_HOSTID): "kern.hostid",
-    (CTL_KERN, KERN_NGROUPS): "kern.ngroups",
-    (CTL_KERN, KERN_SAVED_IDS): "kern.saved_ids",
-    (CTL_KERN, KERN_BOOTTIME): "kern.boottime",
-    (CTL_KERN, KERN_NISDOMAINNAME): "kern.nisdomainname",
-    (CTL_KERN, KERN_MAXFILESPERPROC): "kern.maxfilesperproc",
-    (CTL_KERN, KERN_USRSTACK32): "kern.usrstack",
-    (CTL_KERN, KERN_USRSTACK64): "kern.usrstack64",
-    (CTL_KERN, KERN_OSVERSION): "kern.osversion",
-    (CTL_HW, HW_MACHINE): "hw.machine",
-    (CTL_HW, HW_MODEL): "hw.model",
-    (CTL_HW, HW_TARGET): "hw.target",
-    (CTL_HW, HW_PRODUCT): "hw.product",
-    (CTL_HW, HW_NCPU): "hw.ncpu",
-    (CTL_HW, HW_BYTEORDER): "hw.byteorder",
-    (CTL_HW, HW_MEMSIZE): "hw.memsize",
-    (CTL_HW, HW_PAGESIZE): "hw.pagesize",
-    (CTL_HW, HW_CACHELINE): "hw.cachelinesize",
-    (CTL_HW, HW_L1ICACHESIZE): "hw.l1icachesize",
-    (CTL_HW, HW_L1DCACHESIZE): "hw.l1dcachesize",
-    (CTL_HW, HW_L2CACHESIZE): "hw.l2cachesize",
-    (CTL_HW, HW_TB_FREQ): "hw.tbfrequency",
+    (const.CTL_KERN, const.KERN_OSTYPE): "kern.ostype",
+    (const.CTL_KERN, const.KERN_OSRELEASE): "kern.osrelease",
+    (const.CTL_KERN, const.KERN_MAXVNODES): "kern.maxvnodes",
+    (const.CTL_KERN, const.KERN_MAXPROC): "kern.maxproc",
+    (const.CTL_KERN, const.KERN_ARGMAX): "kern.argmax",
+    (const.CTL_KERN, const.KERN_HOSTNAME): "kern.hostname",
+    (const.CTL_KERN, const.KERN_HOSTID): "kern.hostid",
+    (const.CTL_KERN, const.KERN_NGROUPS): "kern.ngroups",
+    (const.CTL_KERN, const.KERN_SAVED_IDS): "kern.saved_ids",
+    (const.CTL_KERN, const.KERN_BOOTTIME): "kern.boottime",
+    (const.CTL_KERN, const.KERN_NISDOMAINNAME): "kern.nisdomainname",
+    (const.CTL_KERN, const.KERN_MAXFILESPERPROC): "kern.maxfilesperproc",
+    (const.CTL_KERN, const.KERN_USRSTACK32): "kern.usrstack",
+    (const.CTL_KERN, const.KERN_USRSTACK64): "kern.usrstack64",
+    (const.CTL_KERN, const.KERN_OSVERSION): "kern.osversion",
+    (const.CTL_HW, const.HW_MACHINE): "hw.machine",
+    (const.CTL_HW, const.HW_MODEL): "hw.model",
+    (const.CTL_HW, const.HW_TARGET): "hw.target",
+    (const.CTL_HW, const.HW_PRODUCT): "hw.product",
+    (const.CTL_HW, const.HW_NCPU): "hw.ncpu",
+    (const.CTL_HW, const.HW_BYTEORDER): "hw.byteorder",
+    (const.CTL_HW, const.HW_MEMSIZE): "hw.memsize",
+    (const.CTL_HW, const.HW_PAGESIZE): "hw.pagesize",
+    (const.CTL_HW, const.HW_CACHELINE): "hw.cachelinesize",
+    (const.CTL_HW, const.HW_L1ICACHESIZE): "hw.l1icachesize",
+    (const.CTL_HW, const.HW_L1DCACHESIZE): "hw.l1dcachesize",
+    (const.CTL_HW, const.HW_L2CACHESIZE): "hw.l2cachesize",
+    (const.CTL_HW, const.HW_TB_FREQ): "hw.tbfrequency",
 }
 
 # Kernel parameters
-
 KERNEL_PARAMETERS = {
     "kern.ostype": "Darwin",
     "kern.osrelease": "20.1.0",
