@@ -410,7 +410,7 @@ def handle_sys_statfs64(emu):
     path = emu.read_string(emu.get_arg(0))
     stat = emu.get_arg(1)
 
-    emu.write_bytes(stat, emu.file_manager.statfs64(path))
+    emu.write_bytes(stat, emu.file_manager.statfs(path))
 
     return 0
 
@@ -421,7 +421,7 @@ def handle_sys_fstatfs64(emu):
     fd = emu.get_arg(0)
     stat = emu.get_arg(1)
 
-    emu.write_bytes(stat, emu.file_manager.fstatfs64(fd))
+    emu.write_bytes(stat, emu.file_manager.fstatfs(fd))
 
     return 0
 
