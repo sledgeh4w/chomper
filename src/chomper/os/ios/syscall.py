@@ -3,12 +3,12 @@ import os
 import random
 import sys
 import time
-import threading
 from functools import wraps
 from typing import Callable, Dict
 
 from unicorn import arm64_const
 
+from chomper.structs import Rusage
 from chomper.utils import struct2bytes
 
 from . import const
@@ -43,6 +43,19 @@ def register_syscall_handler(syscall_no: int):
     return wrapper
 
 
+def catch_file_errors(func):
+    """Decorator to catch all file related errors."""
+
+    @wraps(func)
+    def decorator(emu):
+        try:
+            return func(emu)
+        except FileNotFoundError:
+            return -1
+
+    return decorator
+
+
 @register_syscall_handler(const.SYS_READ)
 @register_syscall_handler(const.SYS_READ_NOCANCEL)
 def handle_sys_read(emu):
@@ -58,6 +71,7 @@ def handle_sys_read(emu):
 
 @register_syscall_handler(const.SYS_OPEN)
 @register_syscall_handler(const.SYS_OPEN_NOCANCEL)
+@catch_file_errors
 def handle_sys_open(emu):
     path = emu.read_string(emu.get_arg(0))
     flags = emu.get_arg(1)
@@ -65,10 +79,7 @@ def handle_sys_open(emu):
     if sys.platform == "win32":
         flags |= os.O_BINARY
 
-    try:
-        return emu.file_manager.open(path, flags)
-    except FileNotFoundError:
-        return -1
+    return emu.file_manager.open(path, flags)
 
 
 @register_syscall_handler(const.SYS_CLOSE)
@@ -121,6 +132,25 @@ def handle_sys_sigaltstack(emu):
     return 0
 
 
+@register_syscall_handler(const.SYS_IOCTL)
+def handle_sys_ioctl(emu):
+    fd = emu.get_arg(0)
+    req = emu.get_arg(1)
+
+    inout = req & ~((0x3FFF << 16) | 0xFF00 | 0xFF)
+    group = (req >> 8) & 0xFF
+    num = req & 0xFF
+    length = (req >> 16) & 0x3FFF
+
+    emu.logger.info(
+        f"Recv ioctl request: fd={fd}, inout={hex(inout)}, group='{chr(group)}', "
+        f"num={num}, length={length}"
+    )
+
+    emu.logger.warning("ioctl request not processed")
+    return 0
+
+
 @register_syscall_handler(const.SYS_READLINK)
 def handle_sys_readlink(emu):
     path = emu.read_string(emu.get_arg(0))
@@ -165,7 +195,18 @@ def handle_sys_gettimeofday(emu):
     return 0
 
 
+@register_syscall_handler(const.SYS_GETRUSAGE)
+def handle_sys_getrusage(emu):
+    r = emu.get_arg(1)
+
+    rusage = Rusage()
+    emu.write_bytes(r, struct2bytes(rusage))
+
+    return 0
+
+
 @register_syscall_handler(const.SYS_MKDIR)
+@catch_file_errors
 def handle_sys_mkdir(emu):
     path = emu.read_string(emu.get_arg(0))
     mode = emu.get_arg(1)
@@ -265,15 +306,14 @@ def handle_sys_sysctl(emu):
 
 
 @register_syscall_handler(const.SYS_GETATTRLIST)
+@catch_file_errors
 def handle_sys_getattrlist(emu):
     path = emu.read_string(emu.get_arg(0))
     stat = emu.get_arg(2)
 
-    try:
-        emu.write_bytes(stat, emu.file_manager.stat(path))
-        return 0
-    except FileNotFoundError:
-        return -1
+    emu.write_bytes(stat, emu.file_manager.stat(path))
+
+    return 0
 
 
 @register_syscall_handler(const.SYS_SHM_OPEN)
@@ -307,8 +347,7 @@ def handle_sys_sysctlbyname(emu):
 
 @register_syscall_handler(const.SYS_GETTID)
 def handle_sys_gettid(emu):
-    thread = threading.current_thread()
-    return thread.ident
+    return 1000
 
 
 @register_syscall_handler(const.SYS_PSYNCH_MUTEXWAIT)
@@ -334,15 +373,14 @@ def handle_sys_proc_info(emu):
 
 
 @register_syscall_handler(const.SYS_STAT64)
+@catch_file_errors
 def handle_sys_stat64(emu):
     path = emu.read_string(emu.get_arg(0))
     stat = emu.get_arg(1)
 
-    try:
-        emu.write_bytes(stat, emu.file_manager.stat(path))
-        return 0
-    except FileNotFoundError:
-        return -1
+    emu.write_bytes(stat, emu.file_manager.stat(path))
+
+    return 0
 
 
 @register_syscall_handler(const.SYS_FSTAT64)
@@ -356,15 +394,36 @@ def handle_sys_fstat64(emu):
 
 
 @register_syscall_handler(const.SYS_LSTAT64)
+@catch_file_errors
 def handle_sys_lstat64(emu):
     path = emu.read_string(emu.get_arg(0))
     stat = emu.get_arg(1)
 
-    try:
-        emu.write_bytes(stat, emu.file_manager.lstat(path))
-        return 0
-    except FileNotFoundError:
-        return -1
+    emu.write_bytes(stat, emu.file_manager.lstat(path))
+
+    return 0
+
+
+@register_syscall_handler(const.SYS_STATFS64)
+@catch_file_errors
+def handle_sys_statfs64(emu):
+    path = emu.read_string(emu.get_arg(0))
+    stat = emu.get_arg(1)
+
+    emu.write_bytes(stat, emu.file_manager.statfs64(path))
+
+    return 0
+
+
+@register_syscall_handler(const.SYS_FSTATFS64)
+@catch_file_errors
+def handle_sys_fstatfs64(emu):
+    fd = emu.get_arg(0)
+    stat = emu.get_arg(1)
+
+    emu.write_bytes(stat, emu.file_manager.fstatfs64(fd))
+
+    return 0
 
 
 @register_syscall_handler(const.SYS_BSDTHREAD_CREATE)
@@ -383,12 +442,27 @@ def handle_sys_getentropy(emu):
     return 0
 
 
+@register_syscall_handler(const.SYS_OPENAT)
+@register_syscall_handler(const.SYS_OPENAT_NOCANCEL)
+@catch_file_errors
+def handle_sys_openat(emu):
+    dir_fd = emu.get_arg(0)
+    path = emu.read_string(emu.get_arg(1))
+    flags = emu.get_arg(2)
+
+    if sys.platform == "win32":
+        flags |= os.O_BINARY
+
+    return emu.file_manager.openat(dir_fd, path, flags)
+
+
 @register_syscall_handler(const.SYS_MKDIRAT)
 def handle_sys_mkdirat(emu):
+    dir_fd = emu.get_arg(0)
     path = emu.read_string(emu.get_arg(1))
     mode = emu.get_arg(2)
 
-    emu.file_manager.mkdir(path, mode)
+    emu.file_manager.mkdirat(dir_fd, path, mode)
 
     return 0
 

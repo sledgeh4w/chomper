@@ -3,6 +3,7 @@ import time
 import uuid
 
 from chomper.structs import Timespec
+from chomper.utils import log_call
 
 from . import const
 
@@ -96,11 +97,22 @@ KERNEL_PARAMETERS = {
 }
 
 
+@log_call
 def sysctl(ctl_type: int, ctl_ident: int):
     if (ctl_type, ctl_ident) in CTL_TYPE_MAP:
         return KERNEL_PARAMETERS[CTL_TYPE_MAP[(ctl_type, ctl_ident)]]
     return None
 
 
+@log_call
 def sysctlbyname(name: str):
-    return KERNEL_PARAMETERS.get(name)
+    result = KERNEL_PARAMETERS.get(name)
+
+    if name == "kern.osvariant_status" and isinstance(result, int):
+        # can_has_debugger = 3
+        result |= 3 << 2
+
+        # internal_release_type = 3
+        result |= 3 << 4
+
+    return result
