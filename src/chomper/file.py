@@ -1,11 +1,12 @@
 import ctypes
 import os
+import posixpath
 import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from .log import get_logger
-from .structs import Stat64, Timespec, Dirent
+from .structs import Stat64, Statfs64, Timespec, Dirent
 from .utils import struct2bytes, log_call, safe_join
 
 
@@ -180,12 +181,28 @@ class FileManager:
             d_name=entry.name.encode("utf-8"),
         )
 
-    @log_call
-    def read(self, fd: int, size: int) -> bytes:
-        return os.read(fd, size)
+    @staticmethod
+    def construct_statfs64() -> Statfs64:
+        """Construct statfs64 struct."""
+        return Statfs64(
+            f_bsize=4096,
+            f_iosize=1048576,
+            f_blocks=31218501,
+            f_bfree=29460883,
+            f_bavail=25672822,
+            f_files=1248740040,
+            f_ffree=1248421957,
+            f_fsid=103095992327,
+            f_owner=0,
+            f_type=24,
+            f_flags=343986176,
+            f_fssubtype=0,
+            f_fstypename=b"apfs",
+            f_mntonname=b"/",
+            f_mntfromname=b"/dev/disk0s1s1",
+        )
 
-    @log_call
-    def open(self, path: str, flags: int) -> int:
+    def _open(self, path: str, flags: int) -> int:
         real_path = self.get_real_path(path)
 
         if os.path.isdir(real_path):
@@ -194,6 +211,18 @@ class FileManager:
         fd = os.open(real_path, flags)
         self.fd_path_map[fd] = self.get_absolute_path(path)
         return fd
+
+    def _mkdir(self, path: str, mode: int):
+        real_path = self.get_real_path(path)
+        os.mkdir(real_path, mode)
+
+    @log_call
+    def read(self, fd: int, size: int) -> bytes:
+        return os.read(fd, size)
+
+    @log_call
+    def open(self, path: str, flags: int) -> int:
+        return self._open(path, flags)
 
     @log_call
     def close(self, fd: int) -> int:
@@ -240,6 +269,20 @@ class FileManager:
     def lstat(self, path: str) -> bytes:
         real_path = self.get_real_path(path)
         struct = self.construct_stat64(os.lstat(real_path))
+        return struct2bytes(struct)
+
+    @log_call
+    def statfs(self, path: str) -> bytes:
+        if path:
+            pass
+        struct = self.construct_statfs64()
+        return struct2bytes(struct)
+
+    @log_call
+    def fstatfs(self, fd: int) -> bytes:
+        if fd:
+            pass
+        struct = self.construct_statfs64()
         return struct2bytes(struct)
 
     @log_call
@@ -306,5 +349,18 @@ class FileManager:
 
     @log_call
     def mkdir(self, path: str, mode: int):
-        real_path = self.get_real_path(path)
-        os.mkdir(real_path, mode)
+        self._mkdir(path, mode)
+
+    @log_call
+    def openat(self, dir_fd: int, path: str, flags: int) -> int:
+        if dir_fd in self.dir_fds:
+            path = posixpath.join(self.dir_fds[dir_fd], path)
+
+        return self._open(path, flags)
+
+    @log_call
+    def mkdirat(self, dir_fd: int, path: str, mode: int):
+        if dir_fd in self.dir_fds:
+            path = posixpath.join(self.dir_fds[dir_fd], path)
+
+        return self._mkdir(path, mode)

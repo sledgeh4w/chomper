@@ -1,7 +1,4 @@
-import datetime
 import os
-import random
-import time
 from functools import wraps
 from typing import Callable, Dict
 
@@ -36,42 +33,6 @@ def hook_os_unfair_lock_assert_owner(uc, address, size, user_data):
     pass
 
 
-@register_hook("___sysctlbyname")
-def hook_sysctlbyname(uc, address, size, user_data):
-    emu = user_data["emu"]
-
-    name = emu.read_string(emu.get_arg(0))
-    oldp = emu.get_arg(2)
-    oldlenp = emu.get_arg(3)
-
-    if not oldp or not oldlenp:
-        return 0
-
-    if name == "kern.boottime":
-        emu.write_u64(oldp, int(time.time()) - 3600 * 24)
-        emu.write_u64(oldp + 8, 0)
-    elif name == "kern.osvariant_status":
-        variant_status = 0
-
-        # can_has_debugger = 3
-        variant_status |= 3 << 2
-
-        # internal_release_type = 3
-        variant_status |= 3 << 4
-
-        emu.write_u64(oldp, variant_status)
-    elif name == "hw.machine":
-        machine = emu.os.device_info["DeviceName"]
-        emu.write_string(oldp, machine)
-        emu.write_u64(oldlenp, len(machine))
-    elif name == "hw.memsize":
-        emu.write_u64(oldp, 4 * 1024 * 1024 * 1024)
-    else:
-        raise RuntimeError("Unhandled sysctl command: %s" % name)
-
-    return 0
-
-
 @register_hook("_opendir")
 def hook_opendir(uc, address, size, user_data):
     emu = user_data["emu"]
@@ -97,44 +58,6 @@ def hook_closedir(uc, address, size, user_data):
     dirp = emu.get_arg(0)
 
     return emu.file_manager.closedir(dirp)
-
-
-@register_hook("_time")
-def hook_time(uc, address, size, user_data):
-    return int(time.time())
-
-
-@register_hook("_srandom")
-def hook_srandom(uc, address, size, user_data):
-    return 0
-
-
-@register_hook("_random")
-def hook_random(uc, address, size, user_data):
-    return random.randint(0, 2**32 - 1)
-
-
-@register_hook("_localtime_r")
-def hook_localtime_r(uc, address, size, user_data):
-    emu = user_data["emu"]
-
-    tp = emu.read_u64(emu.get_arg(0))
-    tm = emu.get_arg(1)
-
-    date = datetime.datetime.fromtimestamp(tp)
-
-    emu.write_u32(tm, date.second)
-    emu.write_u32(tm + 4, date.minute)
-    emu.write_u32(tm + 8, date.hour)
-    emu.write_u32(tm + 12, date.day)
-    emu.write_u32(tm + 16, date.month)
-    emu.write_u32(tm + 20, date.year)
-    emu.write_u32(tm + 24, 0)
-    emu.write_u32(tm + 28, 0)
-    emu.write_u32(tm + 32, 0)
-    emu.write_u64(tm + 40, 8 * 60 * 60)
-
-    return 0
 
 
 @register_hook("___srefill")
@@ -553,10 +476,29 @@ def hook_mach_vm_deallocate(uc, address, size, user_data):
 
 
 @register_hook("+[NSObject(NSObject) doesNotRecognizeSelector:]")
-@register_hook("-[NSObject(NSObject) doesNotRecognizeSelector:]")
-def ns_object_does_not_recognize_selector(uc, address, size, user_data):
+def hook_ns_object_does_not_recognize_selector_for_class(uc, address, size, user_data):
     emu = user_data["emu"]
 
+    receiver = emu.get_arg(0)
     selector = emu.read_string(emu.get_arg(2))
 
-    raise ObjCUnrecognizedSelector(f"Unrecognized selector '{selector}'")
+    class_name = emu.read_string(emu.call_symbol("_class_getName", receiver))
+    raise ObjCUnrecognizedSelector(
+        f"Unrecognized selector '{selector}' of class '{class_name}'"
+    )
+
+
+@register_hook("-[NSObject(NSObject) doesNotRecognizeSelector:]")
+def hook_ns_object_does_not_recognize_selector_for_instance(
+    uc, address, size, user_data
+):
+    emu = user_data["emu"]
+
+    receiver = emu.get_arg(0)
+    selector = emu.read_string(emu.get_arg(2))
+
+    class_ = emu.call_symbol("_object_getClass", receiver)
+    class_name = emu.read_string(emu.call_symbol("_class_getName", class_))
+    raise ObjCUnrecognizedSelector(
+        f"Unrecognized selector '{selector}' of instance '{class_name}'"
+    )
