@@ -25,6 +25,7 @@ from .memory import MemoryManager
 from .types import Module, Symbol
 from .log import get_logger
 from .os import AndroidOs, IosOs
+from .typing import UserData, HookFuncCallable
 from .utils import aligned
 
 
@@ -292,7 +293,7 @@ class Chomper:
     def add_hook(
         self,
         symbol_or_addr: Union[int, str],
-        callback: Callable,
+        callback: HookFuncCallable,
         user_data: Optional[dict] = None,
     ) -> int:
         """Add hook to the emulator.
@@ -330,13 +331,13 @@ class Chomper:
     def add_interceptor(
         self,
         symbol_or_addr: Union[int, str],
-        callback: Callable,
+        callback: HookFuncCallable,
         user_data: Optional[dict] = None,
-    ):
+    ) -> int:
         """Add interceptor to the emulator."""
 
         @wraps(callback)
-        def decorator(uc, address, size, user_data_):
+        def decorator(uc: Uc, address: int, size: int, user_data_: UserData):
             emu = user_data_["emu"]
             address = emu.uc.reg_read(emu.arch.reg_pc)
 
@@ -606,35 +607,35 @@ class Chomper:
             byteorder=self.endian,
         )
 
-    def read_s8(self, address: int):
+    def read_s8(self, address: int) -> int:
         """Read a signed int8 from the address."""
         return self.read_int(address, 1, True)
 
-    def read_s16(self, address: int):
+    def read_s16(self, address: int) -> int:
         """Read a signed int16 from the address."""
         return self.read_int(address, 2, True)
 
-    def read_s32(self, address: int):
+    def read_s32(self, address: int) -> int:
         """Read a signed int32 from the address."""
         return self.read_int(address, 4, True)
 
-    def read_s64(self, address: int):
+    def read_s64(self, address: int) -> int:
         """Read a signed int64 from the address."""
         return self.read_int(address, 8, True)
 
-    def read_u8(self, address: int):
+    def read_u8(self, address: int) -> int:
         """Read an unsigned int8 from the address."""
         return self.read_int(address, 1, False)
 
-    def read_u16(self, address: int):
+    def read_u16(self, address: int) -> int:
         """Read an unsigned int16 from the address."""
         return self.read_int(address, 2, False)
 
-    def read_u32(self, address: int):
+    def read_u32(self, address: int) -> int:
         """Read an unsigned int32 from the address."""
         return self.read_int(address, 4, False)
 
-    def read_u64(self, address: int):
+    def read_u64(self, address: int) -> int:
         """Read an unsigned int64 from the address."""
         return self.read_int(address, 8, False)
 
@@ -738,7 +739,9 @@ class Chomper:
         """Write a pointer into the address."""
         self.write_int(address, value, self.arch.addr_size)
 
-    def write_array(self, address: int, array: List[int], size: Optional[int] = None):
+    def write_array(
+        self, address: int, array: Sequence[int], size: Optional[int] = None
+    ):
         """Write an array into the address."""
         if size is None:
             size = self.arch.addr_size
