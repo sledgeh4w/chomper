@@ -363,4 +363,4 @@ class FileManager:
         if dir_fd in self.dir_fds:
             path = posixpath.join(self.dir_fds[dir_fd], path)
 
-        return self._mkdir(path, mode)
+        self._mkdir(path, mode)

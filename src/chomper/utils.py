@@ -2,10 +2,14 @@ import inspect
 import os
 from ctypes import addressof, create_string_buffer, sizeof, memmove, Structure
 from functools import wraps
-from typing import Optional
+from typing import Any, Callable, Optional, TYPE_CHECKING
 
 from .log import get_logger
 from .objc import ObjC
+from .typing import CFObjConvertible, NSObjConvertible
+
+if TYPE_CHECKING:
+    from .core import Chomper
 
 
 def aligned(x: int, n: int) -> int:
@@ -20,7 +24,7 @@ def struct2bytes(st: Structure) -> bytes:
     return buffer.raw
 
 
-def pyobj2nsobj(emu, obj: object) -> int:
+def pyobj2nsobj(emu: "Chomper", obj: NSObjConvertible) -> int:
     """Convert Python object to NS object.
 
     Raises:
@@ -64,7 +68,7 @@ def pyobj2nsobj(emu, obj: object) -> int:
     return ns_obj
 
 
-def pyobj2cfobj(emu, obj: object) -> int:
+def pyobj2cfobj(emu: "Chomper", obj: CFObjConvertible) -> int:
     """Convert Python object to CF object.
 
     Raises:
@@ -148,18 +152,18 @@ def pyobj2cfobj(emu, obj: object) -> int:
     return cf_obj
 
 
-def log_call(func):
+def log_call(f: Callable[..., Any]):
     """Decorator to print function calls and parameters."""
 
     current_frame = inspect.currentframe()
     caller_frame = inspect.getouterframes(current_frame)[1]
     module_name = caller_frame.frame.f_globals["__name__"]
 
-    @wraps(func)
+    @wraps(f)
     def decorator(*args, **kwargs):
         logger = get_logger(module_name)
 
-        sig = inspect.signature(func)
+        sig = inspect.signature(f)
         bound_args = sig.bind(*args, **kwargs)
         bound_args.apply_defaults()
 
@@ -172,10 +176,10 @@ def log_call(func):
                 args_str += ", "
             args_str += f"{name}={repr(value)}"
 
-        log_prefix = f"Monitor '{func.__name__}' "
+        log_prefix = f"Monitor '{f.__name__}' "
         logger.info(f"{log_prefix}call: {args_str}")
 
-        retval = func(*args, **kwargs)
+        retval = f(*args, **kwargs)
 
         if isinstance(retval, int):
             logger.info(f"{log_prefix}return: {retval}")

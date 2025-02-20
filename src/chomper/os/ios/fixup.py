@@ -1,7 +1,12 @@
+from typing import Dict, Set, TYPE_CHECKING
+
 import lief
 
 from chomper.exceptions import SymbolMissing
 from chomper.types import Module
+
+if TYPE_CHECKING:
+    from chomper.core import Chomper
 
 
 class SystemModuleFixup:
@@ -11,13 +16,13 @@ class SystemModuleFixup:
     and they are lost part relocation information, which needs to be fixed.
     """
 
-    def __init__(self, emu):
+    def __init__(self, emu: "Chomper"):
         self.emu = emu
 
         # Filter duplicate relocations
-        self._relocate_cache = {}
+        self._relocate_cache: Dict[int, int] = {}
 
-        self._refs_relocations = set()
+        self._refs_relocations: Set[int] = set()
 
     def relocate_pointer(self, module_base: int, address: int) -> int:
         """Relocate pointer stored at the address."""
@@ -139,7 +144,7 @@ class SystemModuleFixup:
                 for value in values:
                     self.relocate_pointer(module_base, module_base + value + 8)
 
-            values = map(lambda v: module_base + v if v else 0, values)
+            values = [module_base + v if v else 0 for v in values]
             self.emu.write_array(begin, values)
 
         # Some system libraries don't contain `__objc_classlist`

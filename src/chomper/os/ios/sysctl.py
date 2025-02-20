@@ -1,14 +1,16 @@
 import random
 import time
 import uuid
+from typing import Dict, Optional, Tuple
 
 from chomper.structs import Timespec
+from chomper.typing import SysctlReturnValue
 from chomper.utils import log_call
 
 from . import const
 
 # CTL Type map
-CTL_TYPE_MAP = {
+CTL_TYPE_MAP: Dict[Tuple[int, int], str] = {
     (const.CTL_KERN, const.KERN_OSTYPE): "kern.ostype",
     (const.CTL_KERN, const.KERN_OSRELEASE): "kern.osrelease",
     (const.CTL_KERN, const.KERN_MAXVNODES): "kern.maxvnodes",
@@ -40,7 +42,7 @@ CTL_TYPE_MAP = {
 }
 
 # Kernel parameters
-KERNEL_PARAMETERS = {
+KERNEL_PARAMETERS: Dict[str, SysctlReturnValue] = {
     "kern.ostype": "Darwin",
     "kern.osrelease": "20.1.0",
     "kern.maxvnodes": 5700,
@@ -98,14 +100,14 @@ KERNEL_PARAMETERS = {
 
 
 @log_call
-def sysctl(ctl_type: int, ctl_ident: int):
+def sysctl(ctl_type: int, ctl_ident: int) -> Optional[SysctlReturnValue]:
     if (ctl_type, ctl_ident) in CTL_TYPE_MAP:
         return KERNEL_PARAMETERS[CTL_TYPE_MAP[(ctl_type, ctl_ident)]]
     return None
 
 
 @log_call
-def sysctlbyname(name: str):
+def sysctlbyname(name: str) -> Optional[SysctlReturnValue]:
     result = KERNEL_PARAMETERS.get(name)
 
     if name == "kern.osvariant_status" and isinstance(result, int):
