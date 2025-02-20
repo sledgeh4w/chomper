@@ -1,11 +1,14 @@
 from contextlib import contextmanager
-from typing import Optional, Sequence, Union
+from typing import Optional, Sequence, Union, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .core import Chomper
 
 
 class ObjC:
     """Provide an interface to Objective-C runtime."""
 
-    def __init__(self, emu):
+    def __init__(self, emu: "Chomper"):
         self.emu = emu
 
     def get_class(self, class_name: str) -> int:
