@@ -32,6 +32,9 @@ dynamic = ["version"]
 [tool.setuptools.dynamic]
 version = { attr = "chomper.__version__" }
 
+[tool.setuptools.package-data]
+"chomper" = ["data/*.pkl"]
+
 [tool.mypy]
 files = ["src/chomper"]
 python_version = "3.8"
