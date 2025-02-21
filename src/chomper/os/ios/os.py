@@ -1,6 +1,8 @@
 import os
+import pickle
 import plistlib
 import random
+import sys
 from typing import List
 
 from chomper.exceptions import EmulatorCrashed
@@ -11,6 +13,7 @@ from chomper.types import Module
 from .fixup import SystemModuleFixup
 from .hooks import get_hooks
 from .syscall import get_syscall_handlers
+
 
 # Environment variables
 ENVIRON_VARS = r"""SHELL=/bin/sh
@@ -327,6 +330,8 @@ class IosOs(BaseOs):
         # Call initialize function of `Foundation`
         self.emu.call_symbol("__NSInitializePlatform")
 
+        self.fix_method_signature_rom_table()
+
     def _enable_ui_kit(self):
         """Enable UIKit support.
 
@@ -402,6 +407,29 @@ class IosOs(BaseOs):
             src_path=f"{bundle_path}/Info.plist",
             dst_path=info_path,
         )
+
+    def fix_method_signature_rom_table(self):
+        """Fix MethodSignatureROMTable by using pre dumped data file."""
+        if sys.version_info >= (3, 9):
+            import importlib.resources
+
+            data_path = importlib.resources.files("chomper") / "data"
+        else:
+            import pkg_resources
+
+            data_path = pkg_resources.resource_filename("chomper", "data")
+
+        with open(os.path.join(data_path, "method_signature_rom_table.pkl"), "rb") as f:
+            table_data = pickle.load(f)
+
+        table = self.emu.find_symbol("_MethodSignatureROMTable")
+
+        for index, item in enumerate(table_data):
+            offset = table.address + index * 24
+            str_ptr = self.emu.create_string(item[1])
+
+            self.emu.write_pointer(offset + 8, str_ptr)
+            self.emu.write_u64(offset + 16, item[2])
 
     def initialize(self):
         """Initialize environment."""
