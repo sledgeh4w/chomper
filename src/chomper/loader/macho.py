@@ -188,6 +188,9 @@ class MachoLoader(BaseLoader):
 
                 end = address + self.emu.arch.addr_size
 
+        if begin and end:
+            blocks.append((begin, end))
+
         # Read and write as blocks
         for begin, end in blocks:
             values = self.emu.read_array(begin, end)
