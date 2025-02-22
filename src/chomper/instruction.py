@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import re
 from typing import TYPE_CHECKING
 
@@ -17,7 +19,7 @@ class AutomicInstruction:
 
     supports = ("ldxr", "ldadd", "ldset", "swp", "cas")
 
-    def __init__(self, emu: "Chomper", code: bytes):
+    def __init__(self, emu: Chomper, code: bytes):
         self.emu = emu
 
         self._inst = next(self.emu.cs.disasm_lite(code, 0))

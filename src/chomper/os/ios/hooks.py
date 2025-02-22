@@ -33,6 +33,11 @@ def register_hook(symbol_name: str):
     return wrapper
 
 
+@register_hook("___chkstk_darwin")
+def hook_chkstk_darwin(uc: Uc, address: int, size: int, user_data: UserData):
+    return 0
+
+
 @register_hook("_os_unfair_lock_assert_owner")
 def hook_os_unfair_lock_assert_owner(
     uc: Uc, address: int, size: int, user_data: UserData

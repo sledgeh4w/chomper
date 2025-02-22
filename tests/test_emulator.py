@@ -1,5 +1,7 @@
 import pytest
 
+from .utils import multi_alloc_mem
+
 
 @pytest.mark.usefixtures("libc_arm64")
 def test_find_symbol(emu_arm64):
@@ -16,16 +18,8 @@ def test_backtrace(emu_arm64, libtiny_v73021_arm64):
 
     emu_arm64.add_hook(libtiny_v73021_arm64.base + 0x2BA08, hook_code)
 
-    a1 = emu_arm64.create_buffer(32)
-    a2 = emu_arm64.create_buffer(32)
-    a3 = emu_arm64.create_buffer(32)
-
-    try:
+    with multi_alloc_mem(emu_arm64, 32, 32, 32) as (a1, a2, a3):
         emu_arm64.call_address(libtiny_v73021_arm64.base + 0x289A4, a1, a2, a3)
-    finally:
-        emu_arm64.free(a1)
-        emu_arm64.free(a2)
-        emu_arm64.free(a3)
 
 
 @pytest.mark.usefixtures("libz_arm64")
@@ -69,41 +63,30 @@ def test_free(emu_arm64):
 
 
 def test_read_and_write_int(emu_arm64):
-    addr = emu_arm64.create_buffer(1024)
     value = 105
 
-    try:
+    with multi_alloc_mem(emu_arm64, 1024) as (addr,):
         emu_arm64.write_int(addr, value, size=4)
         result = emu_arm64.read_int(addr, size=4)
         assert result == value
-    finally:
-        emu_arm64.free(addr)
 
 
 def test_read_and_write_bytes(emu_arm64):
     sample_bytes = b"chomper"
 
-    addr = emu_arm64.create_buffer(1024)
-
-    try:
+    with multi_alloc_mem(emu_arm64, 1024) as (addr,):
         emu_arm64.write_bytes(addr, sample_bytes)
         result = emu_arm64.read_bytes(addr, len(sample_bytes))
         assert result == sample_bytes
-    finally:
-        emu_arm64.free(addr)
 
 
 def test_read_and_write_string(emu_arm64):
     sample_str = "chomper"
 
-    addr = emu_arm64.create_buffer(1024)
-
-    try:
+    with multi_alloc_mem(emu_arm64, 1024) as (addr,):
         emu_arm64.write_string(addr, sample_str)
         result = emu_arm64.read_string(addr)
         assert result == sample_str
-    finally:
-        emu_arm64.free(addr)
 
 
 @pytest.mark.usefixtures("libz_arm64")
