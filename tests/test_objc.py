@@ -222,3 +222,13 @@ def test_ns_bundle(emu_ios, objc):
 
         info_dictionary = objc.msg_send(main_bundle, "infoDictionary")
         assert info_dictionary
+
+
+def test_ns_method_signature(emu_ios, objc):
+    with objc.autorelease_pool():
+        method_signature = objc.msg_send(
+            "NSArray",
+            "instanceMethodSignatureForSelector:",
+            objc.get_sel("objectAtIndex:"),
+        )
+        assert method_signature
