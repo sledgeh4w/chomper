@@ -1,13 +1,19 @@
+from __future__ import annotations
+
 import ctypes
 import os
 import posixpath
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, TYPE_CHECKING
 
+from .exceptions import FileNotExist, FileBadDescriptor, FilePermissionDenied
 from .log import get_logger
 from .structs import Stat64, Statfs64, Timespec, Dirent
 from .utils import struct2bytes, log_call, safe_join
+
+if TYPE_CHECKING:
+    from .core import Chomper
 
 
 class FileManager:
@@ -23,7 +29,7 @@ class FileManager:
 
     MAX_OPEN_DIR_NUM = 10000
 
-    def __init__(self, emu, rootfs_path: Optional[str]):
+    def __init__(self, emu: Chomper, rootfs_path: Optional[str]):
         self.emu = emu
         self.logger = get_logger(__name__)
 
@@ -202,15 +208,64 @@ class FileManager:
             f_mntfromname=b"/dev/disk0s1s1",
         )
 
-    def _open(self, path: str, flags: int) -> int:
+    def check_fd(self, fd: int):
+        """Check file descriptor.
+
+        Raises:
+            BadFileDescriptor: If bad file descriptor.
+        """
+        if fd not in self.fd_path_map:
+            raise FileBadDescriptor(f"Bad file descriptor: {fd}")
+
+    @staticmethod
+    def prepare_flags(flags: int) -> int:
+        """Create flags that will be actually passed into functions of the os module.
+
+        On Windows, the meaning of flags is different with Unix-like operating systems.
+        """
+        if sys.platform != "win32":
+            return flags
+
+        _flags = 0
+
+        access_mode = flags & 3
+        if access_mode == 0:
+            _flags |= os.O_RDONLY
+        elif access_mode == 1:
+            _flags |= os.O_WRONLY
+        elif access_mode == 2:
+            _flags |= os.O_RDWR
+
+        if flags & 0x8:
+            _flags |= os.O_APPEND
+        if flags & 0x200:
+            _flags |= os.O_CREAT
+        if flags & 0x400:
+            _flags |= os.O_TRUNC
+        if flags & 0x800:
+            _flags |= os.O_EXCL
+
+        _flags |= os.O_BINARY
+
+        return _flags
+
+    def _open(self, path: str, flags: int, mode: int) -> int:
         real_path = self.get_real_path(path)
+        flags = self.prepare_flags(flags)
 
         if os.path.isdir(real_path):
             return self.get_dir_fd(path)
 
-        fd = os.open(real_path, flags)
+        fd = os.open(real_path, flags, mode)
         self.fd_path_map[fd] = self.get_absolute_path(path)
         return fd
+
+    @staticmethod
+    def _unlink(path: str):
+        exist = os.path.exists(path)
+        if not exist:
+            raise FileNotExist(f"No such file: {path}")
+        raise FilePermissionDenied(f"Banned file deletion: {path}")
 
     def _mkdir(self, path: str, mode: int):
         real_path = self.get_real_path(path)
@@ -218,11 +273,17 @@ class FileManager:
 
     @log_call
     def read(self, fd: int, size: int) -> bytes:
+        self.check_fd(fd)
         return os.read(fd, size)
 
     @log_call
-    def open(self, path: str, flags: int) -> int:
-        return self._open(path, flags)
+    def write(self, fd: int, buf: int, size: int):
+        self.check_fd(fd)
+        os.write(fd, self.emu.read_bytes(buf, size))
+
+    @log_call
+    def open(self, path: str, flags: int, mode: int) -> int:
+        return self._open(path, flags, mode)
 
     @log_call
     def close(self, fd: int) -> int:
@@ -230,12 +291,15 @@ class FileManager:
             del self.dir_fds[fd]
             return 0
 
-        if fd not in self.fd_path_map:
-            return 0
+        self.check_fd(fd)
 
         del self.fd_path_map[fd]
         os.close(fd)
         return 0
+
+    @log_call
+    def unlink(self, path: str):
+        self._unlink(path)
 
     @log_call
     def access(self, path: str, mode: int) -> bool:
@@ -248,6 +312,7 @@ class FileManager:
 
     @log_call
     def lseek(self, fd: int, offset: int, whence: int) -> int:
+        self.check_fd(fd)
         return os.lseek(fd, offset, whence)
 
     @log_call
@@ -261,6 +326,8 @@ class FileManager:
         if fd in self.dir_fds:
             path = self.dir_fds[fd]
             return self.stat(path)
+
+        self.check_fd(fd)
 
         struct = self.construct_stat64(os.fstat(fd))
         return struct2bytes(struct)
@@ -352,11 +419,25 @@ class FileManager:
         self._mkdir(path, mode)
 
     @log_call
-    def openat(self, dir_fd: int, path: str, flags: int) -> int:
+    def rmdir(self, path: str):
+        exist = os.path.exists(path)
+        if not exist:
+            raise FileNotExist(f"No such directory: {path}")
+        raise FilePermissionDenied(f"Banned directory deletion: {path}")
+
+    @log_call
+    def openat(self, dir_fd: int, path: str, flags: int, mode: int) -> int:
         if dir_fd in self.dir_fds:
             path = posixpath.join(self.dir_fds[dir_fd], path)
 
-        return self._open(path, flags)
+        return self._open(path, flags, mode)
+
+    @log_call
+    def unlinkat(self, dir_fd: int, path: str):
+        if dir_fd in self.dir_fds:
+            path = posixpath.join(self.dir_fds[dir_fd], path)
+
+        self._unlink(path)
 
     @log_call
     def mkdirat(self, dir_fd: int, path: str, mode: int):
