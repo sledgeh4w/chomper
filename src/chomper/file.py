@@ -223,9 +223,6 @@ class FileManager:
 
         On Windows, the meaning of flags is different with Unix-like operating systems.
         """
-        if sys.platform != "win32":
-            return flags
-
         _flags = 0
 
         access_mode = flags & 3
@@ -245,7 +242,8 @@ class FileManager:
         if flags & 0x800:
             _flags |= os.O_EXCL
 
-        _flags |= os.O_BINARY
+        if sys.platform == "win32":
+            _flags |= os.O_BINARY
 
         return _flags
 
