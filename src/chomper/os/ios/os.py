@@ -135,6 +135,18 @@ class IosOs(BaseOs):
             "ProductVersion": "14.2.1",
         }
 
+    @property
+    def errno(self) -> int:
+        """Get the value of errno."""
+        errno = self.emu.find_symbol("_errno")
+        return self.emu.read_u32(errno.address)
+
+    @errno.setter
+    def errno(self, value: int):
+        """Set the value of errno."""
+        errno = self.emu.find_symbol("_errno")
+        self.emu.write_u32(errno.address, value)
+
     def _setup_proc_info(self):
         """Initialize process info."""
         self.proc_id = random.randint(10000, 20000)

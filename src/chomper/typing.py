@@ -1,5 +1,7 @@
+from __future__ import annotations
+
 import ctypes
-from typing import Callable, Union, TypedDict, TYPE_CHECKING
+from typing import Callable, TypedDict, Union, TYPE_CHECKING
 
 from unicorn import Uc
 
@@ -8,7 +10,7 @@ if TYPE_CHECKING:
 
 
 class UserData(TypedDict):
-    emu: "Chomper"
+    emu: Chomper
 
 
 HookFuncCallable = Union[

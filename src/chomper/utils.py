@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import inspect
 import os
 from ctypes import addressof, create_string_buffer, sizeof, memmove, Structure
@@ -24,7 +26,7 @@ def struct2bytes(st: Structure) -> bytes:
     return buffer.raw
 
 
-def pyobj2nsobj(emu: "Chomper", obj: NSObjConvertible) -> int:
+def pyobj2nsobj(emu: Chomper, obj: NSObjConvertible) -> int:
     """Convert Python object to NS object.
 
     Raises:
@@ -68,7 +70,7 @@ def pyobj2nsobj(emu: "Chomper", obj: NSObjConvertible) -> int:
     return ns_obj
 
 
-def pyobj2cfobj(emu: "Chomper", obj: CFObjConvertible) -> int:
+def pyobj2cfobj(emu: Chomper, obj: CFObjConvertible) -> int:
     """Convert Python object to CF object.
 
     Raises:
