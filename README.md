@@ -10,7 +10,7 @@ Chomper is a lightweight emulation framework based on [Unicorn](https://github.c
 ## Features
 
 - Basic emulation for ELF and Mach-O
-- Support for a set of iOS system libraries (from iOS 14.4.0)
+- Support for a subset of iOS system libraries (from iOS 14.4.0)
 
 ## Requirements
 
@@ -19,7 +19,7 @@ Chomper is a lightweight emulation framework based on [Unicorn](https://github.c
 
 ## Installation
 
-Clone the repository to use the latest version (recommend):
+Clone the repository to use the latest version (recommended):
 
 ```
 $ git clone https://github.com/sledgeh4w/chomper ; cd chomper
@@ -68,7 +68,7 @@ emu.call_address(duapp.base + 0x109322118, a1, a2, a3, a4, a5, a6, a7)
 result = emu.read_string(emu.read_pointer(a5))
 ```
 
-Working with Objective-C.
+Work with Objective-C.
 
 ```python
 from chomper import Chomper
