@@ -6,9 +6,8 @@ import sys
 from typing import List
 
 from chomper.exceptions import EmulatorCrashed
-from chomper.loader import MachoLoader
+from chomper.loader import MachoLoader, Module
 from chomper.os import BaseOs
-from chomper.types import Module
 
 from .fixup import SystemModuleFixup
 from .hooks import get_hooks
@@ -64,10 +63,13 @@ OBJC_DEPENDENCIES = [
     "libicucore.A.dylib",
     "libcache.dylib",
     "libz.1.dylib",
+    "libremovefile.dylib",
     "CoreFoundation",
     "CFNetwork",
     "Foundation",
     "Security",
+    "CoreServicesInternal",
+    "MobileCoreServices",
 ]
 
 # Dependent libraries of UIKit
@@ -344,6 +346,9 @@ class IosOs(BaseOs):
 
         self.fix_method_signature_rom_table()
 
+        amkrtemp_sentinel = self.emu.find_symbol("__amkrtemp.sentinel")
+        self.emu.write_pointer(amkrtemp_sentinel.address, self.emu.create_string(""))
+
     def _enable_ui_kit(self):
         """Enable UIKit support.
 
@@ -354,14 +359,14 @@ class IosOs(BaseOs):
     def _setup_symbolic_links(self):
         """Setup symbolic links."""
         for src, dst in SYMBOLIC_LINKS.items():
-            self.emu.file_manager.set_symbolic_link(src, dst)
+            self.file_system.set_symbolic_link(src, dst)
 
     def _setup_bundle_dir(self):
         """Setup bundle directory."""
         bundle_path = os.path.dirname(self.proc_path)
         container_path = os.path.dirname(bundle_path)
 
-        self.emu.file_manager.set_working_dir(bundle_path)
+        self.file_system.set_working_dir(bundle_path)
 
         local_container_path = os.path.join(
             self.rootfs_path,
@@ -376,8 +381,8 @@ class IosOs(BaseOs):
             local_container_path, DEFAULT_BUNDLE_IDENTIFIER
         )
 
-        self.emu.file_manager.forward_path(container_path, local_container_path)
-        self.emu.file_manager.forward_path(bundle_path, local_bundle_path)
+        self.file_system.forward_path(container_path, local_container_path)
+        self.file_system.forward_path(bundle_path, local_bundle_path)
 
     def set_main_executable(self, executable_path: str):
         """Set main executable path."""
@@ -411,11 +416,11 @@ class IosOs(BaseOs):
             self.emu.write_pointer(cf_process_path.address, cf_process_path_str)
 
         # Set path forwarding to executable and Info.plist
-        self.emu.file_manager.forward_path(
+        self.file_system.forward_path(
             src_path=self.proc_path,
             dst_path=self.executable_path,
         )
-        self.emu.file_manager.forward_path(
+        self.file_system.forward_path(
             src_path=f"{bundle_path}/Info.plist",
             dst_path=info_path,
         )
@@ -425,11 +430,11 @@ class IosOs(BaseOs):
         if sys.version_info >= (3, 9):
             import importlib.resources
 
-            data_path = importlib.resources.files("chomper") / "data"
+            data_path = importlib.resources.files("chomper") / "res"
         else:
             import pkg_resources
 
-            data_path = pkg_resources.resource_filename("chomper", "data")
+            data_path = pkg_resources.resource_filename("chomper", "res")
 
         with open(os.path.join(data_path, "method_signature_rom_table.pkl"), "rb") as f:
             table_data = pickle.load(f)
