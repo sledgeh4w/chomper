@@ -68,7 +68,7 @@ emu.call_address(duapp.base + 0x109322118, a1, a2, a3, a4, a5, a6, a7)
 result = emu.read_string(emu.read_pointer(a5))
 ```
 
-Work with Objective-C.
+Working with Objective-C.
 
 ```python
 from chomper import Chomper
