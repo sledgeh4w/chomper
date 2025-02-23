@@ -3,6 +3,8 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import Optional, TYPE_CHECKING
 
+from .file import FileSystem
+
 if TYPE_CHECKING:
     from chomper.core import Chomper
 
@@ -13,6 +15,11 @@ class BaseOs(ABC):
     def __init__(self, emu: Chomper, rootfs_path: Optional[str] = None):
         self.emu = emu
         self.rootfs_path = rootfs_path
+
+        self.file_system = FileSystem(
+            emu=emu,
+            rootfs_path=rootfs_path,
+        )
 
         self.preferences: dict
         self.device_info: dict

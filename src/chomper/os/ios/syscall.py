@@ -10,7 +10,7 @@ from typing import Dict, TYPE_CHECKING
 from unicorn import arm64_const
 
 from chomper.exceptions import FileNotExist, FileBadDescriptor, FilePermissionDenied
-from chomper.structs import Rusage
+from chomper.os.structs import Rusage
 from chomper.typing import SyscallHandleCallable
 from chomper.utils import struct2bytes
 
@@ -62,7 +62,7 @@ def catch_file_errors(f):
     def decorator(emu: Chomper):
         try:
             return f(emu)
-        except (FileNotFoundError, FileNotExist):
+        except (FileNotExist, FileNotFoundError, PermissionError):
             error_no = const.ENOENT
         except FileBadDescriptor:
             error_no = const.EBADF
@@ -84,7 +84,7 @@ def handle_sys_read(emu: Chomper):
     buf = emu.get_arg(1)
     size = emu.get_arg(2)
 
-    data = emu.file_manager.read(fd, size)
+    data = emu.os.file_system.read(fd, size)
     emu.write_bytes(buf, data)
 
     return len(data)
@@ -98,9 +98,7 @@ def handle_sys_write(emu: Chomper):
     buf = emu.get_arg(1)
     size = emu.get_arg(2)
 
-    emu.file_manager.write(fd, buf, size)
-
-    return 0
+    return emu.os.file_system.write(fd, buf, size)
 
 
 @register_syscall_handler(const.SYS_OPEN)
@@ -111,7 +109,7 @@ def handle_sys_open(emu: Chomper):
     flags = emu.get_arg(1)
     mode = emu.get_arg(2)
 
-    return emu.file_manager.open(path, flags, mode)
+    return emu.os.file_system.open(path, flags, mode)
 
 
 @register_syscall_handler(const.SYS_CLOSE)
@@ -120,7 +118,7 @@ def handle_sys_open(emu: Chomper):
 def handle_sys_close(emu: Chomper):
     fd = emu.get_arg(0)
 
-    emu.file_manager.close(fd)
+    emu.os.file_system.close(fd)
 
     return 0
 
@@ -130,7 +128,7 @@ def handle_sys_close(emu: Chomper):
 def handle_sys_unlink(emu: Chomper):
     path = emu.read_string(emu.get_arg(0))
 
-    emu.file_manager.unlink(path)
+    emu.os.file_system.unlink(path)
 
     return 0
 
@@ -156,7 +154,7 @@ def handle_sys_access(emu: Chomper):
     path = emu.read_string(emu.get_arg(0))
     mode = emu.get_arg(1)
 
-    if not emu.file_manager.access(path, mode):
+    if not emu.os.file_system.access(path, mode):
         return -1
 
     return 0
@@ -207,7 +205,7 @@ def handle_sys_readlink(emu: Chomper):
     buf = emu.get_arg(1)
     buf_size = emu.get_arg(2)
 
-    result = emu.file_manager.readlink(path)
+    result = emu.os.file_system.readlink(path)
     if result is None or len(result) > buf_size:
         return -1
 
@@ -255,13 +253,24 @@ def handle_sys_getrusage(emu: Chomper):
     return 0
 
 
+@register_syscall_handler(const.SYS_RENAME)
+@catch_file_errors
+def handle_sys_rename(emu: Chomper):
+    old = emu.read_string(emu.get_arg(0))
+    new = emu.read_string(emu.get_arg(1))
+
+    emu.os.file_system.rename(old, new)
+
+    return 0
+
+
 @register_syscall_handler(const.SYS_MKDIR)
 @catch_file_errors
 def handle_sys_mkdir(emu: Chomper):
     path = emu.read_string(emu.get_arg(0))
     mode = emu.get_arg(1)
 
-    emu.file_manager.mkdir(path, mode)
+    emu.os.file_system.mkdir(path, mode)
 
     return 0
 
@@ -271,7 +280,7 @@ def handle_sys_mkdir(emu: Chomper):
 def handle_sys_rmdir(emu: Chomper):
     path = emu.read_string(emu.get_arg(0))
 
-    emu.file_manager.rmdir(path)
+    emu.os.file_system.rmdir(path)
 
     return 0
 
@@ -321,7 +330,17 @@ def handle_sys_lseek(emu: Chomper):
     offset_bytes = offset.to_bytes(8, "little")
     offset = int.from_bytes(offset_bytes, "little", signed=True)
 
-    return emu.file_manager.lseek(fd, offset, whence)
+    return emu.os.file_system.lseek(fd, offset, whence)
+
+
+@register_syscall_handler(const.SYS_FSYNC)
+@register_syscall_handler(const.SYS_FSYNC_NOCANCEL)
+def handle_sys_fsync(emu: Chomper):
+    fd = emu.get_arg(0)
+
+    emu.os.file_system.fsync(fd)
+
+    return 0
 
 
 @register_syscall_handler(const.SYS_FCNTL)
@@ -332,9 +351,9 @@ def handle_sys_fcntl(emu: Chomper):
     arg = emu.get_arg(2)
 
     if cmd == const.F_GETPATH:
-        path = emu.file_manager.dir_fds.get(fd)
+        path = emu.os.file_system.dir_fds.get(fd)
         if not path:
-            path = emu.file_manager.fd_path_map.get(fd)
+            path = emu.os.file_system.fd_path_map.get(fd)
 
         if path:
             emu.write_string(arg, path)
@@ -365,14 +384,29 @@ def handle_sys_sysctl(emu: Chomper):
     return 0
 
 
+@register_syscall_handler(const.SYS_OPEN_DPROTECTED_NP)
+@catch_file_errors
+def handle_sys_open_dprotected_np(emu: Chomper):
+    path = emu.read_string(emu.get_arg(0))
+    flags = emu.get_arg(1)
+    mode = emu.get_arg(4)
+
+    return emu.os.file_system.open(path, flags, mode)
+
+
 @register_syscall_handler(const.SYS_GETATTRLIST)
 @catch_file_errors
 def handle_sys_getattrlist(emu: Chomper):
-    path = emu.read_string(emu.get_arg(0))
-    stat = emu.get_arg(2)
+    return 0
 
-    emu.write_bytes(stat, emu.file_manager.stat(path))
 
+@register_syscall_handler(const.SYS_FSETXATTR)
+def handle_sys_fsetxattr(emu: Chomper):
+    return 0
+
+
+@register_syscall_handler(const.SYS_LISTXATTR)
+def handle_sys_listxattr(emu: Chomper):
     return 0
 
 
@@ -438,7 +472,7 @@ def handle_sys_stat64(emu: Chomper):
     path = emu.read_string(emu.get_arg(0))
     stat = emu.get_arg(1)
 
-    emu.write_bytes(stat, emu.file_manager.stat(path))
+    emu.write_bytes(stat, emu.os.file_system.stat(path))
 
     return 0
 
@@ -448,7 +482,7 @@ def handle_sys_fstat64(emu: Chomper):
     fd = emu.get_arg(0)
     stat = emu.get_arg(1)
 
-    emu.write_bytes(stat, emu.file_manager.fstat(fd))
+    emu.write_bytes(stat, emu.os.file_system.fstat(fd))
 
     return 0
 
@@ -459,7 +493,7 @@ def handle_sys_lstat64(emu: Chomper):
     path = emu.read_string(emu.get_arg(0))
     stat = emu.get_arg(1)
 
-    emu.write_bytes(stat, emu.file_manager.lstat(path))
+    emu.write_bytes(stat, emu.os.file_system.lstat(path))
 
     return 0
 
@@ -470,7 +504,7 @@ def handle_sys_statfs64(emu: Chomper):
     path = emu.read_string(emu.get_arg(0))
     statfs = emu.get_arg(1)
 
-    emu.write_bytes(statfs, emu.file_manager.statfs(path))
+    emu.write_bytes(statfs, emu.os.file_system.statfs(path))
 
     return 0
 
@@ -481,7 +515,7 @@ def handle_sys_fstatfs64(emu: Chomper):
     fd = emu.get_arg(0)
     statfs = emu.get_arg(1)
 
-    emu.write_bytes(statfs, emu.file_manager.fstatfs(fd))
+    emu.write_bytes(statfs, emu.os.file_system.fstatfs(fd))
 
     return 0
 
@@ -493,7 +527,7 @@ def handle_sys_fsstat64(emu: Chomper):
     if not statfs:
         return 1
 
-    emu.write_bytes(statfs, emu.file_manager.statfs("/"))
+    emu.write_bytes(statfs, emu.os.file_system.statfs("/"))
 
     return 0
 
@@ -527,6 +561,12 @@ def handle_sys_getentropy(emu: Chomper):
     return 0
 
 
+@register_syscall_handler(const.SYS_GETATTRLISTBULK)
+@catch_file_errors
+def handle_sys_getattrlistbulk(emu: Chomper):
+    return 0
+
+
 @register_syscall_handler(const.SYS_OPENAT)
 @register_syscall_handler(const.SYS_OPENAT_NOCANCEL)
 @catch_file_errors
@@ -536,7 +576,7 @@ def handle_sys_openat(emu: Chomper):
     flags = emu.get_arg(2)
     mode = emu.get_arg(3)
 
-    return emu.file_manager.openat(dir_fd, path, flags, mode)
+    return emu.os.file_system.openat(dir_fd, path, flags, mode)
 
 
 @register_syscall_handler(const.SYS_UNLINKAT)
@@ -545,7 +585,45 @@ def handle_sys_unlinkat(emu: Chomper):
     dir_fd = emu.get_arg(0)
     path = emu.read_string(emu.get_arg(1))
 
-    emu.file_manager.unlinkat(dir_fd, path)
+    emu.os.file_system.unlinkat(dir_fd, path)
+
+    return 0
+
+
+@register_syscall_handler(const.SYS_FACCESSAT)
+@catch_file_errors
+def handle_sys_faccessat(emu: Chomper):
+    dir_fd = emu.get_arg(0)
+    path = emu.read_string(emu.get_arg(1))
+    mode = emu.get_arg(2)
+
+    if not emu.os.file_system.faccessat(dir_fd, path, mode):
+        return -1
+
+    return 0
+
+
+@register_syscall_handler(const.SYS_FSTATAT64)
+@catch_file_errors
+def handle_sys_fstatat64(emu: Chomper):
+    dir_fd = emu.get_arg(0)
+    path = emu.read_string(emu.get_arg(1))
+    stat = emu.get_arg(2)
+
+    emu.write_bytes(stat, emu.os.file_system.fstatat(dir_fd, path))
+
+    return 0
+
+
+@register_syscall_handler(const.SYS_RENAMEAT)
+@catch_file_errors
+def handle_sys_renameat(emu: Chomper):
+    src_fd = emu.get_arg(0)
+    old = emu.read_string(emu.get_arg(1))
+    dst_fd = emu.get_arg(2)
+    new = emu.read_string(emu.get_arg(3))
+
+    emu.os.file_system.renameat(src_fd, old, dst_fd, new)
 
     return 0
 
@@ -556,7 +634,7 @@ def handle_sys_mkdirat(emu: Chomper):
     path = emu.read_string(emu.get_arg(1))
     mode = emu.get_arg(2)
 
-    emu.file_manager.mkdirat(dir_fd, path, mode)
+    emu.os.file_system.mkdirat(dir_fd, path, mode)
 
     return 0
 

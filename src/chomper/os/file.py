@@ -7,17 +7,18 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional, TYPE_CHECKING
 
-from .exceptions import FileNotExist, FileBadDescriptor, FilePermissionDenied
-from .log import get_logger
+from chomper.exceptions import FileNotExist, FileBadDescriptor, FilePermissionDenied
+from chomper.log import get_logger
+from chomper.utils import struct2bytes, log_call, safe_join
+
 from .structs import Stat64, Statfs64, Timespec, Dirent
-from .utils import struct2bytes, log_call, safe_join
 
 if TYPE_CHECKING:
-    from .core import Chomper
+    from chomper.core import Chomper
 
 
-class FileManager:
-    """Provide file access interface.
+class FileSystem:
+    """Provide file system access interface.
 
     All system calls related to files from emulated programs must access real files
     through this class.
@@ -265,6 +266,20 @@ class FileManager:
             raise FileNotExist(f"No such file: {path}")
         raise FilePermissionDenied(f"Banned file deletion: {path}")
 
+    def _access(self, path: str, mode: int) -> bool:
+        real_path = self.get_real_path(path)
+        return os.access(real_path, mode)
+
+    def _stat(self, path: str) -> bytes:
+        real_path = self.get_real_path(path)
+        struct = self.construct_stat64(os.stat(real_path))
+        return struct2bytes(struct)
+
+    def _rename(self, old: str, new: str):
+        old = self.get_real_path(old)
+        new = self.get_real_path(new)
+        os.rename(old, new)
+
     def _mkdir(self, path: str, mode: int):
         real_path = self.get_real_path(path)
         os.mkdir(real_path, mode)
@@ -275,9 +290,9 @@ class FileManager:
         return os.read(fd, size)
 
     @log_call
-    def write(self, fd: int, buf: int, size: int):
+    def write(self, fd: int, buf: int, size: int) -> int:
         self.check_fd(fd)
-        os.write(fd, self.emu.read_bytes(buf, size))
+        return os.write(fd, self.emu.read_bytes(buf, size))
 
     @log_call
     def open(self, path: str, flags: int, mode: int) -> int:
@@ -301,8 +316,7 @@ class FileManager:
 
     @log_call
     def access(self, path: str, mode: int) -> bool:
-        real_path = self.get_real_path(path)
-        return os.access(real_path, mode)
+        return self._access(path, mode)
 
     @log_call
     def readlink(self, path: str) -> Optional[str]:
@@ -413,6 +427,16 @@ class FileManager:
         return 0
 
     @log_call
+    def fsync(self, fd: int):
+        self.check_fd(fd)
+
+        os.fsync(fd)
+
+    @log_call
+    def rename(self, old: str, new: str):
+        self._rename(old, new)
+
+    @log_call
     def mkdir(self, path: str, mode: int):
         self._mkdir(path, mode)
 
@@ -431,11 +455,34 @@ class FileManager:
         return self._open(path, flags, mode)
 
     @log_call
+    def faccessat(self, dir_fd: int, path: str, mode: int) -> bool:
+        if dir_fd in self.dir_fds:
+            path = posixpath.join(self.dir_fds[dir_fd], path)
+
+        return self._access(path, mode)
+
+    @log_call
+    def fstatat(self, dir_fd: int, path: str) -> bytes:
+        if dir_fd in self.dir_fds:
+            path = posixpath.join(self.dir_fds[dir_fd], path)
+
+        return self._stat(path)
+
+    @log_call
     def unlinkat(self, dir_fd: int, path: str):
         if dir_fd in self.dir_fds:
             path = posixpath.join(self.dir_fds[dir_fd], path)
 
-        self._unlink(path)
+        return self._unlink(path)
+
+    @log_call
+    def renameat(self, src_fd: int, old: str, dst_fd: int, new: str):
+        if src_fd in self.dir_fds:
+            old = posixpath.join(self.dir_fds[src_fd], old)
+        if dst_fd in self.dir_fds:
+            new = posixpath.join(self.dir_fds[dst_fd], new)
+
+        return self._rename(old, new)
 
     @log_call
     def mkdirat(self, dir_fd: int, path: str, mode: int):
