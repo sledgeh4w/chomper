@@ -333,7 +333,7 @@ def test_read(request, emu_name):
     filepath = "/var/tmp/test_read"
     s = "chomper"
 
-    real_path = f"{emu.file_manager.rootfs_path}/{filepath[1:]}"
+    real_path = f"{emu.os.file_system.rootfs_path}/{filepath[1:]}"
 
     with open(real_path, "w") as f:
         f.write(s)
@@ -357,7 +357,7 @@ def test_write(request, emu_name):
     filepath = "/var/tmp/test_write"
     s = "chomper"
 
-    real_path = f"{emu.file_manager.rootfs_path}/{filepath[1:]}"
+    real_path = f"{emu.os.file_system.rootfs_path}/{filepath[1:]}"
 
     with multi_alloc_mem(emu, filepath, s) as (path, buf):
         fd = call_symbol(emu, "open", path, 0x601, va_list=(0o666,))

@@ -3,7 +3,7 @@ from typing import Dict, Set, TYPE_CHECKING
 import lief
 
 from chomper.exceptions import SymbolMissing
-from chomper.types import Module
+from chomper.loader import Module
 
 if TYPE_CHECKING:
     from chomper.core import Chomper
