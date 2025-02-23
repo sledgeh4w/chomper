@@ -19,6 +19,15 @@ Chomper is a lightweight emulation framework based on [Unicorn](https://github.c
 
 ## Installation
 
+Clone the repository to use the latest version (recommend):
+
+```
+$ git clone https://github.com/sledgeh4w/chomper ; cd chomper
+$ pip install .
+```
+
+Using the version on PyPI:
+
 ```
 $ pip install chomper
 ```
@@ -117,4 +126,4 @@ result = emu.read_bytes(a3, result_size)
 ```
 
 ## Examples
-There are some security algorithm emulation codes in the [examples](https://github.com/sledgeh4w/chomper/tree/main/examples), and you can download all example binary files from [SourceForge](https://sourceforge.net/projects/chomper-emu/files/examples/binaries/).
+There are some security algorithm emulation codes in [examples](https://github.com/sledgeh4w/chomper/tree/main/examples), and you can download all example binary files from [SourceForge](https://sourceforge.net/projects/chomper-emu/files/examples/binaries/).
