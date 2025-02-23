@@ -3,7 +3,7 @@ import time
 import uuid
 from typing import Dict, Optional, Tuple
 
-from chomper.structs import Timespec
+from chomper.os.structs import Timespec
 from chomper.typing import SysctlReturnValue
 from chomper.utils import log_call
 

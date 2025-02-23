@@ -4,7 +4,7 @@ from typing import Callable, Dict, Optional
 
 from unicorn import Uc
 
-from chomper.exceptions import SymbolMissing, ObjCUnrecognizedSelector
+from chomper.exceptions import EmulatorCrashed, SymbolMissing, ObjCUnrecognizedSelector
 from chomper.objc import ObjC
 from chomper.typing import UserData
 from chomper.utils import pyobj2cfobj
@@ -51,7 +51,7 @@ def hook_opendir(uc: Uc, address: int, size: int, user_data: UserData):
 
     path = emu.read_string(emu.get_arg(0))
 
-    return emu.file_manager.opendir(path)
+    return emu.os.file_system.opendir(path)
 
 
 @register_hook("_readdir")
@@ -60,7 +60,7 @@ def hook_readdir(uc: Uc, address: int, size: int, user_data: UserData):
 
     dirp = emu.get_arg(0)
 
-    return emu.file_manager.readdir(dirp)
+    return emu.os.file_system.readdir(dirp)
 
 
 @register_hook("_closedir")
@@ -69,7 +69,7 @@ def hook_closedir(uc: Uc, address: int, size: int, user_data: UserData):
 
     dirp = emu.get_arg(0)
 
-    return emu.file_manager.closedir(dirp)
+    return emu.os.file_system.closedir(dirp)
 
 
 @register_hook("___srefill")
@@ -265,6 +265,22 @@ def hook_os_activity_initiate(uc: Uc, address: int, size: int, user_data: UserDa
 @register_hook("_notify_register_dispatch")
 def hook_notify_register_dispatch(uc: Uc, address: int, size: int, user_data: UserData):
     return 0
+
+
+@register_hook("_dlopen")
+def hook_dlopen(uc: Uc, address: int, size: int, user_data: UserData):
+    emu = user_data["emu"]
+
+    if not emu.get_arg(0):
+        return emu.modules[-1].base
+
+    path = emu.read_string(emu.get_arg(0))
+
+    for module in emu.modules:
+        if path.endswith(module.name):
+            return module.base
+
+    raise EmulatorCrashed(f"Doesn't support dlopen: '{path}'")
 
 
 @register_hook("_dlsym")
