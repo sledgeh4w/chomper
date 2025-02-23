@@ -19,10 +19,9 @@ from unicorn import (
 from . import const
 from .arch import arm_arch, arm64_arch
 from .exceptions import EmulatorCrashed, SymbolMissing
-from .file import FileManager
+from .loader import Module, Symbol
 from .instruction import AutomicInstruction
 from .memory import MemoryManager
-from .types import Module, Symbol
 from .log import get_logger
 from .os import AndroidOs, IosOs
 from .typing import UserData, HookFuncCallable
@@ -88,11 +87,6 @@ class Chomper:
             uc=self.uc,
             address=const.HEAP_ADDRESS,
             minimum_pool_size=const.MINIMUM_POOL_SIZE,
-        )
-
-        self.file_manager = FileManager(
-            emu=self,
-            rootfs_path=rootfs_path,
         )
 
         self._setup_emulator(enable_vfp=enable_vfp)
