@@ -234,10 +234,21 @@ def test_ns_method_signature(emu_ios, objc):
         assert method_signature
 
 
-# def test_ns_write_to_file_atomically(emu_ios, objc):
-#     with objc.autorelease_pool():
-#         string = objc.msg_send("NSString", "stringWithUTF8String:", "chomper")
-#         file = objc.msg_send("NSString", "stringWithUTF8String:", "test_write")
-#
-#         result = objc.msg_send(string, "writeToFile:atomically:", file, 1)
-#         assert result
+def test_ns_write_to_file_atomically(emu_ios, objc):
+    with objc.autorelease_pool():
+        string = objc.msg_send("NSString", "stringWithUTF8String:", "chomper")
+        file = objc.msg_send("NSString", "stringWithUTF8String:", "test_write")
+
+        result = objc.msg_send(string, "writeToFile:atomically:", file, 1)
+        assert result
+
+
+def test_ns_url_session(emu_ios, objc):
+    with objc.autorelease_pool():
+        config = objc.msg_send(
+            "NSURLSessionConfiguration", "defaultSessionConfiguration"
+        )
+        assert config
+
+        session = objc.msg_send("NSURLSession", "sessionWithConfiguration:", config)
+        assert session

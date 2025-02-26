@@ -267,6 +267,11 @@ def hook_notify_register_dispatch(uc: Uc, address: int, size: int, user_data: Us
     return 0
 
 
+@register_hook("_notify_register_check")
+def hook_notify_register_check(uc: Uc, address: int, size: int, user_data: UserData):
+    return 0
+
+
 @register_hook("_dlopen")
 def hook_dlopen(uc: Uc, address: int, size: int, user_data: UserData):
     emu = user_data["emu"]
@@ -307,11 +312,36 @@ def hook_dyld_program_sdk_at_least(
 
 @register_hook("_dispatch_async")
 def hook_dispatch_async(uc: Uc, address: int, size: int, user_data: UserData):
+    emu = user_data["emu"]
+
+    from_ = emu.debug_symbol(emu.uc.reg_read(emu.arch.reg_lr))
+    emu.logger.warning(
+        f"'dispatch_async' is called from {from_}, " "and it is ignored by default."
+    )
+
     return 0
 
 
 @register_hook("_dispatch_resume")
 def hook_dispatch_resume(uc: Uc, address: int, size: int, user_data: UserData):
+    return 0
+
+
+@register_hook("_dispatch_activate")
+def hook_dispatch_activate(uc: Uc, address: int, size: int, user_data: UserData):
+    return 0
+
+
+@register_hook("_dispatch_barrier_async")
+def hook_dispatch_barrier_async(uc: Uc, address: int, size: int, user_data: UserData):
+    emu = user_data["emu"]
+
+    from_ = emu.debug_symbol(emu.uc.reg_read(emu.arch.reg_lr))
+    emu.logger.warning(
+        f"'_dispatch_barrier_async' is called from {from_}, "
+        "and it is ignored by default."
+    )
+
     return 0
 
 
