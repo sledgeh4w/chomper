@@ -24,6 +24,7 @@ from .instruction import AutomicInstruction
 from .memory import MemoryManager
 from .log import get_logger
 from .os import AndroidOs, IosOs
+from .os.ios.syscall import SYSCALL_MAP as IOS_SYSCALL_MAP
 from .typing import UserData, HookFuncCallable
 from .utils import aligned
 
@@ -424,25 +425,31 @@ class Chomper:
 
     def _dispatch_syscall(self):
         """Dispatch system calls to the registered handlers of the OS."""
+        syscall_name = None
+
         if self.os_type == const.OS_IOS:
             syscall_no = self.uc.reg_read(arm64_const.UC_ARM64_REG_X16)
-            syscall_handler = self.syscall_handlers.get(syscall_no)
-
-            address = self.uc.reg_read(self.arch.reg_pc)
-
-            self.logger.info(
-                f"System call 0x{syscall_no:X} invoked "
-                f"from {self.debug_symbol(address)}"
+            syscall_name = (
+                f"'{IOS_SYSCALL_MAP[syscall_no]}'"
+                if syscall_no in IOS_SYSCALL_MAP
+                else hex(syscall_no)
             )
+
+            from_ = self.debug_symbol(self.uc.reg_read(self.arch.reg_pc))
+            self.logger.info(f"System call {syscall_name} invoked from {from_}")
+
+            syscall_handler = self.syscall_handlers.get(syscall_no)
 
             if syscall_handler:
                 result = syscall_handler(self)
-
                 if result is not None:
                     self.set_retval(result)
                 return
 
-        self.crash("Unhandled system call")
+        if syscall_name is not None:
+            self.crash(f"Unhandled system call {syscall_name}")
+        else:
+            self.crash("Unhandled system call")
 
     def add_inst_trace(self, module: Module):
         """Add instruction trace for the module."""

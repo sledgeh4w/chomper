@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>activity_default_denominator</key>
+	<integer>20000</integer>
+	<key>activity_default_numerator</key>
+	<integer>1</integer>
+	<key>activity_report_denominator_battery</key>
+	<integer>1000</integer>
+	<key>activity_report_denominator_cfnetwork</key>
+	<integer>1000000</integer>
+	<key>activity_report_denominator_cloud_media_services</key>
+	<integer>1000</integer>
+	<key>activity_report_denominator_facetime</key>
+	<integer>1000</integer>
+	<key>activity_report_denominator_maps</key>
+	<integer>200000</integer>
+	<key>activity_report_denominator_maps_internal</key>
+	<integer>200000</integer>
+	<key>activity_report_denominator_network_speed_test</key>
+	<integer>1000</integer>
+	<key>activity_report_destination</key>
+	<integer>12</integer>
+	<key>disable_quic_race</key>
+	<true/>
+	<key>statistics_report_denominator</key>
+	<integer>200000</integer>
+	<key>statistics_report_numerator</key>
+	<integer>1</integer>
+</dict>
+</plist>

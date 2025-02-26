@@ -3,6 +3,7 @@ from __future__ import annotations
 import ctypes
 import os
 import posixpath
+import shutil
 import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional, TYPE_CHECKING
@@ -278,7 +279,11 @@ class FileSystem:
     def _rename(self, old: str, new: str):
         old = self.get_real_path(old)
         new = self.get_real_path(new)
-        os.rename(old, new)
+
+        try:
+            os.rename(old, new)
+        except PermissionError:
+            shutil.copy(old, new)
 
     def _mkdir(self, path: str, mode: int):
         real_path = self.get_real_path(path)
@@ -442,10 +447,26 @@ class FileSystem:
 
     @log_call
     def rmdir(self, path: str):
-        exist = os.path.exists(path)
+        real_path = self.get_real_path(path)
+        exist = os.path.exists(real_path)
+
         if not exist:
-            raise FileNotExist(f"No such directory: {path}")
+            raise FileNotExist(f"No such directory: {real_path}")
+
         raise FilePermissionDenied(f"Banned directory deletion: {path}")
+
+    @log_call
+    def pread(self, fd: int, size: int, offset: int) -> bytes:
+        self.check_fd(fd)
+
+        pos = os.lseek(fd, 0, os.SEEK_CUR)
+
+        os.lseek(fd, offset, os.SEEK_SET)
+        data = os.read(fd, size)
+
+        os.lseek(fd, pos, os.SEEK_SET)
+
+        return data
 
     @log_call
     def openat(self, dir_fd: int, path: str, flags: int, mode: int) -> int:
