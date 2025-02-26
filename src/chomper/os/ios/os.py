@@ -64,6 +64,7 @@ OBJC_DEPENDENCIES = [
     "libcache.dylib",
     "libz.1.dylib",
     "libremovefile.dylib",
+    "libxpc.dylib",
     "CoreFoundation",
     "CFNetwork",
     "Foundation",
