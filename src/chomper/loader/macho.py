@@ -101,11 +101,12 @@ class MachoLoader(BaseLoader):
 
         return reloc_addr
 
+    
     def _process_symbol_relocation(
-        self,
-        binary: lief.MachO.Binary,
-        module_base: int,
-        symbols: List[Symbol],
+            self,
+            binary: lief.MachO.Binary,
+            module_base: int,
+            symbols: List[Symbol],
     ) -> List[Binding]:
         """Process relocations for symbols."""
         symbol_map = self.get_symbols()
@@ -114,47 +115,55 @@ class MachoLoader(BaseLoader):
         hooks_map: Dict = {}
         lazy_bindings = []
 
-        for binding in binary.dyld_info.bindings:
-            symbol = binding.symbol
-            symbol_name = str(symbol.name)
+        if binary.has_dyld_info:
+            for binding in binary.dyld_info.bindings:
+                symbol = binding.symbol
+                symbol_name = str(symbol.name)
 
-            reloc_addr = self._get_symbol_reloc_addr(symbol_map, symbol_name)
+                reloc_addr = self._get_symbol_reloc_addr(symbol_map, symbol_name)
 
-            if not reloc_addr:
-                lazy_binding = Binding(
-                    symbol=symbol_name,
-                    address=binding.address,
-                    addend=binding.addend,
-                )
-                lazy_bindings.append(lazy_binding)
-
-                # Hook imports
-                if self.emu.hooks.get(symbol_name):
-                    if not hooks_map.get(symbol_name):
-                        reloc_addr = self.emu.create_buffer(self.emu.arch.addr_size)
-                        hooks_map[symbol_name] = reloc_addr
-
-                        self.emu.add_interceptor(
-                            reloc_addr, self.emu.hooks[symbol_name]
-                        )
-                    else:
-                        reloc_addr = hooks_map[symbol_name]
-
-                    self.emu.logger.info(
-                        f'Hook import symbol "{symbol_name}" '
-                        f"at {hex(symbol.binding_info.address)}"
+                if not reloc_addr:
+                    lazy_binding = Binding(
+                        symbol=symbol_name,
+                        address=binding.address,
+                        addend=binding.addend,
                     )
-                else:
-                    # self.emu.add_hook(
-                    #     reloc_addr,
-                    #     self._missing_symbol_required_callback,
-                    #     user_data={"symbol_name": symbol.name},
-                    # )
+                    lazy_bindings.append(lazy_binding)
+
+                    if self.emu.hooks.get(symbol_name):
+                        if not hooks_map.get(symbol_name):
+                            reloc_addr = self.emu.create_buffer(self.emu.arch.addr_size)
+                            hooks_map[symbol_name] = reloc_addr
+                            self.emu.add_interceptor(reloc_addr, self.emu.hooks[symbol_name])
+                        else:
+                            reloc_addr = hooks_map[symbol_name]
+                        self.emu.logger.info(f'Hook import symbol "{symbol_name}" at {hex(binding.address)}')
+                    else:
+                        continue
+
+                if reloc_addr:
+                    value = (reloc_addr + binding.addend) & 0xFFFFFFFFFFFFFFFF
+                    self.emu.write_pointer(module_base + binding.address, value)
+
+        if binary.has_dyld_chained_fixups:
+            fixups = binary.dyld_chained_fixups
+            
+            for binding in fixups.bindings:
+                symbol_name = binding.symbol.name
+
+                reloc_addr = binding.address & 0xFFFFFFFFFFFFFFFF
+
+                symbol_addr = self._get_symbol_reloc_addr(symbol_map, symbol_name)
+
+                if symbol_addr is None:
+                    lazy_bindings.append(Binding(
+                        symbol=symbol_name,
+                        address=binding.address,
+                        addend=binding.addend,
+                    ))
                     continue
 
-            if reloc_addr:
-                value = (reloc_addr + binding.addend) & 0xFFFFFFFFFFFFFFFF
-                self.emu.write_pointer(module_base + binding.address, value)
+                self.emu.write_pointer(module_base + reloc_addr, symbol_addr)
 
         return lazy_bindings
 
