@@ -93,7 +93,7 @@ class SystemModuleFixup:
 
     def relocate_block_invoke_calls(self, binary: lief.MachO.Binary, module_base: int):
         """Relocate function address for block struct."""
-        for binding in binary.dyld_info.bindings:
+        for binding in binary.bindings:
             if binding.symbol.name == "__NSConcreteGlobalBlock":
                 address = module_base + binding.address
 
