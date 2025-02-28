@@ -20,7 +20,7 @@ from . import const
 from .arch import arm_arch, arm64_arch
 from .exceptions import EmulatorCrashed, SymbolMissing
 from .loader import Module, Symbol
-from .instruction import AutomicInstruction
+from .instruction import EXTEND_INSTRUCTIONS
 from .memory import MemoryManager
 from .log import get_logger
 from .os import AndroidOs, IosOs
@@ -414,12 +414,12 @@ class Chomper:
             address = self.uc.reg_read(self.arch.reg_pc)
             code = uc.mem_read(address, 4)
 
-            try:
-                AutomicInstruction(self, code).execute()
-                self.uc.reg_write(arm64_const.UC_ARM64_REG_PC, address + 4)
-                return
-            except ValueError:
-                pass
+            for extend_inst in EXTEND_INSTRUCTIONS:
+                try:
+                    extend_inst(self, code).execute()
+                    return
+                except ValueError:
+                    pass
 
         self.crash(f"Unhandled interruption {intno}")
 
