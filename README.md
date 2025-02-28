@@ -64,7 +64,7 @@ a6 = emu.create_buffer(8)
 a7 = emu.create_string("com.siwuai.duapp")
 
 # Call function
-emu.call_address(duapp.base + 0x109322118, a1, a2, a3, a4, a5, a6, a7)
+emu.call_address(duapp.base + 0x9322118, a1, a2, a3, a4, a5, a6, a7)
 result = emu.read_string(emu.read_pointer(a5))
 ```
 

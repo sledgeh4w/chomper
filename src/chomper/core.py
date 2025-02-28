@@ -249,7 +249,7 @@ class Chomper:
         module = self.find_module(address)
 
         if module:
-            offset = address - module.base + (module.image_base or 0)
+            offset = address - module.base
             return f"{module.name}!{hex(offset)}"
 
         return hex(address)

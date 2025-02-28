@@ -251,8 +251,8 @@ class MachoLoader(BaseLoader):
         segment_addresses = [t.virtual_address for t in binary.segments]
 
         # Make module memory distribution more compact
-        image_base = aligned(min(segment_addresses), 1024)
-        module_base -= image_base
+        module_base -= aligned(min(segment_addresses), 1024)
+        image_base = binary.imagebase
 
         size = self._map_segments(binary, module_base)
         symbols = self._load_symbols(binary, module_base)
