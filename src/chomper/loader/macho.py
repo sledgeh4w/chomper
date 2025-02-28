@@ -14,6 +14,7 @@ class MachoLoader(BaseLoader):
 
     def _map_segments(self, binary: lief.MachO.Binary, module_base: int) -> int:
         """Map all segments into memory."""
+        mapped: List[Tuple[int, int]] = []
         boundary = 0
 
         for segment in binary.segments:
@@ -25,12 +26,34 @@ class MachoLoader(BaseLoader):
             map_addr = aligned(seg_addr, 1024) - (1024 if seg_addr % 1024 else 0)
             map_size = aligned(seg_addr - map_addr + segment.virtual_size, 1024)
 
-            self.emu.uc.mem_map(map_addr, map_size)
+            map_parts = []
+
+            for mapped_start, mapped_end in mapped:
+                overlap_start = max(map_addr, mapped_start)
+                overlap_end = min(map_addr + map_size, mapped_end)
+
+                if overlap_start < overlap_end:
+                    if map_addr < overlap_start:
+                        map_parts.append((map_addr, overlap_end - map_addr))
+                    if map_addr + map_size > overlap_end:
+                        map_parts.append(
+                            (overlap_end, map_addr + map_size - overlap_end)
+                        )
+                    map_addr = -1
+                    break
+
+            if map_addr > 0:
+                self.emu.uc.mem_map(map_addr, map_size)
+
+            for map_addr, map_size in map_parts:
+                self.emu.uc.mem_map(map_addr, map_size)
+
             self.emu.uc.mem_write(
                 seg_addr,
                 bytes(segment.content),
             )
 
+            mapped.append((map_addr, map_addr + map_size))
             boundary = max(boundary, map_addr + map_size)
 
         return boundary - module_base
@@ -114,7 +137,10 @@ class MachoLoader(BaseLoader):
         hooks_map: Dict = {}
         lazy_bindings = []
 
-        for binding in binary.dyld_info.bindings:
+        for binding in binary.bindings:
+            if binding.segment.name in ("__TEXT",):
+                continue
+
             symbol = binding.symbol
             symbol_name = str(symbol.name)
 
@@ -141,8 +167,7 @@ class MachoLoader(BaseLoader):
                         reloc_addr = hooks_map[symbol_name]
 
                     self.emu.logger.info(
-                        f'Hook import symbol "{symbol_name}" '
-                        f"at {hex(symbol.binding_info.address)}"
+                        f'Hook import symbol "{symbol_name}" at {hex(binding.address)}'
                     )
                 else:
                     # self.emu.add_hook(

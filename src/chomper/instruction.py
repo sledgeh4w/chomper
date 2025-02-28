@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import re
-from typing import TYPE_CHECKING
+from abc import ABC, abstractmethod
+from typing import Sequence, TYPE_CHECKING
 
 from unicorn import arm64_const
 
@@ -9,38 +10,44 @@ if TYPE_CHECKING:
     from .core import Chomper
 
 
-class AutomicInstruction:
-    """Execute an atomic instruction (ldxr, ldadd, ldset, swp, cas).
+INST_ARG_PATTERNS = [
+    re.compile(r"(\w+), (\w+), \[(\w+)]"),
+    re.compile(r"(\w+), \[(\w+)]"),
+    re.compile(r"(\w+), (\w+)"),
+    re.compile(r"(\w+)"),
+]
 
-    The iOS system libraries will use some atomic instructions from ARM v8.1.
-    However, Unicorn doesn't support these instructions, so we need to simulation
-    them ourselves.
-    """
 
-    supports = ("ldxr", "ldadd", "ldset", "swp", "cas")
+class Instruction(ABC):
+    """Extend instructions not supported by Unicorn."""
+
+    SUPPORTS: Sequence[str]
 
     def __init__(self, emu: Chomper, code: bytes):
         self.emu = emu
 
         self._inst = next(self.emu.cs.disasm_lite(code, 0))
 
-        if not any((self._inst[2].startswith(t) for t in self.supports)):
+        if not any((self._inst[2].startswith(t) for t in self.SUPPORTS)):
             raise ValueError("Unsupported instruction: %s" % self._inst[0])
-
-        match = re.match(r"(\w+), \[(\w+)]", self._inst[3])
-
-        if not match:
-            match = re.match(r"(\w+), (\w+), \[(\w+)]", self._inst[3])
-
-        if not match:
-            raise ValueError("Invalid instruction: %s" % self._inst[3])
 
         # Parse operation registers
         self._regs = []
 
-        for reg in match.groups():
-            attr = f"UC_ARM64_REG_{reg.upper()}"
-            self._regs.append(getattr(arm64_const, attr))
+        if self._inst[3]:
+            match = None
+
+            for pattern in INST_ARG_PATTERNS:
+                match = pattern.match(self._inst[3])
+                if match:
+                    break
+
+            if not match:
+                raise ValueError("Invalid instruction: %s" % self._inst[3])
+
+            for reg in match.groups():
+                attr = f"UC_ARM64_REG_{reg.upper()}"
+                self._regs.append(getattr(arm64_const, attr))
 
         # Parse operation bits
         if self._inst[2].endswith("b"):
@@ -58,6 +65,19 @@ class AutomicInstruction:
 
     def write_reg(self, reg_id: int, value: int):
         self.emu.uc.reg_write(reg_id, value)
+
+    @abstractmethod
+    def execute(self):
+        pass
+
+
+class AutomicInstruction(Instruction):
+    """Extend atomic instructions.
+
+    The iOS system libraries will use atomic instructions from ARM v8.1.
+    """
+
+    SUPPORTS = ("ldxr", "ldadd", "ldset", "swp", "cas")
 
     def execute(self):
         address = self.read_reg(self._regs[-1])
@@ -87,3 +107,32 @@ class AutomicInstruction:
         if result is not None:
             result %= 2**self._op_bits
             self.emu.write_int(address, result, self._op_bits // 8)
+
+        next_addr = self.read_reg(self.emu.arch.reg_pc) + 4
+        self.write_reg(self.emu.arch.reg_pc, next_addr)
+
+
+class PACInstruction(Instruction):
+    """Extend PAC instructions.
+
+    The iOS system libraries for the arm64e architecture will use PAC
+    instructions.
+    """
+
+    SUPPORTS = ("braa", "blraaz", "retab")
+
+    def execute(self):
+        if self._inst[2] == "braa":
+            call_addr = self.read_reg(self._regs[0])
+            self.write_reg(self.emu.arch.reg_pc, call_addr)
+        elif self._inst[2] == "blraaz":
+            call_addr = self.read_reg(self._regs[0])
+            ret_addr = self.read_reg(self.emu.arch.reg_pc) + 4
+            self.write_reg(self.emu.arch.reg_pc, call_addr)
+            self.write_reg(self.emu.arch.reg_lr, ret_addr)
+        elif self._inst[2] == "retab":
+            ret_addr = self.read_reg(self.emu.arch.reg_lr)
+            self.write_reg(self.emu.arch.reg_pc, ret_addr)
+
+
+EXTEND_INSTRUCTIONS = [AutomicInstruction, PACInstruction]
