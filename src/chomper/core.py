@@ -59,7 +59,7 @@ class Chomper:
         rootfs_path: Optional[str] = None,
         enable_vfp: bool = True,
         enable_objc: bool = True,
-        enable_ui_kit: bool = False,
+        enable_ui_kit: bool = True,
         trace_inst: bool = False,
         trace_symbol_calls: bool = False,
     ):
@@ -479,7 +479,7 @@ class Chomper:
     def load_module(
         self,
         module_file: str,
-        exec_init_array: bool = False,
+        exec_init_array: bool = True,
         exec_objc_init: bool = True,
         trace_inst: bool = False,
         trace_symbol_calls: bool = False,
