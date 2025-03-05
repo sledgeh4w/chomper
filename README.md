@@ -107,8 +107,8 @@ from chomper.const import ARCH_ARM64, OS_ANDROID
 emu = Chomper(arch=ARCH_ARM64, os_type=OS_ANDROID)
 
 # Load C standard and other libraries
-emu.load_module("examples/rootfs/android/system/lib64/libc.so")
-emu.load_module("examples/rootfs/android/system/lib64/libz.so")
+emu.load_module("rootfs/android/system/lib64/libc.so")
+emu.load_module("rootfs/android/system/lib64/libz.so")
 
 libszstone = emu.load_module(
     "examples/binaries/android/com.shizhuang.duapp/libszstone.so",
