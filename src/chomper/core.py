@@ -207,7 +207,7 @@ class Chomper:
         self.uc.reg_write(self.arch.reg_fp, 0)
 
         try:
-            self.logger.info(f"Start emulate at {self.debug_symbol(address)}")
+            # self.logger.info(f"Start emulate at {self.debug_symbol(address)}")
             self.uc.emu_start(address, stop_addr)
             return self.get_retval()
         except UcError as e:
@@ -250,6 +250,10 @@ class Chomper:
 
         if module:
             offset = address - module.base
+
+            if module.image_base:
+                offset += module.image_base
+
             return f"{module.name}!{hex(offset)}"
 
         return hex(address)
