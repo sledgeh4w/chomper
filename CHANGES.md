@@ -1,3 +1,15 @@
+## v0.3.4
+
+Released: 2025-03-06
+
+- Add extensive support for system calls and file system.
+- Support `NSDateFormatter` and `NSTimeZone`.
+- Support initialization of `NSURLSession`.
+- Partial compatibility with `arm64e` architecture.
+- Add fault handling for `readClass` to enhance class loading reliability.
+- Fix incorrect number formatting in `sscanf`.
+- Fix missing relocation.
+
 ## v0.3.3
 
 Released: 2024-12-06
