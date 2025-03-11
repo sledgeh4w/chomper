@@ -72,14 +72,19 @@ class MemoryManager:
         for block_size in block_sizes:
             self.create_pool(block_size)
 
-    def alloc(self, size: int) -> int:
-        """Allocate memory."""
+    def _prepare_block_size(self, size: int) -> int:
         if size > self.minimum_pool_size:
             block_size = aligned(size, 1024)
         else:
             block_size = 8
             while block_size < size:
                 block_size *= 2
+
+        return block_size
+
+    def alloc(self, size: int) -> int:
+        """Allocate memory."""
+        block_size = self._prepare_block_size(size)
 
         for pool in self.pools:
             if pool.block_size == block_size:
@@ -114,6 +119,29 @@ class MemoryManager:
         self.free(address)
 
         return new_address
+
+    def memalign(self, alignment: int, size: int) -> int:
+        """Allocate memory with alignment."""
+        for pool in self.pools:
+            if pool.block_num == 1 and not pool.blocks[0]:
+                alignment_size = aligned(pool.address, alignment) - pool.address
+                total_size = size + alignment_size
+
+                if total_size <= pool.block_size:
+                    pool.blocks[0] = 1
+                    return pool.address + alignment_size
+
+        address = self.address
+
+        alignment_size = aligned(address, alignment) - address
+        total_size = size + alignment_size
+
+        block_size = self._prepare_block_size(total_size)
+
+        pool = self.create_pool(block_size)
+        pool.blocks[0] = 1
+
+        return address + alignment_size
 
     def free(self, address: int):
         """Free memory."""
