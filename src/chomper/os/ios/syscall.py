@@ -500,7 +500,7 @@ def handle_sys_open_dprotected_np(emu: Chomper):
 @register_syscall_handler(const.SYS_GETATTRLIST)
 @catch_file_system_errors
 def handle_sys_getattrlist(emu: Chomper):
-    return 0
+    return -1
 
 
 @register_syscall_handler(const.SYS_SETXATTR)

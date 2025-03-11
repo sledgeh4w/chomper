@@ -35,13 +35,28 @@ def register_hook(symbol_name: str):
 
 @register_hook("___chkstk_darwin")
 def hook_chkstk_darwin(uc: Uc, address: int, size: int, user_data: UserData):
-    return 0
+    pass
+
+
+@register_hook("_thread_chkstk_darwin")
+def hook_thread_chkstk_darwin(uc: Uc, address: int, size: int, user_data: UserData):
+    pass
 
 
 @register_hook("_os_unfair_lock_assert_owner")
 def hook_os_unfair_lock_assert_owner(
     uc: Uc, address: int, size: int, user_data: UserData
 ):
+    pass
+
+
+@register_hook("_os_unfair_lock_lock")
+def hook_os_unfair_lock_lock(uc: Uc, address: int, size: int, user_data: UserData):
+    pass
+
+
+@register_hook("_os_unfair_lock_unlock")
+def hook_os_unfair_lock_unlock(uc: Uc, address: int, size: int, user_data: UserData):
     pass
 
 
@@ -224,8 +239,9 @@ def hook_malloc_zone_from_ptr(uc: Uc, address: int, size: int, user_data: UserDa
 def hook_malloc_zone_memalign(uc: Uc, address: int, size: int, user_data: UserData):
     emu = user_data["emu"]
 
+    alignment = emu.get_arg(1)
     size = emu.get_arg(2)
-    mem = emu.memory_manager.alloc(size)
+    mem = emu.memory_manager.memalign(alignment, size)
 
     return mem
 
@@ -249,9 +265,10 @@ def hook_posix_memalign(uc: Uc, address: int, size: int, user_data: UserData):
     emu = user_data["emu"]
 
     memptr = emu.get_arg(0)
+    alignment = emu.get_arg(1)
     size = emu.get_arg(2)
 
-    mem = emu.memory_manager.alloc(size)
+    mem = emu.memory_manager.memalign(alignment, size)
     emu.write_pointer(memptr, mem)
 
     return 0
