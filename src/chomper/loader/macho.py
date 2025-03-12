@@ -2,7 +2,7 @@ import os
 from typing import Dict, List, Tuple, Optional
 
 import lief
-from lief.MachO import ARM64_RELOCATION
+from lief.MachO import ARM64_RELOCATION, RelocationFixup
 
 from chomper.utils import aligned
 
@@ -198,19 +198,22 @@ class MachoLoader(BaseLoader):
         # Merge relocation records into blocks
         for segment in binary.segments:
             for relocation in segment.relocations:
-                if relocation.type != ARM64_RELOCATION.SUBTRACTOR:
-                    continue
+                if relocation.type == ARM64_RELOCATION.SUBTRACTOR:
+                    address = module_base + relocation.address
 
-                address = module_base + relocation.address
+                    if not begin:
+                        begin = address
 
-                if not begin:
-                    begin = address
+                    if end and address != end:
+                        blocks.append((begin, end))
+                        begin = address
 
-                if end and address != end:
-                    blocks.append((begin, end))
-                    begin = address
-
-                end = address + self.emu.arch.addr_size
+                    end = address + self.emu.arch.addr_size
+                elif isinstance(relocation, RelocationFixup):
+                    self.emu.write_pointer(
+                        module_base + relocation.address,
+                        module_base + relocation.target,
+                    )
 
         if begin and end:
             blocks.append((begin, end))

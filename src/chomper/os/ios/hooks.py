@@ -529,7 +529,8 @@ def hook_sec_item_copy_matching(uc: Uc, address: int, size: int, user_data: User
     elif sec_return_attributes == cf_boolean_true:
         result = pyobj2cfobj(emu, {})
     elif sec_return_data == cf_boolean_true:
-        result = pyobj2cfobj(emu, b"")
+        # result = pyobj2cfobj(emu, b"")
+        result = 0
     else:
         result = 0
 
