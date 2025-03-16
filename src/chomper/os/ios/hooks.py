@@ -94,7 +94,9 @@ def hook_srefill(uc: Uc, address: int, size: int, user_data: UserData):
 
 @register_hook("_pthread_self")
 def hook_pthread_self(uc: Uc, address: int, size: int, user_data: UserData):
-    return 1
+    emu = user_data["emu"]
+
+    return emu.read_pointer(emu.find_symbol("__main_thread_ptr").address)
 
 
 @register_hook("_pthread_rwlock_rdlock")
@@ -469,6 +471,16 @@ def hook_cf_notification_center_post_notification(
 
 @register_hook("__CFPrefsClientLog")
 def hook_cf_prefs_client_log(uc: Uc, address: int, size: int, user_data: UserData):
+    return 0
+
+
+@register_hook("_CFRunLoopGetMain")
+def hook_cf_runloop_get_main(uc: Uc, address: int, size: int, user_data: UserData):
+    return 0
+
+
+@register_hook("_CFRunLoopAddObserver")
+def hook_cf_runloop_add_observer(uc: Uc, address: int, size: int, user_data: UserData):
     return 0
 
 
