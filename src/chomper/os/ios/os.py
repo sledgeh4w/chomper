@@ -5,6 +5,7 @@ import random
 import sys
 from typing import List
 
+from chomper.const import STACK_ADDRESS, STACK_SIZE
 from chomper.exceptions import EmulatorCrashed
 from chomper.loader import MachoLoader, Module
 from chomper.os import BaseOs
@@ -234,6 +235,16 @@ class IosOs(BaseOs):
 
         self.emu.write_pointer(dyld_all_images.address + 0x50, platform_ptr)
 
+    def _init_pthread(self):
+        """Initialize `libsystem_pthread.dylib`."""
+        main_thread = self.emu.create_buffer(256)
+
+        self.emu.write_pointer(main_thread + 0xB0, STACK_ADDRESS)
+        self.emu.write_pointer(main_thread + 0xE0, STACK_ADDRESS + STACK_SIZE)
+
+        main_thread_ptr = self.emu.find_symbol("__main_thread_ptr")
+        self.emu.write_pointer(main_thread_ptr.address, main_thread)
+
     def _init_objc_vars(self):
         """Initialize global variables in `libobjc.A.dylib
         while calling `__objc_init`."""
@@ -271,6 +282,7 @@ class IosOs(BaseOs):
             self._init_magic_vars()
             self._init_program_vars()
             self._init_dyld_vars()
+            self._init_pthread()
             self._init_objc_vars()
 
         text_segment = module.binary.get_segment("__TEXT")
