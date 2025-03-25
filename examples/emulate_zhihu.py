@@ -30,9 +30,9 @@ def download_sample_file(binary_path: str) -> str:
         path.parent.mkdir(parents=True)
 
     url = "https://sourceforge.net/projects/chomper-emu/files/%s/download" % binary_path
-
     print(f"Downloading sample file: {url}")
     urllib.request.urlretrieve(url, path)
+
     return filepath
 
 
@@ -87,14 +87,12 @@ def main():
 
         result = objc.msg_send("ZHRUIDHelper", "decryptWithJson:decryptKey:iv:", data, key, iv)
         result_str = emu.read_string(objc.msg_send(result, "cStringUsingEncoding:", 4))
-
         logger.info("ZHRUIDHelper decrypt result: %s", result_str)
 
         # ZHWhiteBoxEncryptTool encrypt
         data = pyobj2nsobj(emu, b"test")
         result = objc.msg_send("ZHWhiteBoxEncryptTool", "encryptDataBase64String:", data)
         result_str = emu.read_string(objc.msg_send(result, "cStringUsingEncoding:", 4))
-
         logger.info("ZHWhiteBoxEncryptTool encrypt result: %s", result_str)
 
 

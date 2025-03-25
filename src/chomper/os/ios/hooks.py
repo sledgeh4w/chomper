@@ -623,7 +623,7 @@ def hook_read_class(uc: Uc, address: int, size: int, user_data: UserData):
         if data_ptr:
             name_ptr = emu.read_pointer(data_ptr + 24)
             class_name = emu.read_string(name_ptr)
-    except UcError:
+    except (UnicodeDecodeError, UcError):
         pass
 
     emu.uc.reg_write(emu.arch.reg_sp, emu.uc.reg_read(emu.arch.reg_sp) - 0x60)

@@ -45,6 +45,7 @@ class Chomper:
             call disassembler in real time to output the assembly instructions,
             so this will slow down the emulation.
         trace_symbol_calls: Print log when any symbol is called.
+        trace_inst_callback: Custom instruction trace callback.
     """
 
     os: Union[AndroidOs, IosOs]
@@ -62,6 +63,7 @@ class Chomper:
         enable_ui_kit: bool = True,
         trace_inst: bool = False,
         trace_symbol_calls: bool = False,
+        trace_inst_callback: Optional[HookFuncCallable] = None,
     ):
         self._setup_arch(arch)
 
@@ -78,6 +80,8 @@ class Chomper:
 
         self._trace_inst = trace_inst
         self._trace_symbol_calls = trace_symbol_calls
+
+        self._trace_inst_callback = trace_inst_callback
 
         self.modules: List[Module] = []
 
@@ -382,9 +386,12 @@ class Chomper:
         else:
             self.logger.info(f'Symbol "{symbol.name}" called')
 
-    def trace_inst_callback(self, uc: Uc, address: int, size: int, user_data: dict):
+    def trace_inst_callback(self, uc: Uc, address: int, size: int, user_data: UserData):
         """Trace instruction."""
-        for inst in self.cs.disasm_lite(uc.mem_read(address, size), 0):
+        if self._trace_inst_callback:
+            self._trace_inst_callback(uc, address, size, user_data)
+        else:
+            inst = next(self.cs.disasm_lite(uc.mem_read(address, size), 0))
             self.logger.info(
                 f"Trace at {self.debug_symbol(address)}: {inst[-2]} {inst[-1]}"
             )
@@ -462,6 +469,7 @@ class Chomper:
             self.trace_inst_callback,
             begin=module.base,
             end=module.base + module.size,
+            user_data={"emu": self},
         )
 
     def exec_init_array(self, init_array: List[int]):
