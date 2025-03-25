@@ -37,9 +37,9 @@ def download_sample_file(binary_path: str) -> str:
         path.parent.mkdir(parents=True)
 
     url = "https://sourceforge.net/projects/chomper-emu/files/%s/download" % binary_path
-
     print(f"Downloading sample file: {url}")
     urllib.request.urlretrieve(url, path)
+
     return filepath
 
 
@@ -63,7 +63,7 @@ def main():
     )
 
     # Skip a special check of ijm
-    emu.add_interceptor(czair.base + 0x1038F0004, hook_retval(1))
+    emu.add_interceptor(czair.base + 0x38F0004, hook_retval(1))
 
     with objc.autorelease_pool():
         # Encrypt

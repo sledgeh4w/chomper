@@ -14,12 +14,12 @@ def test_ns_mutable_string(emu_ios, objc):
         string = objc.msg_send("NSMutableString", "string")
 
         objc.msg_send(string, "setString:", pyobj2nsobj(emu_ios, sample_str))
-        c_str = objc.msg_send(string, "cStringUsingEncoding:", 4)
-        assert emu_ios.read_string(c_str) == sample_str
+        raw_string = objc.msg_send(string, "cStringUsingEncoding:", 4)
+        assert emu_ios.read_string(raw_string) == sample_str
 
         objc.msg_send(string, "appendString:", pyobj2nsobj(emu_ios, sample_str))
-        c_str = objc.msg_send(string, "cStringUsingEncoding:", 4)
-        assert emu_ios.read_string(c_str) == sample_str * 2
+        raw_string = objc.msg_send(string, "cStringUsingEncoding:", 4)
+        assert emu_ios.read_string(raw_string) == sample_str * 2
 
 
 def test_ns_array(emu_ios, objc):
@@ -32,8 +32,8 @@ def test_ns_array(emu_ios, objc):
         assert array
 
         first_object = objc.msg_send(array, "objectAtIndex:", 0)
-        c_str = objc.msg_send(first_object, "cStringUsingEncoding:", 4)
-        assert emu_ios.read_string(c_str) == sample_str
+        raw_string = objc.msg_send(first_object, "cStringUsingEncoding:", 4)
+        assert emu_ios.read_string(raw_string) == sample_str
 
         description = objc.msg_send(array, "description")
         assert description
@@ -49,8 +49,8 @@ def test_ns_mutable_array(emu_ios, objc):
         objc.msg_send(array, "addObject:", pyobj2nsobj(emu_ios, sample_str))
 
         first_object = objc.msg_send(array, "objectAtIndex:", 0)
-        c_str = objc.msg_send(first_object, "cStringUsingEncoding:", 4)
-        assert emu_ios.read_string(c_str) == sample_str
+        raw_string = objc.msg_send(first_object, "cStringUsingEncoding:", 4)
+        assert emu_ios.read_string(raw_string) == sample_str
 
 
 def test_ns_dictionary(emu_ios, objc):
@@ -67,8 +67,8 @@ def test_ns_dictionary(emu_ios, objc):
         assert dictionary
 
         value2 = objc.msg_send(dictionary, "objectForKey:", key)
-        c_str = objc.msg_send(value2, "cStringUsingEncoding:", 4)
-        assert emu_ios.read_string(c_str) == sample_value
+        raw_string = objc.msg_send(value2, "cStringUsingEncoding:", 4)
+        assert emu_ios.read_string(raw_string) == sample_value
 
         description = objc.msg_send(dictionary, "description")
         assert description
@@ -88,8 +88,8 @@ def test_ns_mutable_dictionary(emu_ios, objc):
         objc.msg_send(dictionary, "setObject:forKey:", value, key)
 
         value2 = objc.msg_send(dictionary, "objectForKey:", key)
-        c_str = objc.msg_send(value2, "cStringUsingEncoding:", 4)
-        assert emu_ios.read_string(c_str) == sample_value
+        raw_string = objc.msg_send(value2, "cStringUsingEncoding:", 4)
+        assert emu_ios.read_string(raw_string) == sample_value
 
 
 def test_ns_data(emu_ios, objc):
@@ -125,8 +125,7 @@ def test_ns_url(emu_ios, objc):
             "NSString", "stringWithUTF8String:", "https://github.com/sledgeh4w/chomper"
         )
 
-        url = objc.msg_send("NSURL", "alloc")
-        objc.msg_send(url, "initWithString:", url_str)
+        url = objc.msg_send("NSURL", "URLWithString:", url_str)
         assert url
 
 
@@ -135,9 +134,7 @@ def test_ns_request(emu_ios, objc):
         url_str = objc.msg_send(
             "NSString", "stringWithUTF8String:", "https://github.com/sledgeh4w/chomper"
         )
-
-        url = objc.msg_send("NSURL", "alloc")
-        objc.msg_send(url, "initWithString:", url_str)
+        url = objc.msg_send("NSURL", "URLWithString:", url_str)
 
         request = objc.msg_send("NSMutableURLRequest", "requestWithURL:", url)
         assert request
@@ -145,12 +142,15 @@ def test_ns_request(emu_ios, objc):
 
 def test_ns_locale(emu_ios, objc):
     with objc.autorelease_pool():
+        locale = objc.msg_send("NSLocale", "currentLocale")
+        assert locale
+
         preferred_languages = objc.msg_send("NSLocale", "preferredLanguages")
         assert preferred_languages
 
         preferred_language = objc.msg_send(preferred_languages, "firstObject")
-        c_str = objc.msg_send(preferred_language, "cStringUsingEncoding:", 4)
-        assert emu_ios.read_string(c_str)
+        raw_string = objc.msg_send(preferred_language, "cStringUsingEncoding:", 4)
+        assert emu_ios.read_string(raw_string)
 
 
 def test_ns_user_defaults(emu_ios, objc):
@@ -161,8 +161,8 @@ def test_ns_user_defaults(emu_ios, objc):
         key = pyobj2nsobj(emu_ios, "AppleLocale")
 
         apple_locale = objc.msg_send(user_defaults, "stringForKey:", key)
-        c_str = objc.msg_send(apple_locale, "cStringUsingEncoding:", 4)
-        assert emu_ios.read_string(c_str)
+        raw_string = objc.msg_send(apple_locale, "cStringUsingEncoding:", 4)
+        assert emu_ios.read_string(raw_string)
 
 
 def test_ns_date(emu_ios, objc):
@@ -183,8 +183,8 @@ def test_ns_date_formatter(emu_ios, objc):
         current_date = objc.msg_send("NSDate", "date")
 
         date_str = objc.msg_send(date_formatter, "stringFromDate:", current_date)
-        c_str = objc.msg_send(date_str, "cStringUsingEncoding:", 4)
-        assert emu_ios.read_string(c_str)
+        raw_string = objc.msg_send(date_str, "cStringUsingEncoding:", 4)
+        assert emu_ios.read_string(raw_string)
 
         date = objc.msg_send(date_formatter, "dateFromString:", date_str)
         assert date
@@ -196,8 +196,8 @@ def test_ns_time_zone(emu_ios, objc):
         assert time_zone
 
         name = objc.msg_send(time_zone, "name")
-        c_str = objc.msg_send(name, "cStringUsingEncoding:", 4)
-        assert emu_ios.read_string(c_str)
+        raw_string = objc.msg_send(name, "cStringUsingEncoding:", 4)
+        assert emu_ios.read_string(raw_string)
 
         time_zone_shanghai = objc.msg_send(
             "NSTimeZone", "timeZoneWithName:", pyobj2nsobj(emu_ios, "Asia/Shanghai")
@@ -213,12 +213,12 @@ def test_ns_bundle(emu_ios, objc):
         assert main_bundle
 
         bundle_path = objc.msg_send(main_bundle, "bundlePath")
-        c_str = objc.msg_send(bundle_path, "cStringUsingEncoding:", 4)
-        assert emu_ios.read_string(c_str)
+        raw_string = objc.msg_send(bundle_path, "cStringUsingEncoding:", 4)
+        assert emu_ios.read_string(raw_string)
 
         executable_path = objc.msg_send(main_bundle, "executablePath")
-        c_str = objc.msg_send(executable_path, "cStringUsingEncoding:", 4)
-        assert emu_ios.read_string(c_str)
+        raw_string = objc.msg_send(executable_path, "cStringUsingEncoding:", 4)
+        assert emu_ios.read_string(raw_string)
 
         info_dictionary = objc.msg_send(main_bundle, "infoDictionary")
         assert info_dictionary
@@ -237,9 +237,9 @@ def test_ns_method_signature(emu_ios, objc):
 def test_ns_write_to_file_atomically(emu_ios, objc):
     with objc.autorelease_pool():
         string = objc.msg_send("NSString", "stringWithUTF8String:", "chomper")
-        file = objc.msg_send("NSString", "stringWithUTF8String:", "test_write")
+        filename = objc.msg_send("NSString", "stringWithUTF8String:", "test_write")
 
-        result = objc.msg_send(string, "writeToFile:atomically:", file, 1)
+        result = objc.msg_send(string, "writeToFile:atomically:", filename, 1)
         assert result
 
 
@@ -252,3 +252,14 @@ def test_ns_url_session(emu_ios, objc):
 
         session = objc.msg_send("NSURLSession", "sessionWithConfiguration:", config)
         assert session
+
+
+def test_ns_file_manager(emu_ios, objc):
+    with objc.autorelease_pool():
+        file_manager = objc.msg_send("NSFileManager", "defaultManager")
+
+        path = pyobj2nsobj(emu_ios, "/System/Library/CoreServices/SystemVersion.plist")
+        attributes = objc.msg_send(
+            file_manager, "attributesOfItemAtPath:error:", path, 0
+        )
+        assert attributes
