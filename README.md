@@ -126,4 +126,4 @@ result = emu.read_bytes(a3, result_size)
 ```
 
 ## Examples
-There are some security algorithm emulation codes in [examples](https://github.com/sledgeh4w/chomper/tree/main/examples), and you can download all example binary files from [SourceForge](https://sourceforge.net/projects/chomper-emu/files/examples/binaries/).
+There are some security algorithm emulation codes in [examples](https://github.com/sledgeh4w/chomper/tree/main/examples).
