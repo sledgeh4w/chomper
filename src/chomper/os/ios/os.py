@@ -60,6 +60,7 @@ OBJC_DEPENDENCIES = [
     "libsystem_trace.dylib",
     "libsystem_sandbox.dylib",
     "libsystem_coreservices.dylib",
+    "libsystem_notify.dylib",
     "libnetwork.dylib",
     "libicucore.A.dylib",
     "libcache.dylib",
@@ -86,6 +87,7 @@ UI_KIT_DEPENDENCIES = [
     "UIFoundation",
     "UIKitServices",
     "UIKitCore",
+    "SystemConfiguration",
 ]
 
 # Define symbolic links in the file system
@@ -245,6 +247,13 @@ class IosOs(BaseOs):
         main_thread_ptr = self.emu.find_symbol("__main_thread_ptr")
         self.emu.write_pointer(main_thread_ptr.address, main_thread)
 
+    def _init_xpc(self):
+        """Initialize `libxpc.dylib`."""
+        try:
+            self.emu.call_symbol("__libxpc_initializer")
+        except EmulatorCrashed:
+            pass
+
     def _init_objc_vars(self):
         """Initialize global variables in `libobjc.A.dylib
         while calling `__objc_init`."""
@@ -290,7 +299,10 @@ class IosOs(BaseOs):
         mach_header_ptr = module.base - module.image_base + text_segment.virtual_address
         mach_header_ptrs = self.emu.create_buffer(self.emu.arch.addr_size)
 
+        mh_execute_header_pointer = self.emu.find_symbol("__mh_execute_header_pointer")
+
         self.emu.write_pointer(mach_header_ptrs, mach_header_ptr)
+        self.emu.write_pointer(mh_execute_header_pointer.address, mach_header_ptr)
 
         try:
             self.emu.call_symbol("_map_images", 1, 0, mach_header_ptrs)
@@ -350,6 +362,8 @@ class IosOs(BaseOs):
     def _enable_objc(self):
         """Enable Objective-C support."""
         self.resolve_modules(OBJC_DEPENDENCIES)
+
+        self._init_xpc()
 
         # Call initialize function of `CoreFoundation`
         self.emu.call_symbol("___CFInitialize")

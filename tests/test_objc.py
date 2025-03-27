@@ -257,9 +257,43 @@ def test_ns_url_session(emu_ios, objc):
 def test_ns_file_manager(emu_ios, objc):
     with objc.autorelease_pool():
         file_manager = objc.msg_send("NSFileManager", "defaultManager")
+        assert file_manager
 
         path = pyobj2nsobj(emu_ios, "/System/Library/CoreServices/SystemVersion.plist")
         attributes = objc.msg_send(
             file_manager, "attributesOfItemAtPath:error:", path, 0
         )
         assert attributes
+
+        path = pyobj2nsobj(emu_ios, "/System/Library")
+        directory_contents = objc.msg_send(
+            file_manager, "directoryContentsAtPath:", path
+        )
+        assert directory_contents
+
+
+def test_ui_device(emu_ios, objc):
+    with objc.autorelease_pool():
+        device = objc.msg_send("UIDevice", "currentDevice")
+        assert device
+
+        system_version = objc.msg_send(device, "systemVersion")
+        assert system_version
+
+
+# def test_ct_telephony_network_info(emu_ios, objc):
+#     with objc.autorelease_pool():
+#         network_info = objc.msg_send("CTTelephonyNetworkInfo", "new")
+#         assert network_info
+#
+#         radio_access_technology = objc.msg_send(
+#             network_info,
+#             "currentRadioAccessTechnology",
+#         )
+#         assert radio_access_technology
+
+
+def test_cf_network(emu_ios, objc):
+    with objc.autorelease_pool():
+        system_proxy_settings = emu_ios.call_symbol("_CFNetworkCopySystemProxySettings")
+        assert system_proxy_settings
