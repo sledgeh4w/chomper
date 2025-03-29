@@ -164,6 +164,11 @@ def test_ns_user_defaults(emu_ios, objc):
         raw_string = objc.msg_send(apple_locale, "cStringUsingEncoding:", 4)
         assert emu_ios.read_string(raw_string)
 
+        test_key = pyobj2nsobj(emu_ios, "TestKey")
+        test_value = pyobj2nsobj(emu_ios, "TestVey")
+
+        objc.msg_send(user_defaults, "setObject:forKey:", test_key, test_value)
+
 
 def test_ns_date(emu_ios, objc):
     with objc.autorelease_pool():

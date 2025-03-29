@@ -51,6 +51,7 @@ SYSCALL_MAP: Dict[int, str] = {
     const.SYS_PREAD: "SYS_pread",
     const.SYS_QUOTACTL: "SYS_quotactl",
     const.SYS_CSOPS: "SYS_csops",
+    const.SYS_CSOPS_AUDITTOKEN: "SYS_csops_audittoken",
     const.SYS_RLIMIT: "SYS_rlimit",
     const.SYS_MMAP: "SYS_mmap",
     const.SYS_LSEEK: "SYS_lseek",
@@ -388,6 +389,11 @@ def handle_sys_csops(emu: Chomper):
     useraddr = emu.get_arg(2)
     emu.write_u32(useraddr, 0x4000800)
 
+    return 0
+
+
+@register_syscall_handler(const.SYS_CSOPS_AUDITTOKEN)
+def handle_sys_csops_audittoken(emu: Chomper):
     return 0
 
 
