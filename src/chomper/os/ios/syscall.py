@@ -790,9 +790,14 @@ def handle_mach_msg_trap(emu: Chomper):
     return 6
 
 
-@register_syscall_handler(const.HOST_SELF_TARP)
+@register_syscall_handler(const.HOST_SELF_TRAP)
 def handle_host_self_trap(emu: Chomper):
     return 2563
+
+
+@register_syscall_handler(const.TASK_SELF_TRAP)
+def handle_task_self_trap(emu: Chomper):
+    return 0
 
 
 @register_syscall_handler(const.MACH_REPLY_PORT_TRAP)
