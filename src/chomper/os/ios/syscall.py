@@ -392,8 +392,21 @@ def handle_sys_csops(emu: Chomper):
     return 0
 
 
+count = 0
+
+
 @register_syscall_handler(const.SYS_CSOPS_AUDITTOKEN)
 def handle_sys_csops_audittoken(emu: Chomper):
+    global count
+    emu.logger.info(f"SYS_CSOPS_AUDITTOKEN:{count}")
+    emu.log_backtrace()
+
+    useraddr = emu.get_arg(2)
+    emu.write_u32(useraddr, 0x4000800)
+
+    # if count >= 2:
+    #     raise Exception("test")
+    count += 1
     return 0
 
 
@@ -721,6 +734,20 @@ def handle_sys_faccessat(emu: Chomper):
 @register_syscall_handler(const.SYS_FSTATAT64)
 @catch_file_system_errors
 def handle_sys_fstatat64(emu: Chomper):
+    emu.log_backtrace()
+    emu.logger.info(
+        "__amkrtemp:%s",
+        emu.read_pointer(emu.find_symbol("__amkrtemp.sentinel").address),
+    )
+    emu.logger.info(
+        "__amkrtemp:%s",
+        emu.read_string(
+            emu.read_pointer(emu.find_symbol("__amkrtemp.sentinel").address)
+        ),
+    )
+    emu.logger.info("path:%s", emu.debug_symbol(emu.get_arg(1)))
+    emu.logger.info("path:%s", list(emu.read_bytes(emu.get_arg(1), 32)))
+
     dir_fd = emu.get_arg(0)
     path = emu.read_string(emu.get_arg(1))
     stat = emu.get_arg(2)
@@ -790,9 +817,14 @@ def handle_mach_msg_trap(emu: Chomper):
     return 6
 
 
-@register_syscall_handler(const.HOST_SELF_TARP)
+@register_syscall_handler(const.HOST_SELF_TRAP)
 def handle_host_self_trap(emu: Chomper):
     return 2563
+
+
+@register_syscall_handler(const.TASK_SELF_TRAP)
+def handle_task_self_trap(emu: Chomper):
+    return 0
 
 
 @register_syscall_handler(const.MACH_REPLY_PORT_TRAP)

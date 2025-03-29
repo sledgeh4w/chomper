@@ -177,7 +177,13 @@ class IosOs(BaseOs):
         self.emu.uc.mem_map(0xFFFFFC000, 1024)
 
         # arch type
-        self.emu.write_u64(0xFFFFFC023, 2)
+        self.emu.write_u8(0xFFFFFC023, 2)
+
+        # vm page shift
+        self.emu.write_u8(0xFFFFFC025, 14)
+
+        # vm kernel page shift
+        self.emu.write_u8(0xFFFFFC037, 14)
 
         self.emu.write_u64(0xFFFFFC104, 0x100)
 
@@ -237,7 +243,11 @@ class IosOs(BaseOs):
 
         self.emu.write_pointer(dyld_all_images.address + 0x50, platform_ptr)
 
-    def _init_pthread(self):
+    def _init_lib_system_kernel(self):
+        """Initialize `libsystem_kernel.dylib`."""
+        self.emu.call_symbol("_mach_init_doit")
+
+    def _init_lib_system_pthread(self):
         """Initialize `libsystem_pthread.dylib`."""
         main_thread = self.emu.create_buffer(256)
 
@@ -247,7 +257,7 @@ class IosOs(BaseOs):
         main_thread_ptr = self.emu.find_symbol("__main_thread_ptr")
         self.emu.write_pointer(main_thread_ptr.address, main_thread)
 
-    def _init_xpc(self):
+    def _init_lib_xpc(self):
         """Initialize `libxpc.dylib`."""
         try:
             self.emu.call_symbol("__libxpc_initializer")
@@ -291,7 +301,8 @@ class IosOs(BaseOs):
             self._init_magic_vars()
             self._init_program_vars()
             self._init_dyld_vars()
-            self._init_pthread()
+            self._init_lib_system_kernel()
+            self._init_lib_system_pthread()
             self._init_objc_vars()
 
         text_segment = module.binary.get_segment("__TEXT")
@@ -363,7 +374,7 @@ class IosOs(BaseOs):
         """Enable Objective-C support."""
         self.resolve_modules(OBJC_DEPENDENCIES)
 
-        self._init_xpc()
+        self._init_lib_xpc()
 
         # Call initialize function of `CoreFoundation`
         self.emu.call_symbol("___CFInitialize")
