@@ -603,6 +603,11 @@ def hook_nw_path_create_evaluator_for_endpoint(
     return 0
 
 
+@register_hook("_bootstrap_look_up2")
+def hook_bootstrap_look_up2(uc: Uc, address: int, size: int, user_data: UserData):
+    return 0
+
+
 @register_hook("+[NSObject(NSObject) doesNotRecognizeSelector:]")
 def hook_ns_object_does_not_recognize_selector_for_class(
     uc: Uc, address: int, size: int, user_data: UserData
