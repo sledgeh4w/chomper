@@ -734,20 +734,6 @@ def handle_sys_faccessat(emu: Chomper):
 @register_syscall_handler(const.SYS_FSTATAT64)
 @catch_file_system_errors
 def handle_sys_fstatat64(emu: Chomper):
-    emu.log_backtrace()
-    emu.logger.info(
-        "__amkrtemp:%s",
-        emu.read_pointer(emu.find_symbol("__amkrtemp.sentinel").address),
-    )
-    emu.logger.info(
-        "__amkrtemp:%s",
-        emu.read_string(
-            emu.read_pointer(emu.find_symbol("__amkrtemp.sentinel").address)
-        ),
-    )
-    emu.logger.info("path:%s", emu.debug_symbol(emu.get_arg(1)))
-    emu.logger.info("path:%s", list(emu.read_bytes(emu.get_arg(1), 32)))
-
     dir_fd = emu.get_arg(0)
     path = emu.read_string(emu.get_arg(1))
     stat = emu.get_arg(2)
