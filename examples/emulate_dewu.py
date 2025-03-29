@@ -36,10 +36,6 @@ def download_sample_file(binary_path: str) -> str:
     return filepath
 
 
-def hook_ns_user_defaults_standard_user_defaults(uc, address, size, user_data):
-    return 0
-
-
 def main():
     binary_path = "examples/binaries/ios/com.siwuai.duapp/5.61.4/DUApp"
 
@@ -54,11 +50,6 @@ def main():
         enable_ui_kit=True,
     )
     objc = ObjC(emu)
-
-    emu.add_interceptor(
-        "+[NSUserDefaults(NSUserDefaults) standardUserDefaults]",
-        hook_ns_user_defaults_standard_user_defaults,
-    )
 
     emu.load_module(os.path.join(base_path, "..", binary_path))
 
