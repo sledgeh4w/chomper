@@ -392,21 +392,8 @@ def handle_sys_csops(emu: Chomper):
     return 0
 
 
-count = 0
-
-
 @register_syscall_handler(const.SYS_CSOPS_AUDITTOKEN)
 def handle_sys_csops_audittoken(emu: Chomper):
-    global count
-    emu.logger.info(f"SYS_CSOPS_AUDITTOKEN:{count}")
-    emu.log_backtrace()
-
-    useraddr = emu.get_arg(2)
-    emu.write_u32(useraddr, 0x4000800)
-
-    # if count >= 2:
-    #     raise Exception("test")
-    count += 1
     return 0
 
 
