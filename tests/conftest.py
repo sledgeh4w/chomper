@@ -30,7 +30,6 @@ def download_binary_file(binary_path: str) -> str:
         path.parent.mkdir(parents=True)
 
     url = "https://sourceforge.net/projects/chomper-emu/files/%s/download" % binary_path
-
     print(f"Downloading file: {url}")
     urllib.request.urlretrieve(url, path)
 

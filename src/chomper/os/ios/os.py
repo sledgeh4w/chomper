@@ -368,6 +368,9 @@ class IosOs(BaseOs):
         # Call initialize function of `CoreFoundation`
         self.emu.call_symbol("___CFInitialize")
 
+        is_cf_prefs_d = self.emu.find_symbol("_isCFPrefsD")
+        self.emu.write_u8(is_cf_prefs_d.address, 1)
+
         # Call initialize function of `Foundation`
         self.emu.call_symbol("__NSInitializePlatform")
 
