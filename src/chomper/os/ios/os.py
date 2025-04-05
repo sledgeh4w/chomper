@@ -71,8 +71,6 @@ OBJC_DEPENDENCIES = [
     "CFNetwork",
     "Foundation",
     "Security",
-    "CoreServicesInternal",
-    "MobileCoreServices",
 ]
 
 # Dependent libraries of UIKit
@@ -84,6 +82,7 @@ UI_KIT_DEPENDENCIES = [
     "TextInput",
     "PhysicsKit",
     "CoreAutoLayout",
+    "IOKit",
     "UIFoundation",
     "UIKitServices",
     "UIKitCore",

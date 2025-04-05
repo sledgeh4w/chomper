@@ -3,6 +3,7 @@ import os
 import pytest
 
 from . import conftest
+from .utils import multi_alloc_mem
 
 from chomper import Chomper
 from chomper.const import ARCH_ARM64
@@ -30,17 +31,8 @@ def test_missing_symbol_required_exception():
         emu = Chomper(arch=ARCH_ARM64)
         libszstone = emu.load_module(module_path)
 
-        a1 = emu.create_buffer(len(sample_bytes))
-        a2 = len(sample_bytes)
-        a3 = emu.create_buffer(1024)
-
-        emu.write_bytes(a1, sample_bytes)
-
-        try:
-            emu.call_address(libszstone.base + 0x289A4, a1, a2, a3)
-        finally:
-            emu.free(a1)
-            emu.free(a3)
+        with multi_alloc_mem(emu, sample_bytes, 1024) as (a1, a3):
+            emu.call_address(libszstone.base + 0x289A4, a1, len(sample_bytes), a3)
 
 
 def test_symbol_missing_exception(emu_ios):

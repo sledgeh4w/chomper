@@ -285,6 +285,8 @@ def test_ui_device(emu_ios, objc):
         system_version = objc.msg_send(device, "systemVersion")
         assert system_version
 
+        objc.msg_send(device, "setBatteryMonitoringEnabled:", 1)
+
 
 # def test_ct_telephony_network_info(emu_ios, objc):
 #     with objc.autorelease_pool():
