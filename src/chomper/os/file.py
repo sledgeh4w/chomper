@@ -52,6 +52,14 @@ class FileSystem:
         # used by fcntl with command F_GETPATH.
         self.fd_path_map: Dict[int, str] = {}
 
+        if sys.stdin.isatty():
+            self.stdin_fd = sys.stdin.fileno()
+        else:
+            self.stdin_fd = None
+
+        self.stdout_fd = sys.stdout.fileno()
+        self.stderr_fd = sys.stderr.fileno()
+
     def set_working_dir(self, path: str):
         """Set current working directory.
 
@@ -216,6 +224,9 @@ class FileSystem:
         Raises:
             BadFileDescriptor: If bad file descriptor.
         """
+        if fd in (self.stdin_fd, self.stdout_fd, self.stderr_fd):
+            return
+
         if fd not in self.fd_path_map:
             raise FileBadDescriptor(f"Bad file descriptor: {fd}")
 
