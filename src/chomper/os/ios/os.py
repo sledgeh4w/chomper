@@ -294,16 +294,6 @@ class IosOs(BaseOs):
         if not self.emu.find_module("libobjc.A.dylib"):
             return
 
-        initialized = self.emu.find_symbol("__ZZ10_objc_initE11initialized")
-        if not self.emu.read_u8(initialized.address):
-            # As the initialization timing before program execution
-            self._init_magic_vars()
-            self._init_program_vars()
-            self._init_dyld_vars()
-            self._init_lib_system_kernel()
-            self._init_lib_system_pthread()
-            self._init_objc_vars()
-
         text_segment = module.binary.get_segment("__TEXT")
 
         mach_header_ptr = module.base - module.image_base + text_segment.virtual_address
@@ -319,8 +309,6 @@ class IosOs(BaseOs):
             self.emu.call_symbol("_load_images", 0, mach_header_ptr)
         except EmulatorCrashed:
             self.emu.logger.warning("Initialize Objective-C failed.")
-        finally:
-            module.binary = None
 
     def search_module_binary(self, module_name: str) -> str:
         """Search system module binary in rootfs directory.
@@ -365,9 +353,24 @@ class IosOs(BaseOs):
             # Fixup must be executed before initializing Objective-C.
             fixup.install(module)
 
-            # TODO: `__pthread_init` in `libsystem_pthread.dylib`
+            self._after_module_loaded(module_name)
 
             self.init_objc(module)
+
+            module.binary = None
+
+    def _after_module_loaded(self, module_name: str):
+        """Perform initialization after module loaded."""
+        if module_name == "libsystem_kernel.dylib":
+            self._init_lib_system_kernel()
+        elif module_name == "libsystem_c.dylib":
+            self._init_program_vars()
+        elif module_name == "libdyld.dylib":
+            self._init_dyld_vars()
+        elif module_name == "libsystem_pthread.dylib":
+            self._init_lib_system_pthread()
+        elif module_name == "libobjc.A.dylib":
+            self._init_objc_vars()
 
     def _enable_objc(self):
         """Enable Objective-C support."""
@@ -488,6 +491,37 @@ class IosOs(BaseOs):
             self.emu.write_pointer(offset + 8, str_ptr)
             self.emu.write_u64(offset + 16, item[2])
 
+    def _fd_open(self, fd: int, mode: str, unbuffered: bool = False) -> int:
+        mode_p = self.emu.create_string(mode)
+
+        try:
+            fp = self.emu.call_symbol("_fdopen", fd, mode_p)
+            flags = self.emu.read_u32(fp + 16)
+
+            if unbuffered:
+                flags |= 0x2
+
+            self.emu.write_u32(fp + 16, flags)
+            return fp
+        finally:
+            self.emu.free(mode_p)
+
+    def _setup_standard_io(self):
+        """Setup standard IO: `stdin`, `stdout`, `stderr`."""
+        stdin_p = self.emu.find_symbol("___stdinp")
+        stdout_p = self.emu.find_symbol("___stdoutp")
+        stderr_p = self.emu.find_symbol("___stderrp")
+
+        if isinstance(self.file_system.stdin_fd, int):
+            stdin_fp = self._fd_open(self.file_system.stdin_fd, "r")
+            self.emu.write_pointer(stdin_p.address, stdin_fp)
+
+        stdout_fp = self._fd_open(self.file_system.stdout_fd, "w", unbuffered=True)
+        self.emu.write_pointer(stdout_p.address, stdout_fp)
+
+        stderr_fp = self._fd_open(self.file_system.stderr_fd, "w", unbuffered=True)
+        self.emu.write_pointer(stderr_p.address, stderr_fp)
+
     def initialize(self):
         """Initialize environment."""
         self._setup_hooks()
@@ -497,8 +531,12 @@ class IosOs(BaseOs):
         self._setup_symbolic_links()
         self._setup_bundle_dir()
 
+        self._init_magic_vars()
+
         if self.emu.enable_objc:
             self._enable_objc()
 
         if self.emu.enable_ui_kit:
             self._enable_ui_kit()
+
+        self._setup_standard_io()

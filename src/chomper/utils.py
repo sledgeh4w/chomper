@@ -19,6 +19,13 @@ def aligned(x: int, n: int) -> int:
     return ((x - 1) // n + 1) * n
 
 
+def to_signed(value: int, nbits: int = 64) -> int:
+    """Convert an unsigned integer to signed."""
+    if value >= (1 << (nbits - 1)):
+        return value - (1 << nbits)
+    return value
+
+
 def struct2bytes(st: Structure) -> bytes:
     """Convert struct to bytes."""
     buffer = create_string_buffer(sizeof(st))

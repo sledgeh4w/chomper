@@ -108,11 +108,6 @@ def hook_closedir(uc: Uc, address: int, size: int, user_data: UserData):
     return emu.os.file_system.closedir(dirp)
 
 
-@register_hook("___srefill")
-def hook_srefill(uc: Uc, address: int, size: int, user_data: UserData):
-    return 1
-
-
 @register_hook("_pthread_self")
 def hook_pthread_self(uc: Uc, address: int, size: int, user_data: UserData):
     emu = user_data["emu"]

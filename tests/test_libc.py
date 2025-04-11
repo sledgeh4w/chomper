@@ -224,7 +224,7 @@ def test_sscanf(request, emu_name):
 
 
 @pytest.mark.usefixtures("libc_arm", "libc_arm64")
-@pytest.mark.parametrize("emu_name", ["emu_arm", "emu_arm64"])
+@pytest.mark.parametrize("emu_name", ["emu_arm", "emu_arm64", "emu_ios"])
 def test_printf(request, emu_name):
     emu = request.getfixturevalue(emu_name)
 
