@@ -459,9 +459,15 @@ def handle_sys_fcntl(emu: Chomper):
     cmd = emu.get_arg(1)
     arg = emu.get_arg(2)
 
-    if cmd == const.F_GETPATH:
+    if cmd == const.F_GETFL:
+        if fd in (emu.os.file_system.stdin_fd,):
+            return os.O_RDONLY
+        elif fd in (emu.os.file_system.stdout_fd, emu.os.file_system.stderr_fd):
+            return os.O_WRONLY
+    elif cmd == const.F_GETPATH:
         path = emu.os.file_system.dir_fds.get(fd)
-        if not path:
+
+        if path is None:
             path = emu.os.file_system.fd_path_map.get(fd)
 
         if path:
@@ -764,13 +770,29 @@ def handle_mach_absolute_time_trap(emu: Chomper):
     return int(time.time_ns() % (3600 * 10**9))
 
 
-@register_syscall_handler(const.MACH_TIMEBASE_INFO_TRAP)
-def handle_mach_timebase_info_trap(emu: Chomper):
-    info = emu.get_arg(0)
+@register_syscall_handler(const.KERNELRPC_MACH_VM_MAP_TRAP)
+def handle_kernelrpc_mach_vm_map_trap(emu: Chomper):
+    address = emu.get_arg(1)
+    size = emu.get_arg(2)
 
-    emu.write_u32(info, 1)
-    emu.write_u32(info + 4, 1)
+    mem = emu.memory_manager.alloc(size)
+    emu.write_pointer(address, mem)
 
+    return 0
+
+
+@register_syscall_handler(const.MACH_REPLY_PORT_TRAP)
+def handle_mach_reply_port_trap(emu: Chomper):
+    return 0
+
+
+@register_syscall_handler(const.HOST_SELF_TRAP)
+def handle_host_self_trap(emu: Chomper):
+    return 2563
+
+
+@register_syscall_handler(const.TASK_SELF_TRAP)
+def handle_task_self_trap(emu: Chomper):
     return 0
 
 
@@ -790,27 +812,24 @@ def handle_mach_msg_trap(emu: Chomper):
     return 6
 
 
-@register_syscall_handler(const.HOST_SELF_TRAP)
-def handle_host_self_trap(emu: Chomper):
-    return 2563
+@register_syscall_handler(const.KERNELRPC_MACH_PORT_TYPE_TRAP)
+def handle_kernelrpc_mach_port_type_trap(emu: Chomper):
+    ptype = emu.get_arg(2)
 
+    value = 0
+    value |= const.MACH_PORT_TYPE_SEND
+    value |= const.MACH_PORT_TYPE_RECEIVE
 
-@register_syscall_handler(const.TASK_SELF_TRAP)
-def handle_task_self_trap(emu: Chomper):
+    emu.write_u32(ptype, value)
+
     return 0
 
 
-@register_syscall_handler(const.MACH_REPLY_PORT_TRAP)
-def handle_mach_reply_port_trap(emu: Chomper):
-    return 0
+@register_syscall_handler(const.MACH_TIMEBASE_INFO_TRAP)
+def handle_mach_timebase_info_trap(emu: Chomper):
+    info = emu.get_arg(0)
 
-
-@register_syscall_handler(const.KERNELRPC_MACH_VM_MAP_TRAP)
-def handle_kernelrpc_mach_vm_map_trap(emu: Chomper):
-    address = emu.get_arg(1)
-    size = emu.get_arg(2)
-
-    mem = emu.memory_manager.alloc(size)
-    emu.write_pointer(address, mem)
+    emu.write_u32(info, 1)
+    emu.write_u32(info + 4, 1)
 
     return 0

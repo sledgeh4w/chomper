@@ -26,7 +26,7 @@ from .log import get_logger
 from .os import AndroidOs, IosOs
 from .os.ios.syscall import SYSCALL_MAP as IOS_SYSCALL_MAP
 from .typing import UserData, HookFuncCallable
-from .utils import aligned
+from .utils import aligned, to_signed
 
 
 class Chomper:
@@ -439,7 +439,7 @@ class Chomper:
         syscall_name = None
 
         if self.os_type == const.OS_IOS:
-            syscall_no = self.uc.reg_read(arm64_const.UC_ARM64_REG_X16)
+            syscall_no = to_signed(self.uc.reg_read(arm64_const.UC_ARM64_REG_W16), 32)
             syscall_name = (
                 f"'{IOS_SYSCALL_MAP[syscall_no]}'"
                 if syscall_no in IOS_SYSCALL_MAP
