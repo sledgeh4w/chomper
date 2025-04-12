@@ -1,6 +1,17 @@
 from chomper.utils import pyobj2nsobj
 
 
+def test_ns_number(emu_ios, objc):
+    with objc.autorelease_pool():
+        value = 1
+
+        number = objc.msg_send("NSNumber", "numberWithInteger:", value)
+        assert number
+
+        raw_value = objc.msg_send(number, "intValue")
+        assert value == raw_value
+
+
 def test_ns_string(emu_ios, objc):
     with objc.autorelease_pool():
         string = objc.msg_send("NSString", "stringWithUTF8String:", "chomper")
@@ -55,8 +66,8 @@ def test_ns_mutable_array(emu_ios, objc):
 
 def test_ns_dictionary(emu_ios, objc):
     with objc.autorelease_pool():
-        sample_key = "chomper"
-        sample_value = "1"
+        sample_key = "name"
+        sample_value = "chomper"
 
         key = pyobj2nsobj(emu_ios, sample_key)
         value = pyobj2nsobj(emu_ios, sample_value)
@@ -76,8 +87,8 @@ def test_ns_dictionary(emu_ios, objc):
 
 def test_ns_mutable_dictionary(emu_ios, objc):
     with objc.autorelease_pool():
-        sample_key = "chomper"
-        sample_value = "1"
+        sample_key = "name"
+        sample_value = "chomper"
 
         dictionary = objc.msg_send("NSMutableDictionary", "dictionary")
         assert dictionary
@@ -304,3 +315,9 @@ def test_cf_network(emu_ios, objc):
     with objc.autorelease_pool():
         system_proxy_settings = emu_ios.call_symbol("_CFNetworkCopySystemProxySettings")
         assert system_proxy_settings
+
+
+def test_ns_log(emu_ios, objc):
+    with objc.autorelease_pool():
+        msg = pyobj2nsobj(emu_ios, "Test NSLog\n")
+        emu_ios.call_symbol("_NSLog", msg)

@@ -12,7 +12,7 @@ from unicorn import arm64_const
 from chomper.exceptions import FileNotExist, FileBadDescriptor, FilePermissionDenied
 from chomper.os.structs import Rusage
 from chomper.typing import SyscallHandleCallable
-from chomper.utils import struct2bytes
+from chomper.utils import struct2bytes, to_signed
 
 from . import const
 from .sysctl import sysctl, sysctlbyname
@@ -44,6 +44,8 @@ SYSCALL_MAP: Dict[int, str] = {
     const.SYS_SOCKET: "SYS_socket",
     const.SYS_GETTIMEOFDAY: "SYS_gettimeofday",
     const.SYS_GETRUSAGE: "SYS_getrusage",
+    const.SYS_READV: "SYS_readv",
+    const.SYS_WRITEV: "SYS_writev",
     const.SYS_FCHMOD: "SYS_fchmod",
     const.SYS_RENAME: "SYS_rename",
     const.SYS_MKDIR: "SYS_mkdir",
@@ -81,6 +83,8 @@ SYSCALL_MAP: Dict[int, str] = {
     const.SYS_CLOSE_NOCANCEL: "SYS_close_nocancel",
     const.SYS_FCNTL_NOCANCEL: "SYS_fcntl_nocancel",
     const.SYS_FSYNC_NOCANCEL: "SYS_fsync_nocancel",
+    const.SYS_READV_NOCANCEL: "SYS_readv_nocancel",
+    const.SYS_WRITEV_NOCANCEL: "SYS_writev_nocancel",
     const.SYS_PREAD_NOCANCEL: "SYS_pread_nocancel",
     const.SYS_GETATTRLISTBULK: "SYS_getattrlistbulk",
     const.SYS_OPENAT: "SYS_openat",
@@ -91,6 +95,16 @@ SYSCALL_MAP: Dict[int, str] = {
     const.SYS_UNLINKAT: "SYS_unlinkat",
     const.SYS_MKDIRAT: "SYS_mkdirat",
     const.SYS_GETENTROPY: "SYS_getentropy",
+    const.MACH_ABSOLUTE_TIME_TRAP: "MACH_ABSOLUTE_TIME_TRAP",
+    const.KERNELRPC_MACH_VM_ALLOCATE_TRAP: "KERNELRPC_MACH_VM_ALLOCATE_TRAP",
+    const.KERNELRPC_MACH_VM_DEALLOCATE_TRAP: "KERNELRPC_MACH_VM_DEALLOCATE_TRAP",
+    const.KERNELRPC_MACH_VM_MAP_TRAP: "KERNELRPC_MACH_VM_MAP_TRAP",
+    const.MACH_REPLY_PORT_TRAP: "MACH_REPLY_PORT_TRAP",
+    const.TASK_SELF_TRAP: "TASK_SELF_TRAP",
+    const.HOST_SELF_TRAP: "HOST_SELF_TRAP",
+    const.MACH_MSG_TRAP: "MACH_MSG_TRAP",
+    const.KERNELRPC_MACH_PORT_TYPE_TRAP: "KERNELRPC_MACH_PORT_TYPE_TRAP",
+    const.MACH_TIMEBASE_INFO_TRAP: "MACH_TIMEBASE_INFO_TRAP",
 }
 
 syscall_handlers: Dict[int, SyscallHandleCallable] = {}
@@ -326,6 +340,58 @@ def handle_sys_getrusage(emu: Chomper):
     return 0
 
 
+@register_syscall_handler(const.SYS_READV)
+@register_syscall_handler(const.SYS_READV_NOCANCEL)
+@catch_file_system_errors
+def handle_sys_readv(emu: Chomper):
+    fd = emu.get_arg(0)
+    iov = emu.get_arg(1)
+    iovcnt = emu.get_arg(2)
+
+    result = 0
+
+    for _ in range(iovcnt):
+        iov_base = emu.read_pointer(iov)
+        iov_len = emu.read_u64(iov + 8)
+
+        data = emu.os.file_system.read(fd, iov_len)
+        emu.write_bytes(iov_base, data)
+
+        result += len(data)
+
+        if len(data) != iov_len:
+            break
+
+        iov += 16
+
+    return result
+
+
+@register_syscall_handler(const.SYS_WRITEV)
+@register_syscall_handler(const.SYS_WRITEV_NOCANCEL)
+@catch_file_system_errors
+def handle_sys_writev(emu: Chomper):
+    fd = emu.get_arg(0)
+    iov = emu.get_arg(1)
+    iovcnt = emu.get_arg(2)
+
+    result = 0
+
+    for _ in range(iovcnt):
+        iov_base = emu.read_pointer(iov)
+        iov_len = emu.read_u64(iov + 8)
+
+        write_len = emu.os.file_system.write(fd, iov_base, iov_len)
+        result += write_len
+
+        if write_len != iov_len:
+            break
+
+        iov += 16
+
+    return result
+
+
 @register_syscall_handler(const.SYS_FCHMOD)
 @catch_file_system_errors
 def handle_sys_fchmod(emu: Chomper):
@@ -430,9 +496,7 @@ def handle_sys_lseek(emu: Chomper):
     offset = emu.get_arg(1)
     whence = emu.get_arg(2)
 
-    # Convert to signed integer
-    offset_bytes = offset.to_bytes(8, "little")
-    offset = int.from_bytes(offset_bytes, "little", signed=True)
+    offset = to_signed(offset, 8)
 
     return emu.os.file_system.lseek(fd, offset, whence)
 
@@ -770,6 +834,26 @@ def handle_mach_absolute_time_trap(emu: Chomper):
     return int(time.time_ns() % (3600 * 10**9))
 
 
+@register_syscall_handler(const.KERNELRPC_MACH_VM_ALLOCATE_TRAP)
+def handle_kernelrpc_mach_vm_allocate_trap(emu: Chomper):
+    address = emu.get_arg(1)
+    size = emu.get_arg(2)
+
+    mem = emu.memory_manager.alloc(size)
+    emu.write_pointer(address, mem)
+
+    return 0
+
+
+@register_syscall_handler(const.KERNELRPC_MACH_VM_DEALLOCATE_TRAP)
+def handle_kernelrpc_mach_vm_deallocate_trap(emu: Chomper):
+    mem = emu.get_arg(1)
+
+    emu.memory_manager.free(mem)
+
+    return 0
+
+
 @register_syscall_handler(const.KERNELRPC_MACH_VM_MAP_TRAP)
 def handle_kernelrpc_mach_vm_map_trap(emu: Chomper):
     address = emu.get_arg(1)
@@ -786,14 +870,14 @@ def handle_mach_reply_port_trap(emu: Chomper):
     return 0
 
 
-@register_syscall_handler(const.HOST_SELF_TRAP)
-def handle_host_self_trap(emu: Chomper):
-    return 2563
-
-
 @register_syscall_handler(const.TASK_SELF_TRAP)
 def handle_task_self_trap(emu: Chomper):
     return 0
+
+
+@register_syscall_handler(const.HOST_SELF_TRAP)
+def handle_host_self_trap(emu: Chomper):
+    return 2563
 
 
 @register_syscall_handler(const.MACH_MSG_TRAP)

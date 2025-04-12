@@ -138,16 +138,6 @@ def hook_pthread_mutex_lock(uc: Uc, address: int, size: int, user_data: UserData
     return 0
 
 
-@register_hook("_getpwuid")
-def hook_getpwuid(uc: Uc, address: int, size: int, user_data: UserData):
-    return 0
-
-
-@register_hook("_getpwuid_r")
-def hook_getpwuid_r(uc: Uc, address: int, size: int, user_data: UserData):
-    return 0
-
-
 @register_hook("_malloc")
 def hook_malloc(uc: Uc, address: int, size: int, user_data: UserData):
     emu = user_data["emu"]
@@ -393,16 +383,6 @@ def hook_dispatch_barrier_async(uc: Uc, address: int, size: int, user_data: User
     return 0
 
 
-@register_hook("_os_log_type_enabled")
-def hook_os_log_type_enabled(uc: Uc, address: int, size: int, user_data: UserData):
-    return 0
-
-
-@register_hook("_os_log_create")
-def hook_os_log_create(uc: Uc, address: int, size: int, user_data: UserData):
-    return 0
-
-
 @register_hook("_MGCopyAnswer")
 def hook_mg_copy_answer(uc: Uc, address: int, size: int, user_data: UserData):
     emu = user_data["emu"]
@@ -461,13 +441,6 @@ def hook_cf_bundle_create_info_dict_from_main_executable(
     return cf_bundle
 
 
-@register_hook("__CFBundleResourceLogger")
-def hook_cf_bundle_resource_logger(
-    uc: Uc, address: int, size: int, user_data: UserData
-):
-    return 0
-
-
 @register_hook("___CFXPreferencesCopyCurrentApplicationStateWithDeadlockAvoidance")
 def hook_cf_x_preferences_copy_current_application_state_with_deadlock_avoidance(
     uc: Uc, address: int, size: int, user_data: UserData
@@ -498,11 +471,6 @@ def hook_cf_notification_center_post_notification(
     return 0
 
 
-@register_hook("__CFPrefsClientLog")
-def hook_cf_prefs_client_log(uc: Uc, address: int, size: int, user_data: UserData):
-    return 0
-
-
 @register_hook("_CFRunLoopGetMain")
 def hook_cf_runloop_get_main(uc: Uc, address: int, size: int, user_data: UserData):
     return 0
@@ -510,11 +478,6 @@ def hook_cf_runloop_get_main(uc: Uc, address: int, size: int, user_data: UserDat
 
 @register_hook("_CFRunLoopAddObserver")
 def hook_cf_runloop_add_observer(uc: Uc, address: int, size: int, user_data: UserData):
-    return 0
-
-
-@register_hook("_NSLog")
-def hook_ns_log(uc: Uc, address: int, size: int, user_data: UserData):
     return 0
 
 
@@ -577,29 +540,6 @@ def hook_sec_item_copy_matching(uc: Uc, address: int, size: int, user_data: User
 
     if a2:
         emu.write_u64(a2, result)
-
-    return 0
-
-
-@register_hook("_mach_vm_allocate")
-def hook_mach_vm_allocate(uc: Uc, address: int, size: int, user_data: UserData):
-    emu = user_data["emu"]
-
-    addr = emu.get_arg(1)
-    size = emu.get_arg(2)
-
-    mem = emu.memory_manager.alloc(size)
-    emu.write_pointer(addr, mem)
-
-    return 0
-
-
-@register_hook("_mach_vm_deallocate")
-def hook_mach_vm_deallocate(uc: Uc, address: int, size: int, user_data: UserData):
-    emu = user_data["emu"]
-
-    mem = emu.get_arg(1)
-    emu.memory_manager.free(mem)
 
     return 0
 
