@@ -21,5 +21,5 @@ SyscallHandleCallable = Callable[["Chomper"], int]
 
 SysctlReturnValue = Union[int, str, ctypes.Structure]
 
-CFObjConvertible = Union[str, bytes, list, dict]
+CFObjConvertible = Union[int, str, bytes, list, dict]
 NSObjConvertible = CFObjConvertible
