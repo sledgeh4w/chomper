@@ -439,7 +439,7 @@ class Chomper:
         syscall_name = None
 
         if self.os_type == const.OS_IOS:
-            syscall_no = to_signed(self.uc.reg_read(arm64_const.UC_ARM64_REG_W16), 32)
+            syscall_no = to_signed(self.uc.reg_read(arm64_const.UC_ARM64_REG_W16), 4)
             syscall_name = (
                 f"'{IOS_SYSCALL_MAP[syscall_no]}'"
                 if syscall_no in IOS_SYSCALL_MAP

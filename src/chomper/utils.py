@@ -19,8 +19,9 @@ def aligned(x: int, n: int) -> int:
     return ((x - 1) // n + 1) * n
 
 
-def to_signed(value: int, nbits: int = 64) -> int:
+def to_signed(value: int, size: int = 8) -> int:
     """Convert an unsigned integer to signed."""
+    nbits = size * 8
     if value >= (1 << (nbits - 1)):
         return value - (1 << nbits)
     return value
@@ -68,6 +69,8 @@ def pyobj2nsobj(emu: Chomper, obj: NSObjConvertible) -> int:
             buffer = 0
 
         ns_obj = objc.msg_send("NSData", "dataWithBytes:length:", buffer, len(obj))
+    elif isinstance(obj, int):
+        ns_obj = objc.msg_send("NSNumber", "numberWithInteger:", obj)
     else:
         raise TypeError(f"Unsupported type: {type(obj)}")
 
@@ -148,6 +151,17 @@ def pyobj2cfobj(emu: Chomper, obj: CFObjConvertible) -> int:
             cf_allocator_system_default.address,
             buffer,
             len(obj),
+        )
+    elif isinstance(obj, int):
+        buffer = emu.create_buffer(8)
+        emu.write_s64(buffer, obj)
+        mem_ptrs.append(buffer)
+
+        cf_obj = emu.call_symbol(
+            "_CFNumberCreate",
+            cf_allocator_system_default.address,
+            9,
+            buffer,
         )
     else:
         raise TypeError(f"Unsupported type: {type(obj)}")
