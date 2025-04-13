@@ -126,3 +126,22 @@ class Rusage(ctypes.Structure):
         ("ru_nvcsw", ctypes.c_int64),
         ("ru_nivcsw", ctypes.c_int64),
     ]
+
+
+class BlockLayout(ctypes.Structure):
+    _fields_ = [
+        ("isa", ctypes.c_uint64),
+        ("flags", ctypes.c_uint32),
+        ("reserved", ctypes.c_uint32),
+        ("invoke", ctypes.c_uint64),
+        ("desc", ctypes.c_uint64),
+    ]
+
+
+class BlockDescriptor(ctypes.Structure):
+    _fields_ = [
+        ("reserved", ctypes.c_uint64),
+        ("block_size", ctypes.c_uint64),
+        ("copy", ctypes.c_uint64),
+        ("dispose", ctypes.c_uint64),
+    ]
