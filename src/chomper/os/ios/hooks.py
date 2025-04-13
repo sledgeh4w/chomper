@@ -6,10 +6,9 @@ from typing import Callable, Dict, Optional
 from unicorn import Uc, UcError
 
 from chomper.exceptions import EmulatorCrashed, SymbolMissing, ObjCUnrecognizedSelector
-from chomper.objc import ObjC
+from chomper.objc import ObjC, pyobj2cfobj
 from chomper.os.structs import Dirent
 from chomper.typing import UserData
-from chomper.utils import pyobj2cfobj
 
 hooks: Dict[str, Callable] = {}
 

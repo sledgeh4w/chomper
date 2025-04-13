@@ -1,6 +1,6 @@
 import pytest
 
-from chomper.utils import aligned, to_signed, pyobj2nsobj, pyobj2cfobj
+from chomper.utils import aligned, to_signed
 
 
 @pytest.mark.parametrize(
@@ -30,47 +30,3 @@ def test_to_signed(value, size, expected):
     result = to_signed(value, size)
 
     assert result == expected
-
-
-def test_pyobj2nsobj(emu_ios):
-    result = pyobj2nsobj(emu_ios, 1)
-    assert result
-
-    result = pyobj2nsobj(emu_ios, "chomper")
-    assert result
-
-    result = pyobj2nsobj(emu_ios, b"chomper")
-    assert result
-
-    result = pyobj2nsobj(emu_ios, [1, 2, 3])
-    assert result
-
-    result = pyobj2nsobj(
-        emu_ios,
-        {
-            "name": "chomper",
-        },
-    )
-    assert result
-
-
-def test_pyobj2cfobj(emu_ios):
-    result = pyobj2cfobj(emu_ios, 1)
-    assert result
-
-    result = pyobj2cfobj(emu_ios, "chomper")
-    assert result
-
-    result = pyobj2cfobj(emu_ios, b"chomper")
-    assert result
-
-    result = pyobj2cfobj(emu_ios, [1, 2, 3])
-    assert result
-
-    result = pyobj2cfobj(
-        emu_ios,
-        {
-            "name": "chomper",
-        },
-    )
-    assert result
