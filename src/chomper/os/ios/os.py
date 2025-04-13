@@ -473,11 +473,13 @@ class IosOs(BaseOs):
         if sys.version_info >= (3, 9):
             import importlib.resources
 
-            data_path = importlib.resources.files("chomper") / "res"
+            data_path = importlib.resources.files(__package__.split(".")[0]) / "res"
         else:
             import pkg_resources
 
-            data_path = pkg_resources.resource_filename("chomper", "res")
+            data_path = pkg_resources.resource_filename(
+                __package__.split(".")[0], "res"
+            )
 
         with open(os.path.join(data_path, "method_signature_rom_table.pkl"), "rb") as f:
             table_data = pickle.load(f)

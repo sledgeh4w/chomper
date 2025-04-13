@@ -1,4 +1,48 @@
-from chomper.utils import pyobj2nsobj
+from chomper.objc import pyobj2nsobj, pyobj2cfobj
+
+
+def test_pyobj2nsobj(emu_ios):
+    result = pyobj2nsobj(emu_ios, 1)
+    assert result
+
+    result = pyobj2nsobj(emu_ios, "chomper")
+    assert result
+
+    result = pyobj2nsobj(emu_ios, b"chomper")
+    assert result
+
+    result = pyobj2nsobj(emu_ios, [1, 2, 3])
+    assert result
+
+    result = pyobj2nsobj(
+        emu_ios,
+        {
+            "name": "chomper",
+        },
+    )
+    assert result
+
+
+def test_pyobj2cfobj(emu_ios):
+    result = pyobj2cfobj(emu_ios, 1)
+    assert result
+
+    result = pyobj2cfobj(emu_ios, "chomper")
+    assert result
+
+    result = pyobj2cfobj(emu_ios, b"chomper")
+    assert result
+
+    result = pyobj2cfobj(emu_ios, [1, 2, 3])
+    assert result
+
+    result = pyobj2cfobj(
+        emu_ios,
+        {
+            "name": "chomper",
+        },
+    )
+    assert result
 
 
 def test_ns_number(emu_ios, objc):
@@ -272,12 +316,18 @@ def test_ns_url_session(emu_ios, objc):
 
 def test_ns_file_manager(emu_ios, objc):
     with objc.autorelease_pool():
+        system_version_path = pyobj2nsobj(
+            emu_ios, "/System/Library/CoreServices/SystemVersion.plist"
+        )
+
         file_manager = objc.msg_send("NSFileManager", "defaultManager")
         assert file_manager
 
-        path = pyobj2nsobj(emu_ios, "/System/Library/CoreServices/SystemVersion.plist")
+        exists = objc.msg_send(file_manager, "fileExistsAtPath:", system_version_path)
+        assert exists
+
         attributes = objc.msg_send(
-            file_manager, "attributesOfItemAtPath:error:", path, 0
+            file_manager, "attributesOfItemAtPath:error:", system_version_path, 0
         )
         assert attributes
 

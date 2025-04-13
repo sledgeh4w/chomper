@@ -5,8 +5,7 @@ from pathlib import Path
 
 from chomper import Chomper
 from chomper.const import ARCH_ARM64, OS_IOS
-from chomper.objc import ObjC
-from chomper.utils import pyobj2nsobj
+from chomper.objc import ObjC, pyobj2nsobj
 
 base_path = os.path.abspath(os.path.dirname(__file__))
 
