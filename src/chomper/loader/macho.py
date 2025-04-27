@@ -58,6 +58,13 @@ class MachoLoader(BaseLoader):
 
         return boundary - module_base
 
+    @staticmethod
+    def _get_binding_name(symbol_name: str) -> str:
+        if symbol_name == "____chkstk_darwin":
+            return symbol_name.replace("_", "", 1)
+
+        return symbol_name.replace("$VARIANT$armv81", "")
+
     def _load_symbols(
         self,
         binary: lief.MachO.Binary,
@@ -74,7 +81,7 @@ class MachoLoader(BaseLoader):
                 symbol_name = str(symbol.name)
                 symbol_address = module_base + symbol.value
 
-                binding_name = symbol_name.replace("$VARIANT$armv81", "")
+                binding_name = self._get_binding_name(symbol_name)
 
                 # Lazy bind
                 if lazy_bindings.get(binding_name):
