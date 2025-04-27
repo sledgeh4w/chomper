@@ -1,5 +1,5 @@
 class ChomperException(Exception):
-    """Base class for all Chomper exceptions."""
+    """Base class for all emulator exceptions."""
 
 
 class EmulatorCrashed(ChomperException):
@@ -24,3 +24,7 @@ class FileBadDescriptor(ChomperException):
 
 class FilePermissionDenied(ChomperException):
     """File access permission denied."""
+
+
+class FileNotDirectory(ChomperException):
+    """Not a directory."""
