@@ -154,6 +154,8 @@ class Chomper:
         self.uc.mem_map(const.TLS_ADDRESS - 1024, const.TLS_SIZE + 1024)
 
         if self.os_type == const.OS_IOS:
+            self.write_u32(const.TLS_ADDRESS + 0x18, 1)
+
             self.uc.reg_write(arm64_const.UC_ARM64_REG_TPIDRRO_EL0, const.TLS_ADDRESS)
         else:
             if self.arch == arm_arch:

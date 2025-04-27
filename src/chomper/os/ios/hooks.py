@@ -1,4 +1,3 @@
-import ctypes
 import os
 from functools import wraps
 from typing import Callable, Dict, Optional
@@ -7,7 +6,6 @@ from unicorn import Uc, UcError
 
 from chomper.exceptions import EmulatorCrashed, SymbolMissing, ObjCUnrecognizedSelector
 from chomper.objc import ObjC, pyobj2cfobj
-from chomper.os.structs import Dirent
 from chomper.typing import UserData
 
 hooks: Dict[str, Callable] = {}
@@ -34,107 +32,11 @@ def register_hook(symbol_name: str):
     return wrapper
 
 
-@register_hook("___chkstk_darwin")
-def hook_chkstk_darwin(uc: Uc, address: int, size: int, user_data: UserData):
-    pass
-
-
-@register_hook("_thread_chkstk_darwin")
-def hook_thread_chkstk_darwin(uc: Uc, address: int, size: int, user_data: UserData):
-    pass
-
-
-@register_hook("_os_unfair_lock_assert_owner")
-def hook_os_unfair_lock_assert_owner(
-    uc: Uc, address: int, size: int, user_data: UserData
-):
-    pass
-
-
-@register_hook("_os_unfair_lock_lock")
-def hook_os_unfair_lock_lock(uc: Uc, address: int, size: int, user_data: UserData):
-    pass
-
-
-@register_hook("_os_unfair_lock_unlock")
-def hook_os_unfair_lock_unlock(uc: Uc, address: int, size: int, user_data: UserData):
-    pass
-
-
-@register_hook("_opendir")
-def hook_opendir(uc: Uc, address: int, size: int, user_data: UserData):
-    emu = user_data["emu"]
-
-    path = emu.read_string(emu.get_arg(0))
-
-    return emu.os.file_system.opendir(path)
-
-
-@register_hook("_readdir")
-def hook_readdir(uc: Uc, address: int, size: int, user_data: UserData):
-    emu = user_data["emu"]
-
-    dirp = emu.get_arg(0)
-
-    return emu.os.file_system.readdir(dirp)
-
-
-@register_hook("_readdir_r")
-def hook_readdir_r(uc: Uc, address: int, size: int, user_data: UserData):
-    emu = user_data["emu"]
-
-    dirp = emu.get_arg(0)
-    entry = emu.get_arg(1)
-    result = emu.get_arg(2)
-
-    buf = emu.os.file_system.readdir(dirp)
-
-    if buf:
-        emu.write_bytes(entry, emu.read_bytes(buf, ctypes.sizeof(Dirent)))
-        emu.write_pointer(result, entry)
-    else:
-        emu.write_pointer(result, 0)
-
-    return 0
-
-
-@register_hook("_closedir")
-def hook_closedir(uc: Uc, address: int, size: int, user_data: UserData):
-    emu = user_data["emu"]
-
-    dirp = emu.get_arg(0)
-
-    return emu.os.file_system.closedir(dirp)
-
-
 @register_hook("_pthread_self")
 def hook_pthread_self(uc: Uc, address: int, size: int, user_data: UserData):
     emu = user_data["emu"]
 
     return emu.read_pointer(emu.find_symbol("__main_thread_ptr").address)
-
-
-@register_hook("_pthread_rwlock_rdlock")
-@register_hook("_pthread_rwlock_rdlock$VARIANT$armv81")
-def hook_pthread_rwlock_rdlock(uc: Uc, address: int, size: int, user_data: UserData):
-    return 0
-
-
-@register_hook("_pthread_rwlock_wrlock")
-@register_hook("_pthread_rwlock_wrlock$VARIANT$armv81")
-def hook_pthread_rwlock_wrlock(uc: Uc, address: int, size: int, user_data: UserData):
-    return 0
-
-
-@register_hook("_pthread_rwlock_unlock")
-@register_hook("_pthread_rwlock_unlock$VARIANT$armv81")
-def hook_pthread_rwlock_unlock(uc: Uc, address: int, size: int, user_data: UserData):
-    return 0
-
-
-@register_hook("_pthread_mutex_lock")
-def hook_pthread_mutex_lock(uc: Uc, address: int, size: int, user_data: UserData):
-    return 0
 
 
 @register_hook("_malloc")

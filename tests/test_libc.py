@@ -370,3 +370,30 @@ def test_write(request, emu_name):
         assert f.readline() == s
 
     os.remove(real_path)
+
+
+@pytest.mark.parametrize("emu_name", ["emu_ios"])
+def test_readdir(request, emu_name):
+    emu = request.getfixturevalue(emu_name)
+
+    dir_path = "/usr/lib/system"
+    real_path = os.path.join(emu.os.rootfs_path, dir_path[1:])
+
+    filenames = os.listdir(real_path)
+
+    with multi_alloc_mem(emu, dir_path) as (path,):
+        dirp = emu.call_symbol("_opendir", path)
+
+        while True:
+            entry = emu.call_symbol("_readdir", dirp)
+            if not entry:
+                break
+
+            filename = emu.read_string(entry + 21)
+            assert filename in filenames
+
+            filenames.remove(filename)
+
+        emu.call_symbol("_closedir", dirp)
+
+    assert not filenames

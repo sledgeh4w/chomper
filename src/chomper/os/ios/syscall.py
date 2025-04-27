@@ -9,7 +9,12 @@ from typing import Dict, TYPE_CHECKING
 
 from unicorn import arm64_const
 
-from chomper.exceptions import FileNotExist, FileBadDescriptor, FilePermissionDenied
+from chomper.exceptions import (
+    FileNotExist,
+    FileBadDescriptor,
+    FilePermissionDenied,
+    FileNotDirectory,
+)
 from chomper.os.structs import Rusage
 from chomper.typing import SyscallHandleCallable
 from chomper.utils import struct2bytes, to_signed
@@ -72,6 +77,7 @@ SYSCALL_MAP: Dict[int, str] = {
     const.SYS_STAT64: "SYS_stat64",
     const.SYS_FSTAT64: "SYS_fstat64",
     const.SYS_LSTAT64: "SYS_lstat64",
+    const.SYS_GETDIRENTRIES64: "SYS_getdirentries64",
     const.SYS_STATFS64: "SYS_statfs64",
     const.SYS_FSTATFS64: "SYS_fstatfs64",
     const.SYS_FSSTAT64: "SYS_fsstat64",
@@ -143,6 +149,7 @@ def catch_file_system_errors(f):
         const.ENOENT: "ENOENT",
         const.EBADF: "EBADF",
         const.EACCES: "EACCES",
+        const.ENOTDIR: "ENOTDIR",
     }
 
     @wraps(f)
@@ -155,6 +162,8 @@ def catch_file_system_errors(f):
             error_no = const.EBADF
         except FilePermissionDenied:
             error_no = const.EACCES
+        except FileNotDirectory:
+            error_no = const.ENOTDIR
 
         emu.logger.info(f"Set errno {error_names[error_no]}({error_no})")
         emu.os.errno = error_no
@@ -681,6 +690,29 @@ def handle_sys_lstat64(emu: Chomper):
     emu.write_bytes(stat, emu.os.file_system.lstat(path))
 
     return 0
+
+
+@register_syscall_handler(const.SYS_GETDIRENTRIES64)
+@catch_file_system_errors
+def handle_getdirentries64(emu: Chomper):
+    fd = emu.get_arg(0)
+    buf = emu.get_arg(1)
+    nbytes = emu.get_arg(2)
+    basep = emu.get_arg(3)
+
+    base = emu.read_u64(basep)
+
+    result = emu.os.file_system.getdirentries(fd, base)
+    if result is None:
+        return 0
+
+    if nbytes < len(result):
+        return 0
+
+    emu.write_bytes(buf, result[:nbytes])
+    emu.write_u64(basep, base + 1)
+
+    return len(result)
 
 
 @register_syscall_handler(const.SYS_STATFS64)

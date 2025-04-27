@@ -310,6 +310,13 @@ class IosOs(BaseOs):
         except EmulatorCrashed:
             self.emu.logger.warning("Initialize Objective-C failed.")
 
+            # Release locks
+            runtime_lock = self.emu.find_symbol("_runtimeLock")
+            self.emu.write_u64(runtime_lock.address, 0)
+
+            lcl_rwlock = self.emu.find_symbol("_lcl_rwlock")
+            self.emu.write_u64(lcl_rwlock.address, 0)
+
     def search_module_binary(self, module_name: str) -> str:
         """Search system module binary in rootfs directory.
 

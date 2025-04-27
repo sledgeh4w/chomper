@@ -8,7 +8,12 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional, TYPE_CHECKING
 
-from chomper.exceptions import FileNotExist, FileBadDescriptor, FilePermissionDenied
+from chomper.exceptions import (
+    FileNotExist,
+    FileBadDescriptor,
+    FilePermissionDenied,
+    FileNotDirectory,
+)
 from chomper.log import get_logger
 from chomper.utils import struct2bytes, log_call, safe_join
 
@@ -191,7 +196,7 @@ class FileSystem:
         return Dirent(
             d_ino=entry.inode(),
             d_seekoff=0,
-            d_reclen=0,
+            d_reclen=ctypes.sizeof(Dirent),
             d_namlen=len(entry.name),
             d_type=(4 if entry.is_dir() else 0),
             d_name=entry.name.encode("utf-8"),
@@ -364,6 +369,23 @@ class FileSystem:
     def lstat(self, path: str) -> bytes:
         real_path = self.get_real_path(path)
         struct = self.construct_stat64(os.lstat(real_path))
+        return struct2bytes(struct)
+
+    @log_call
+    def getdirentries(self, fd: int, offset: int) -> Optional[bytes]:
+        if fd not in self.dir_fds:
+            raise FileNotDirectory(f"Not a directory: {fd}")
+
+        path = self.dir_fds[fd]
+        real_path = self.get_real_path(path)
+
+        dir_entries = list(os.scandir(real_path))
+        if offset >= len(dir_entries):
+            return None
+
+        dir_entry = dir_entries[offset]
+
+        struct = self.construct_dirent(dir_entry)
         return struct2bytes(struct)
 
     @log_call
