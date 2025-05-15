@@ -10,6 +10,8 @@ from unicorn import (
     UC_HOOK_INTR,
     UC_MODE_ARM,
     UC_MODE_THUMB,
+    UC_HOOK_MEM_READ,
+    UC_HOOK_MEM_WRITE,
     Uc,
     UcError,
     arm64_const,
@@ -330,6 +332,36 @@ class Chomper:
             callback,
             begin=hook_addr,
             end=hook_addr,
+            user_data={"emu": self, **(user_data or {})},
+        )
+        
+    def add_mem_hook(
+        self,
+        callback: HookFuncCallable,
+        hook_type: int = UC_HOOK_MEM_READ | UC_HOOK_MEM_WRITE,
+        begin: int = 1,
+        end: int = 0xFFFFFFFFFFFFFFFF,
+        user_data: Optional[dict] = None,
+    ) -> int:
+        """
+        Add memory read/write hook to the emulator.
+        Args:
+            callback: The callback function, must conform to memory hook signature.
+            hook_type: Hook type, UC_HOOK_MEM_READ, UC_HOOK_MEM_WRITE or both.
+            begin: Start address of memory range to hook. Default is entire address space.
+            end: End address of memory range to hook.
+            user_data: A ``dict`` that contains the data you want to pass to the
+                callback function. The ``Chomper`` instance will also be passed in
+                as an emulator field.
+
+        Returns:
+            Hook handle.
+        """
+        return self.uc.hook_add(
+            hook_type,
+            callback,
+            begin=begin,
+            end=end,
             user_data={"emu": self, **(user_data or {})},
         )
 
