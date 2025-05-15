@@ -38,3 +38,7 @@ HEAP_ADDRESS = 0x8000000
 
 # Minimum size of memory pool
 MINIMUM_POOL_SIZE = 2**16
+
+# Memory hook type
+HOOK_MEM_READ = 0
+HOOK_MEM_WRITE = 1
