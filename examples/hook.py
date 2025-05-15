@@ -1,9 +1,8 @@
 import os
 
 from chomper import Chomper
-from chomper.const import ARCH_ARM64, OS_IOS
+from chomper.const import ARCH_ARM64, OS_IOS, HOOK_MEM_READ, HOOK_MEM_WRITE
 from chomper.objc import ObjC
-from unicorn import UC_MEM_READ
 
 base_path = os.path.abspath(os.path.dirname(__file__))
 
@@ -29,11 +28,11 @@ def hook_ui_device_identifier_for_vendor(uc, address, size, user_data):
     return objc.msg_send("NSUUID", "UUID")
 
 
-def mem_hook(uc, access, address, size, value, user_data):
-    emu = user_data.get("emu")
-    access_str = "READ" if access == UC_MEM_READ else "WRITE"
-    print(f"[{access_str}] addr=0x{address:X}, size={size}, value={value}")
+def on_mem_read(uc, access, address, size, value, user_data):
+    print(f"[READ] {hex(address)} ({size} bytes), value = {hex(value)}")
 
+def on_mem_write(uc, access, address, size, value, user_data):
+    print(f"[WRITE] {hex(address)} ({size} bytes), value = {hex(value)}")
 
 def main():
     emu = Chomper(
@@ -54,7 +53,8 @@ def main():
     emu.add_hook("+[UIDevice currentDevice]", hook_ui_device_current_device)
     
     # Hook Memory Read/Write
-    emu.add_mem_hook(mem_hook)
+    emu.add_mem_hook(HOOK_MEM_READ,on_mem_read)
+    emu.add_mem_hook(HOOK_MEM_WRITE,on_mem_write)
     
     # Hook and intercept
     emu.add_interceptor("-[UIDevice identifierForVendor]", hook_ui_device_identifier_for_vendor)

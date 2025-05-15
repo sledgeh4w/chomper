@@ -27,7 +27,7 @@ from .memory import MemoryManager
 from .log import get_logger
 from .os import AndroidOs, IosOs
 from .os.ios.syscall import SYSCALL_MAP as IOS_SYSCALL_MAP
-from .typing import UserData, HookFuncCallable
+from .typing import UserData, HookFuncCallable, HookMemCallable
 from .utils import aligned, to_signed
 
 
@@ -337,33 +337,41 @@ class Chomper:
         
     def add_mem_hook(
         self,
-        callback: HookFuncCallable,
-        hook_type: int = UC_HOOK_MEM_READ | UC_HOOK_MEM_WRITE,
+        hook_type: int,
+        callback: HookMemCallable,
         begin: int = 1,
-        end: int = 0xFFFFFFFFFFFFFFFF,
+        end: int = 0, 
         user_data: Optional[dict] = None,
     ) -> int:
         """
-        Add memory read/write hook to the emulator.
-        Args:
-            callback: The callback function, must conform to memory hook signature.
-            hook_type: Hook type, UC_HOOK_MEM_READ, UC_HOOK_MEM_WRITE or both.
-            begin: Start address of memory range to hook. Default is entire address space.
-            end: End address of memory range to hook.
-            user_data: A ``dict`` that contains the data you want to pass to the
-                callback function. The ``Chomper`` instance will also be passed in
-                as an emulator field.
+        Add memory access hook to the emulator.
 
-        Returns:
-            Hook handle.
+        Args:
+            hook_type: HOOK_MEM_READ or HOOK_MEM_WRITE (defined in chomper.consts)
+            callback: Memory hook callback with signature:
+                    (uc, access, address, size, value, user_data) -> None
+            begin: Start address of memory range to hook. Default is 1.
+            end: End address of memory range to hook. Default is 0 (hook all).
+            user_data: Optional dictionary passed to callback. `emu` will be added automatically.
+
+        Raises:
+            ValueError: If hook_type is invalid.
         """
+        hook_type_map = {
+            const.HOOK_MEM_READ: UC_HOOK_MEM_READ,
+            const.HOOK_MEM_WRITE: UC_HOOK_MEM_WRITE,
+        }
+        uc_hook_type = hook_type_map.get(hook_type)
+        if uc_hook_type is None:
+            raise ValueError("Invalid argument hook_type")
+
         return self.uc.hook_add(
-            hook_type,
+            uc_hook_type,
             callback,
             begin=begin,
             end=end,
             user_data={"emu": self, **(user_data or {})},
-        )
+    )
 
     def add_interceptor(
         self,

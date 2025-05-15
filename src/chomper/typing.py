@@ -17,6 +17,8 @@ HookFuncCallable = Union[
     Callable[[Uc, int, int, UserData], int], Callable[[Uc, int, int, UserData], None]
 ]
 
+HookMemCallable = Callable[[Uc, int, int, int, int, UserData], None]
+
 SyscallHandleCallable = Callable[["Chomper"], int]
 
 SysctlReturnValue = Union[int, str, ctypes.Structure]
