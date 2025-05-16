@@ -334,13 +334,13 @@ class Chomper:
             end=hook_addr,
             user_data={"emu": self, **(user_data or {})},
         )
-        
+
     def add_mem_hook(
         self,
         hook_type: int,
         callback: HookMemCallable,
         begin: int = 1,
-        end: int = 0, 
+        end: int = 0,
         user_data: Optional[dict] = None,
     ) -> int:
         """
@@ -352,7 +352,8 @@ class Chomper:
                     (uc, access, address, size, value, user_data) -> None
             begin: Start address of memory range to hook. Default is 1.
             end: End address of memory range to hook. Default is 0 (hook all).
-            user_data: Optional dictionary passed to callback. `emu` will be added automatically.
+            user_data: Optional dictionary passed to callback. `emu` will be added
+                automatically.
 
         Raises:
             ValueError: If hook_type is invalid.
@@ -371,7 +372,7 @@ class Chomper:
             begin=begin,
             end=end,
             user_data={"emu": self, **(user_data or {})},
-    )
+        )
 
     def add_interceptor(
         self,
