@@ -170,21 +170,32 @@ class IosOs(BaseOs):
         """Initialize system call handlers."""
         self.emu.syscall_handlers.update(get_syscall_handlers())
 
-    def _init_magic_vars(self):
-        """Set flags meaning the arch type and others, which will be read by functions
-        such as `_os_unfair_recursive_lock_lock_with_options`."""
-        self.emu.uc.mem_map(0xFFFFFC000, 1024)
+    def _setup_kernel_mmio(self):
+        """Initialize MMIO used by system libraries."""
 
-        # arch type
-        self.emu.write_u8(0xFFFFFC023, 2)
+        def read_cb(uc, offset, size_, read_ud):
+            # arch type
+            if offset == 0x23:
+                return 0x2
+            # vm_page_shift
+            elif offset == 0x25:
+                return 0xE
+            # vm_kernel_page_shift
+            elif offset == 0x37:
+                return 0xE
+            # unknown, appear at _os_trace_init_slow
+            elif offset == 0x104:
+                return 0x100
 
-        # vm page shift
-        self.emu.write_u8(0xFFFFFC025, 14)
+            return 0
 
-        # vm kernel page shift
-        self.emu.write_u8(0xFFFFFC037, 14)
+        def write_cb(uc, offset, size_, value, write_ud):
+            pass
 
-        self.emu.write_u64(0xFFFFFC104, 0x100)
+        address = 0xFFFFFC000
+        size = 0x1000
+
+        self.emu.uc.mmio_map(address, size, read_cb, None, write_cb, None)
 
     def _construct_environ(self) -> int:
         """Construct a structure that contains environment variables."""
@@ -536,11 +547,11 @@ class IosOs(BaseOs):
         self._setup_hooks()
         self._setup_syscall_handlers()
 
+        self._setup_kernel_mmio()
+
         self._setup_proc_info()
         self._setup_symbolic_links()
         self._setup_bundle_dir()
-
-        self._init_magic_vars()
 
         if self.emu.enable_objc:
             self._enable_objc()
