@@ -3,11 +3,11 @@ import time
 import uuid
 from typing import Dict, Optional, Tuple
 
-from chomper.os.structs import Timespec
 from chomper.typing import SysctlReturnValue
 from chomper.utils import log_call
 
 from . import const
+from .structs import Timespec
 
 # CTL Type map
 CTL_TYPE_MAP: Dict[Tuple[int, int], str] = {

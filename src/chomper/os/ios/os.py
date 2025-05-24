@@ -1,19 +1,20 @@
+import ctypes
 import os
 import pickle
 import plistlib
-import random
 import sys
-from typing import List
+from typing import List, Optional
 
 from chomper.const import STACK_ADDRESS, STACK_SIZE
-from chomper.exceptions import EmulatorCrashed
+from chomper.exceptions import EmulatorCrashed, SystemOperationFailed
 from chomper.loader import MachoLoader, Module
-from chomper.os import BaseOs
+from chomper.os.base import BaseOs, SyscallError
+from chomper.utils import log_call, struct2bytes
 
 from .fixup import SystemModuleFixup
 from .hooks import get_hooks
+from .structs import Dirent, Stat64, Statfs64, Timespec
 from .syscall import get_syscall_handlers
-
 
 # Environment variables
 ENVIRON_VARS = r"""SHELL=/bin/sh
@@ -103,64 +104,145 @@ DEFAULT_BUNDLE_UUID = "43E5FB44-22FC-4DC2-9D9E-E2702A988A2E"
 DEFAULT_BUNDLE_IDENTIFIER = "com.sledgeh4w.chomper"
 DEFAULT_BUNDLE_EXECUTABLE = "Chomper"
 
+DEFAULT_PREFERENCES = {
+    "AppleLanguages": [
+        "zh-Hans",
+        "en",
+    ],
+    "AppleLocale": "zh-Hans",
+}
+
+DEFAULT_DEVICE_INFO = {
+    "UserAssignedDeviceName": "iPhone",
+    "DeviceName": "iPhone13,1",
+    "ProductVersion": "14.2.1",
+}
+
 
 class IosOs(BaseOs):
     """Provide iOS runtime environment."""
 
-    def __init__(self, emu, **kwargs):
-        super().__init__(emu, **kwargs)
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
 
-        self.loader = MachoLoader(emu)
+        self.loader = MachoLoader(self.emu)
 
-        self.preferences = self._default_preferences.copy()
-        self.device_info = self._default_device_info.copy()
-
-        self.proc_id = None
-        self.proc_path = None
-
-        self.executable_path = None
-
-    @property
-    def _default_preferences(self) -> dict:
-        """Define default preferences."""
-        return {
-            "AppleLanguages": [
-                "zh-Hans",
-                "en",
-            ],
-            "AppleLocale": "zh-Hans",
-        }
-
-    @property
-    def _default_device_info(self) -> dict:
-        """Define default device info."""
-        return {
-            "UserAssignedDeviceName": "iPhone",
-            "DeviceName": "iPhone13,1",
-            "ProductVersion": "14.2.1",
-        }
-
-    @property
-    def errno(self) -> int:
-        """Get the value of errno."""
-        errno = self.emu.find_symbol("_errno")
-        return self.emu.read_u32(errno.address)
-
-    @errno.setter
-    def errno(self, value: int):
-        """Set the value of errno."""
-        errno = self.emu.find_symbol("_errno")
-        self.emu.write_u32(errno.address, value)
-
-    def _setup_proc_info(self):
-        """Initialize process info."""
-        self.proc_id = random.randint(10000, 20000)
-        self.proc_path = (
+        self.program_path = (
             f"/private/var/containers/Bundle/Application"
             f"/{DEFAULT_BUNDLE_UUID}"
             f"/{DEFAULT_BUNDLE_IDENTIFIER}"
             f"/{DEFAULT_BUNDLE_EXECUTABLE}"
         )
+
+        self.executable_path = ""
+
+        self.preferences = DEFAULT_PREFERENCES.copy()
+        self.device_info = DEFAULT_DEVICE_INFO.copy()
+
+    @property
+    def errno(self) -> int:
+        """Get the value of `errno`."""
+        errno = self.emu.find_symbol("_errno")
+        return self.emu.read_u32(errno.address)
+
+    @errno.setter
+    def errno(self, value: int):
+        """Set the value of `errno`."""
+        errno = self.emu.find_symbol("_errno")
+        self.emu.write_u32(errno.address, value)
+
+    @staticmethod
+    def _construct_stat64(st: os.stat_result) -> bytes:
+        """Construct stat64 struct based on `stat_result`."""
+        if sys.platform == "win32":
+            block_size = 4096
+
+            rdev = 0
+            blocks = st.st_size // (block_size // 8) + 1
+            blksize = block_size
+        else:
+            rdev = st.st_rdev
+            blocks = st.st_blocks
+            blksize = st.st_blksize
+
+        if sys.platform == "darwin":
+            flags = st.st_flags
+        else:
+            flags = 0
+
+        atimespec = Timespec.from_time_ns(st.st_atime_ns)
+        mtimespec = Timespec.from_time_ns(st.st_mtime_ns)
+        ctimespec = Timespec.from_time_ns(st.st_ctime_ns)
+
+        st = Stat64(
+            st_dev=st.st_dev,
+            st_mode=st.st_mode,
+            st_nlink=st.st_nlink,
+            st_ino=st.st_ino,
+            st_uid=st.st_uid,
+            st_gid=st.st_gid,
+            st_rdev=rdev,
+            st_atimespec=atimespec,
+            st_mtimespec=mtimespec,
+            st_ctimespec=ctimespec,
+            st_size=st.st_size,
+            st_blocks=blocks,
+            st_blksize=blksize,
+            st_flags=flags,
+        )
+
+        return struct2bytes(st)
+
+    @staticmethod
+    def _construct_statfs64() -> bytes:
+        """Construct statfs64 struct."""
+        st = Statfs64(
+            f_bsize=4096,
+            f_iosize=1048576,
+            f_blocks=31218501,
+            f_bfree=29460883,
+            f_bavail=25672822,
+            f_files=1248740040,
+            f_ffree=1248421957,
+            f_fsid=103095992327,
+            f_owner=0,
+            f_type=24,
+            f_flags=343986176,
+            f_fssubtype=0,
+            f_fstypename=b"apfs",
+            f_mntonname=b"/",
+            f_mntfromname=b"/dev/disk0s1s1",
+        )
+        return struct2bytes(st)
+
+    @staticmethod
+    def _construct_dirent(entry: os.DirEntry) -> bytes:
+        """Construct dirent struct based on `DirEntry`."""
+        st = Dirent(
+            d_ino=entry.inode(),
+            d_seekoff=0,
+            d_reclen=ctypes.sizeof(Dirent),
+            d_namlen=len(entry.name),
+            d_type=(4 if entry.is_dir() else 0),
+            d_name=entry.name.encode("utf-8"),
+        )
+        return struct2bytes(st)
+
+    @log_call
+    def getdirentries(self, fd: int, offset: int) -> Optional[bytes]:
+        if fd not in self._dir_fds:
+            raise SystemOperationFailed(f"Not a directory: {fd}", SyscallError.ENOTDIR)
+
+        path = self._dir_fds[fd]
+        real_path = self._get_real_path(path)
+
+        dir_entries = list(os.scandir(real_path))
+        if offset >= len(dir_entries):
+            return None
+
+        dir_entry = dir_entries[offset]
+
+        return self._construct_dirent(dir_entry)
 
     def _setup_hooks(self):
         """Initialize hooks."""
@@ -197,21 +279,6 @@ class IosOs(BaseOs):
 
         self.emu.uc.mmio_map(address, size, read_cb, None, write_cb, None)
 
-    def _construct_environ(self) -> int:
-        """Construct a structure that contains environment variables."""
-        lines = ENVIRON_VARS.split("\n")
-
-        size = self.emu.arch.addr_size * (len(lines) + 1)
-        buffer = self.emu.create_buffer(size)
-
-        for index, line in enumerate(lines):
-            address = buffer + self.emu.arch.addr_size * index
-            self.emu.write_pointer(address, self.emu.create_string(line))
-
-        self.emu.write_pointer(buffer + size - self.emu.arch.addr_size, 0)
-
-        return buffer
-
     def _init_program_vars(self):
         """Initialize program variables, works like `__program_vars_init`."""
         argc = self.emu.create_buffer(8)
@@ -224,7 +291,7 @@ class IosOs(BaseOs):
         self.emu.write_pointer(nx_argv_pointer.address, self.emu.create_string(""))
 
         environ = self.emu.create_buffer(8)
-        self.emu.write_pointer(environ, self._construct_environ())
+        self.emu.write_pointer(environ, self._construct_environ(ENVIRON_VARS))
 
         environ_pointer = self.emu.find_symbol("_environ_pointer")
         self.emu.write_pointer(environ_pointer.address, environ)
@@ -420,14 +487,14 @@ class IosOs(BaseOs):
     def _setup_symbolic_links(self):
         """Setup symbolic links."""
         for src, dst in SYMBOLIC_LINKS.items():
-            self.file_system.set_symbolic_link(src, dst)
+            self.set_symbolic_link(src, dst)
 
     def _setup_bundle_dir(self):
         """Setup bundle directory."""
-        bundle_path = os.path.dirname(self.proc_path)
+        bundle_path = os.path.dirname(self.program_path)
         container_path = os.path.dirname(bundle_path)
 
-        self.file_system.set_working_dir(bundle_path)
+        self.set_working_dir(bundle_path)
 
         local_container_path = os.path.join(
             self.rootfs_path,
@@ -442,14 +509,14 @@ class IosOs(BaseOs):
             local_container_path, DEFAULT_BUNDLE_IDENTIFIER
         )
 
-        self.file_system.forward_path(container_path, local_container_path)
-        self.file_system.forward_path(bundle_path, local_bundle_path)
+        self.forward_path(container_path, local_container_path)
+        self.forward_path(bundle_path, local_bundle_path)
 
     def set_main_executable(self, executable_path: str):
         """Set main executable path."""
         self.executable_path = executable_path
 
-        bundle_path = os.path.dirname(self.proc_path)
+        bundle_path = os.path.dirname(self.program_path)
         container_path = os.path.dirname(bundle_path)
 
         executable_dir = os.path.dirname(self.executable_path)
@@ -463,25 +530,25 @@ class IosOs(BaseOs):
             bundle_executable = info_data["CFBundleExecutable"]
 
             bundle_path = f"{container_path}/{bundle_identifier}"
-            self.proc_path = f"{bundle_path}/{bundle_executable}"
+            self.program_path = f"{bundle_path}/{bundle_executable}"
 
             self._setup_bundle_dir()
 
             cf_progname = self.emu.find_symbol("___CFprogname")
             cf_process_path = self.emu.find_symbol("___CFProcessPath")
 
-            cf_progname_str = self.emu.create_string(self.proc_path.split("/")[-1])
-            cf_process_path_str = self.emu.create_string(self.proc_path)
+            cf_progname_str = self.emu.create_string(self.program_path.split("/")[-1])
+            cf_process_path_str = self.emu.create_string(self.program_path)
 
             self.emu.write_pointer(cf_progname.address, cf_progname_str)
             self.emu.write_pointer(cf_process_path.address, cf_process_path_str)
 
         # Set path forwarding to executable and Info.plist
-        self.file_system.forward_path(
-            src_path=self.proc_path,
+        self.forward_path(
+            src_path=self.program_path,
             dst_path=self.executable_path,
         )
-        self.file_system.forward_path(
+        self.forward_path(
             src_path=f"{bundle_path}/Info.plist",
             dst_path=info_path,
         )
@@ -532,14 +599,14 @@ class IosOs(BaseOs):
         stdout_p = self.emu.find_symbol("___stdoutp")
         stderr_p = self.emu.find_symbol("___stderrp")
 
-        if isinstance(self.file_system.stdin_fd, int):
-            stdin_fp = self._fd_open(self.file_system.stdin_fd, "r")
+        if isinstance(self.stdin, int):
+            stdin_fp = self._fd_open(self.stdin, "r")
             self.emu.write_pointer(stdin_p.address, stdin_fp)
 
-        stdout_fp = self._fd_open(self.file_system.stdout_fd, "w", unbuffered=True)
+        stdout_fp = self._fd_open(self.stdout, "w", unbuffered=True)
         self.emu.write_pointer(stdout_p.address, stdout_fp)
 
-        stderr_fp = self._fd_open(self.file_system.stderr_fd, "w", unbuffered=True)
+        stderr_fp = self._fd_open(self.stderr, "w", unbuffered=True)
         self.emu.write_pointer(stderr_p.address, stderr_fp)
 
     def initialize(self):
@@ -549,7 +616,6 @@ class IosOs(BaseOs):
 
         self._setup_kernel_mmio()
 
-        self._setup_proc_info()
         self._setup_symbolic_links()
         self._setup_bundle_dir()
 
