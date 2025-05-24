@@ -4,7 +4,7 @@ import ctypes
 from contextlib import contextmanager
 from typing import Optional, Sequence, Union, TYPE_CHECKING
 
-from .os.structs import BlockLayout, BlockDescriptor
+from .os.ios.structs import BlockLayout, BlockDescriptor
 from .typing import CFObjConvertible, NSObjConvertible, HookFuncCallable
 from .utils import struct2bytes
 

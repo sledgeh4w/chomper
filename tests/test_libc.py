@@ -23,7 +23,6 @@ def call_symbol(emu, symbol_name, *args, va_list=None):
     return emu.call_symbol(symbol_name, *args, va_list=va_list)
 
 
-@pytest.mark.usefixtures("libc_arm", "libc_arm64")
 @pytest.mark.parametrize("emu_name", emu_names)
 def test_malloc(request, emu_name):
     emu = request.getfixturevalue(emu_name)
@@ -34,7 +33,6 @@ def test_malloc(request, emu_name):
     emu.free(result)
 
 
-@pytest.mark.usefixtures("libc_arm", "libc_arm64")
 @pytest.mark.parametrize("emu_name", emu_names)
 def test_free(request, emu_name):
     emu = request.getfixturevalue(emu_name)
@@ -43,7 +41,6 @@ def test_free(request, emu_name):
     call_symbol(emu, "free", addr)
 
 
-@pytest.mark.usefixtures("libc_arm", "libc_arm64")
 @pytest.mark.parametrize("emu_name", emu_names)
 def test_memcpy(request, emu_name):
     emu = request.getfixturevalue(emu_name)
@@ -56,7 +53,6 @@ def test_memcpy(request, emu_name):
         assert result == s
 
 
-@pytest.mark.usefixtures("libc_arm", "libc_arm64")
 @pytest.mark.parametrize("emu_name", emu_names)
 def test_memcmp(request, emu_name):
     emu = request.getfixturevalue(emu_name)
@@ -71,7 +67,6 @@ def test_memcmp(request, emu_name):
         assert result != 0
 
 
-@pytest.mark.usefixtures("libc_arm", "libc_arm64")
 @pytest.mark.parametrize("emu_name", emu_names)
 def test_memset(request, emu_name):
     emu = request.getfixturevalue(emu_name)
@@ -85,7 +80,6 @@ def test_memset(request, emu_name):
         assert result == b"\x00" * n
 
 
-@pytest.mark.usefixtures("libc_arm", "libc_arm64")
 @pytest.mark.parametrize("emu_name", emu_names)
 def test_strncpy(request, emu_name):
     emu = request.getfixturevalue(emu_name)
@@ -99,7 +93,6 @@ def test_strncpy(request, emu_name):
         assert result == s[:n]
 
 
-@pytest.mark.usefixtures("libc_arm", "libc_arm64")
 @pytest.mark.parametrize("emu_name", emu_names)
 def test_strncmp(request, emu_name):
     emu = request.getfixturevalue(emu_name)
@@ -114,7 +107,6 @@ def test_strncmp(request, emu_name):
         assert result != 0
 
 
-@pytest.mark.usefixtures("libc_arm", "libc_arm64")
 @pytest.mark.parametrize("emu_name", emu_names)
 def test_strncat(request, emu_name):
     emu = request.getfixturevalue(emu_name)
@@ -130,7 +122,6 @@ def test_strncat(request, emu_name):
         assert result == s + s[:n]
 
 
-@pytest.mark.usefixtures("libc_arm", "libc_arm64")
 @pytest.mark.parametrize("emu_name", emu_names)
 def test_strcpy(request, emu_name):
     emu = request.getfixturevalue(emu_name)
@@ -143,7 +134,6 @@ def test_strcpy(request, emu_name):
         assert result == s
 
 
-@pytest.mark.usefixtures("libc_arm", "libc_arm64")
 @pytest.mark.parametrize("emu_name", emu_names)
 def test_strcmp(request, emu_name):
     emu = request.getfixturevalue(emu_name)
@@ -158,7 +148,6 @@ def test_strcmp(request, emu_name):
         assert result != 0
 
 
-@pytest.mark.usefixtures("libc_arm", "libc_arm64")
 @pytest.mark.parametrize("emu_name", emu_names)
 def test_strcat(request, emu_name):
     emu = request.getfixturevalue(emu_name)
@@ -173,7 +162,6 @@ def test_strcat(request, emu_name):
         assert result == s + s
 
 
-@pytest.mark.usefixtures("libc_arm", "libc_arm64")
 @pytest.mark.parametrize("emu_name", emu_names)
 def test_strlen(request, emu_name):
     emu = request.getfixturevalue(emu_name)
@@ -185,7 +173,6 @@ def test_strlen(request, emu_name):
         assert result == len(s)
 
 
-@pytest.mark.usefixtures("libc_arm", "libc_arm64")
 @pytest.mark.parametrize("emu_name", emu_names)
 def test_sprintf(request, emu_name):
     emu = request.getfixturevalue(emu_name)
@@ -223,8 +210,7 @@ def test_sscanf(request, emu_name):
         assert result == s
 
 
-@pytest.mark.usefixtures("libc_arm", "libc_arm64")
-@pytest.mark.parametrize("emu_name", ["emu_arm", "emu_arm64", "emu_ios"])
+@pytest.mark.parametrize("emu_name", emu_names)
 def test_printf(request, emu_name):
     emu = request.getfixturevalue(emu_name)
 
@@ -236,7 +222,7 @@ def test_printf(request, emu_name):
         call_symbol(emu, "printf", v1, n, v3)
 
 
-@pytest.mark.parametrize("emu_name", ["emu_ios"])
+@pytest.mark.parametrize("emu_name", ["emu_arm64", "emu_ios"])
 def test_time(request, emu_name):
     emu = request.getfixturevalue(emu_name)
 
@@ -244,7 +230,7 @@ def test_time(request, emu_name):
     assert result >= 0
 
 
-@pytest.mark.parametrize("emu_name", ["emu_ios"])
+@pytest.mark.parametrize("emu_name", ["emu_arm64", "emu_ios"])
 def test_getcwd(request, emu_name):
     emu = request.getfixturevalue(emu_name)
 
@@ -256,14 +242,14 @@ def test_getcwd(request, emu_name):
         assert len(emu.read_string(result))
 
 
-@pytest.mark.parametrize("emu_name", ["emu_ios"])
+@pytest.mark.parametrize("emu_name", ["emu_arm64", "emu_ios"])
 def test_srandom(request, emu_name):
     emu = request.getfixturevalue(emu_name)
 
     call_symbol(emu, "srandom", 0)
 
 
-@pytest.mark.parametrize("emu_name", ["emu_ios"])
+@pytest.mark.parametrize("emu_name", ["emu_arm64", "emu_ios"])
 def test_random(request, emu_name):
     emu = request.getfixturevalue(emu_name)
 
@@ -282,7 +268,7 @@ def test_localtime_r(request, emu_name):
         assert result
 
 
-@pytest.mark.parametrize("emu_name", ["emu_ios"])
+@pytest.mark.parametrize("emu_name", ["emu_arm64", "emu_ios"])
 def test_clock(request, emu_name):
     emu = request.getfixturevalue(emu_name)
 
@@ -290,7 +276,7 @@ def test_clock(request, emu_name):
     assert result >= 0
 
 
-@pytest.mark.parametrize("emu_name", ["emu_ios"])
+@pytest.mark.parametrize("emu_name", ["emu_arm64", "emu_ios"])
 def test_getpagesize(request, emu_name):
     emu = request.getfixturevalue(emu_name)
 
@@ -326,14 +312,14 @@ def test_getmntinfo(request, emu_name):
         assert result == 0
 
 
-@pytest.mark.parametrize("emu_name", ["emu_ios"])
+@pytest.mark.parametrize("emu_name", ["emu_arm64", "emu_ios"])
 def test_read(request, emu_name):
     emu = request.getfixturevalue(emu_name)
 
     filepath = "/var/tmp/test_read"
     s = "chomper"
 
-    real_path = f"{emu.os.file_system.rootfs_path}/{filepath[1:]}"
+    real_path = f"{emu.os.rootfs_path}/{filepath[1:]}"
 
     with open(real_path, "w") as f:
         f.write(s)
@@ -350,17 +336,22 @@ def test_read(request, emu_name):
     os.remove(real_path)
 
 
-@pytest.mark.parametrize("emu_name", ["emu_ios"])
+@pytest.mark.parametrize("emu_name", ["emu_arm64", "emu_ios"])
 def test_write(request, emu_name):
     emu = request.getfixturevalue(emu_name)
 
     filepath = "/var/tmp/test_write"
     s = "chomper"
 
-    real_path = f"{emu.os.file_system.rootfs_path}/{filepath[1:]}"
+    real_path = f"{emu.os.rootfs_path}/{filepath[1:]}"
 
     with multi_alloc_mem(emu, filepath, s) as (path, buf):
-        fd = call_symbol(emu, "open", path, 0x601, va_list=(0o666,))
+
+        if emu.os_type == OS_IOS:
+            fd = call_symbol(emu, "open", path, 0x601, va_list=(0o666,))
+        else:
+            fd = call_symbol(emu, "open", path, 0x241, 0o666)
+
         assert fd
 
         call_symbol(emu, "write", fd, buf, len(s))
@@ -372,9 +363,14 @@ def test_write(request, emu_name):
     os.remove(real_path)
 
 
-@pytest.mark.parametrize("emu_name", ["emu_ios"])
+@pytest.mark.parametrize("emu_name", ["emu_arm64", "emu_ios"])
 def test_readdir(request, emu_name):
     emu = request.getfixturevalue(emu_name)
+
+    if emu.os_type == OS_IOS:
+        name_offset = 0x15
+    else:
+        name_offset = 0x13
 
     dir_path = "/usr/lib/system"
     real_path = os.path.join(emu.os.rootfs_path, dir_path[1:])
@@ -382,18 +378,86 @@ def test_readdir(request, emu_name):
     filenames = os.listdir(real_path)
 
     with multi_alloc_mem(emu, dir_path) as (path,):
-        dirp = emu.call_symbol("_opendir", path)
+        dirp = call_symbol(emu, "opendir", path)
 
         while True:
-            entry = emu.call_symbol("_readdir", dirp)
+            entry = call_symbol(emu, "readdir", dirp)
             if not entry:
                 break
 
-            filename = emu.read_string(entry + 21)
+            filename = emu.read_string(entry + name_offset)
             assert filename in filenames
 
             filenames.remove(filename)
 
-        emu.call_symbol("_closedir", dirp)
+        call_symbol(emu, "closedir", dirp)
 
     assert not filenames
+
+
+@pytest.mark.parametrize("emu_name", ["emu_arm64", "emu_ios"])
+def test_mkdir(request, emu_name):
+    emu = request.getfixturevalue(emu_name)
+
+    dir_path = "/var/tmp/test_mkdir"
+    real_path = os.path.join(emu.os.rootfs_path, dir_path[1:])
+
+    with multi_alloc_mem(emu, dir_path) as (path,):
+        call_symbol(emu, "mkdir", path, 0o755)
+
+    assert os.path.isdir(real_path)
+
+    os.rmdir(real_path)
+
+
+@pytest.mark.parametrize("emu_name", ["emu_arm64", "emu_ios"])
+def test_access(request, emu_name):
+    emu = request.getfixturevalue(emu_name)
+
+    dir_path = "/var/tmp"
+
+    with multi_alloc_mem(emu, dir_path) as (path,):
+        result = call_symbol(emu, "access", path, 0x4)
+        assert result == 0
+
+
+@pytest.mark.parametrize("emu_name", ["emu_arm64", "emu_ios"])
+def test_getpid(request, emu_name):
+    emu = request.getfixturevalue(emu_name)
+
+    result = call_symbol(emu, "getpid")
+    assert result > 0
+
+
+@pytest.mark.parametrize("emu_name", ["emu_arm64", "emu_ios"])
+def test_getppid(request, emu_name):
+    emu = request.getfixturevalue(emu_name)
+
+    result = call_symbol(emu, "getppid")
+    assert result > 0
+
+
+@pytest.mark.parametrize("emu_name", ["emu_arm64", "emu_ios"])
+def test_getuid(request, emu_name):
+    emu = request.getfixturevalue(emu_name)
+
+    result = call_symbol(emu, "getuid")
+    assert result > 0
+
+
+@pytest.mark.parametrize("emu_name", ["emu_arm64"])
+def test_gettid(request, emu_name):
+    emu = request.getfixturevalue(emu_name)
+
+    result = call_symbol(emu, "gettid")
+    assert result > 0
+
+
+@pytest.mark.parametrize("emu_name", ["emu_arm64", "emu_ios"])
+def test_getenv(request, emu_name):
+    emu = request.getfixturevalue(emu_name)
+
+    name = "HOME"
+
+    with multi_alloc_mem(emu, name) as (v1,):
+        call_symbol(emu, "getenv", v1)
