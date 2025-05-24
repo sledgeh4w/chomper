@@ -1,4 +1,3 @@
-import os
 import random
 from functools import wraps
 from typing import Callable, Dict
@@ -43,24 +42,9 @@ def hook_free(uc, address, size, user_data):
     emu.memory_manager.free(addr)
 
 
-@register_hook("getpid")
-def hook_getpid(uc, address, size, user_data):
-    return os.getpid()
-
-
 @register_hook("arc4random")
 def hook_arc4random(uc, address, size, user_data):
-    return random.randint(0, 0x100000000)
-
-
-@register_hook("nanosleep")
-def hook_nanosleep(uc, address, size, user_data):
-    return 0
-
-
-@register_hook("clock_nanosleep")
-def hook_clock_nanosleep(uc, address, size, user_data):
-    return 0
+    return random.randint(0, 0x100000000 - 1)
 
 
 @register_hook("pthread_mutex_lock")

@@ -25,8 +25,7 @@ from .loader import Module, Symbol
 from .instruction import EXTEND_INSTRUCTIONS
 from .memory import MemoryManager
 from .log import get_logger
-from .os import AndroidOs, IosOs
-from .os.ios.syscall import SYSCALL_MAP as IOS_SYSCALL_MAP
+from .os import AndroidOs, ANDROID_SYSCALL_MAP, IosOs, IOS_SYSCALL_MAP
 from .typing import UserData, HookFuncCallable, HookMemCallable
 from .utils import aligned, to_signed
 
@@ -102,6 +101,16 @@ class Chomper:
         self._setup_os(os_type, rootfs_path=rootfs_path)
 
         self.os.initialize()
+
+    @property
+    def android_os(self) -> AndroidOs:
+        assert isinstance(self.os, AndroidOs)
+        return self.os
+
+    @property
+    def ios_os(self) -> IosOs:
+        assert isinstance(self.os, IosOs)
+        return self.os
 
     def _setup_arch(self, arch: int):
         """Setup architecture."""
@@ -479,6 +488,7 @@ class Chomper:
 
     def _dispatch_syscall(self):
         """Dispatch system calls to the registered handlers of the OS."""
+        syscall_no = None
         syscall_name = None
 
         if self.os_type == const.OS_IOS:
@@ -488,7 +498,15 @@ class Chomper:
                 if syscall_no in IOS_SYSCALL_MAP
                 else hex(syscall_no)
             )
+        elif self.os_type == const.OS_ANDROID and self.arch == arm64_arch:
+            syscall_no = to_signed(self.uc.reg_read(arm64_const.UC_ARM64_REG_W8), 4)
+            syscall_name = (
+                f"'{ANDROID_SYSCALL_MAP[syscall_no]}'"
+                if syscall_no in ANDROID_SYSCALL_MAP
+                else hex(syscall_no)
+            )
 
+        if syscall_no and syscall_name:
             from_ = self.debug_symbol(self.uc.reg_read(self.arch.reg_pc))
             self.logger.info(f"System call {syscall_name} invoked from {from_}")
 
@@ -574,7 +592,7 @@ class Chomper:
         if exec_objc_init and isinstance(self.os, IosOs):
             self.os.init_objc(module)
 
-        if exec_init_array:
+        if exec_init_array and module.init_array:
             self.exec_init_array(module.init_array)
 
         return module

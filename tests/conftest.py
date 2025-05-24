@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 from chomper import Chomper
-from chomper.const import ARCH_ARM, ARCH_ARM64, OS_IOS
+from chomper.const import ARCH_ARM, ARCH_ARM64, OS_ANDROID, OS_IOS
 from chomper.objc import ObjC
 
 base_path = os.path.abspath(os.path.dirname(__file__))
@@ -38,12 +38,17 @@ def download_binary_file(binary_path: str) -> str:
 
 @pytest.fixture(scope="module")
 def emu_arm():
-    yield Chomper(arch=ARCH_ARM)
+    emu = Chomper(
+        arch=ARCH_ARM,
+        os_type=OS_ANDROID,
+    )
+    emu.load_module(os.path.join(android_lib_path, "libc.so"))
+    yield emu
 
 
 @pytest.fixture(scope="module")
 def libc_arm(emu_arm):
-    yield emu_arm.load_module(os.path.join(android_lib_path, "libc.so"))
+    yield emu_arm.find_module("libc.so")
 
 
 @pytest.fixture(scope="module")
@@ -66,12 +71,18 @@ def libdusanwa_v4856_arm(emu_arm):
 
 @pytest.fixture(scope="module")
 def emu_arm64():
-    yield Chomper(arch=ARCH_ARM64)
+    emu = Chomper(
+        arch=ARCH_ARM64,
+        os_type=OS_ANDROID,
+        rootfs_path=ios_rootfs_path,  # Used for testing file operation
+    )
+    emu.load_module(os.path.join(android_lib64_path, "libc.so"))
+    yield emu
 
 
 @pytest.fixture(scope="module")
 def libc_arm64(emu_arm64):
-    yield emu_arm64.load_module(os.path.join(android_lib64_path, "libc.so"))
+    yield emu_arm64.find_module("libc.so")
 
 
 @pytest.fixture(scope="module")

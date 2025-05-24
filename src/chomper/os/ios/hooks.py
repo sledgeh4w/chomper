@@ -292,8 +292,8 @@ def hook_mg_copy_answer(uc: Uc, address: int, size: int, user_data: UserData):
     str_ptr = objc.msg_send(emu.get_arg(0), "cStringUsingEncoding:", 4)
     key = emu.read_string(str_ptr)
 
-    if key in emu.os.device_info:
-        return pyobj2cfobj(emu, emu.os.device_info[key])
+    if key in emu.ios_os.device_info:
+        return pyobj2cfobj(emu, emu.ios_os.device_info[key])
 
     return 0
 
@@ -308,8 +308,8 @@ def hook_cf_preferences_copy_app_value_with_container_and_configuration(
     str_ptr = objc.msg_send(emu.get_arg(0), "cStringUsingEncoding:", 4)
     key = emu.read_string(str_ptr)
 
-    if key in emu.os.preferences:
-        return pyobj2cfobj(emu, emu.os.preferences[key])
+    if key in emu.ios_os.preferences:
+        return pyobj2cfobj(emu, emu.ios_os.preferences[key])
 
     return 0
 
@@ -320,7 +320,7 @@ def hook_cf_bundle_create_info_dict_from_main_executable(
 ):
     emu = user_data["emu"]
 
-    executable_dir = os.path.dirname(emu.os.executable_path)
+    executable_dir = os.path.dirname(emu.ios_os.executable_path)
     info_path = os.path.join(executable_dir, "Info.plist")
 
     if not os.path.exists(info_path):
@@ -348,7 +348,7 @@ def hook_cf_x_preferences_copy_current_application_state_with_deadlock_avoidance
 ):
     emu = user_data["emu"]
 
-    return pyobj2cfobj(emu, emu.os.preferences)
+    return pyobj2cfobj(emu, emu.ios_os.preferences)
 
 
 @register_hook("_CFNotificationCenterGetLocalCenter")

@@ -14,17 +14,17 @@ class ObjCUnrecognizedSelector(ChomperException):
     """Unrecognized selector sent when calling ObjC."""
 
 
-class FileNotExist(ChomperException):
-    """No such file or directory."""
+class SystemOperationFailed(ChomperException):
+    """System operation failed."""
+
+    def __init__(self, message, error_type):
+        super().__init__(message)
+
+        self.error_type = error_type
 
 
-class FileBadDescriptor(ChomperException):
-    """Bad file descriptor."""
+class ProgramTerminated(ChomperException):
+    """Program terminated on its own.
 
-
-class FilePermissionDenied(ChomperException):
-    """File access permission denied."""
-
-
-class FileNotDirectory(ChomperException):
-    """Not a directory."""
+    For example, the system call `exit` may throw this exception.
+    """

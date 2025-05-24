@@ -297,7 +297,9 @@ def test_ns_method_signature(emu_ios, objc):
 def test_ns_write_to_file_atomically(emu_ios, objc):
     with objc.autorelease_pool():
         string = objc.msg_send("NSString", "stringWithUTF8String:", "chomper")
-        filename = objc.msg_send("NSString", "stringWithUTF8String:", "test_write")
+        filename = objc.msg_send(
+            "NSString", "stringWithUTF8String:", "test_ns_write_atomic"
+        )
 
         result = objc.msg_send(string, "writeToFile:atomically:", filename, 1)
         assert result
