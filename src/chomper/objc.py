@@ -4,7 +4,6 @@ import ctypes
 from contextlib import contextmanager
 from typing import Optional, Sequence, Union, TYPE_CHECKING
 
-from .os.ios.structs import BlockLayout, BlockDescriptor
 from .typing import CFObjConvertible, NSObjConvertible, HookFuncCallable
 from .utils import struct2bytes
 
@@ -89,6 +88,25 @@ class ObjC:
             yield context
         finally:
             self.emu.call_symbol("_objc_autoreleasePoolPop", context)
+
+
+class BlockLayout(ctypes.Structure):
+    _fields_ = [
+        ("isa", ctypes.c_uint64),
+        ("flags", ctypes.c_uint32),
+        ("reserved", ctypes.c_uint32),
+        ("invoke", ctypes.c_uint64),
+        ("desc", ctypes.c_uint64),
+    ]
+
+
+class BlockDescriptor(ctypes.Structure):
+    _fields_ = [
+        ("reserved", ctypes.c_uint64),
+        ("block_size", ctypes.c_uint64),
+        ("copy", ctypes.c_uint64),
+        ("dispose", ctypes.c_uint64),
+    ]
 
 
 class Block:
