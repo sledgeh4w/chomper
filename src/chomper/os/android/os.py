@@ -9,7 +9,7 @@ from chomper.const import TLS_ADDRESS
 from chomper.exceptions import SystemOperationFailed
 from chomper.loader import ELFLoader
 from chomper.os.base import BaseOs, SyscallError
-from chomper.utils import log_call, struct2bytes
+from chomper.utils import log_call, struct2bytes, to_unsigned
 
 from .hooks import get_hooks
 from .structs import Dirent, Stat64, Timespec
@@ -22,6 +22,8 @@ ENVIRON_VARS = """"""
 
 class AndroidOs(BaseOs):
     """Provide Android runtime environment."""
+
+    AT_FDCWD = to_unsigned(-100, size=4)
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -72,6 +74,31 @@ class AndroidOs(BaseOs):
             st_size=st.st_size,
             st_blksize=blksize,
             st_blocks=blocks,
+            st_atim=atim,
+            st_mtim=mtim,
+            st_ctim=ctim,
+        )
+
+        return struct2bytes(st)
+
+    @staticmethod
+    def _construct_dev_stat64() -> bytes:
+        """ "Construct stat64 struct for device file."""
+        atim = Timespec.from_time_ns(0)
+        mtim = Timespec.from_time_ns(0)
+        ctim = Timespec.from_time_ns(0)
+
+        st = Stat64(
+            st_dev=0,
+            st_ino=0,
+            st_mode=0x2000,
+            st_nlink=0,
+            st_uid=0,
+            st_gid=0,
+            st_rdev=0,
+            st_size=0,
+            st_blksize=0,
+            st_blocks=0,
             st_atim=atim,
             st_mtim=mtim,
             st_ctim=ctim,
@@ -224,6 +251,7 @@ class AndroidOs(BaseOs):
         """Initialize environment."""
         self._setup_hooks()
         self._setup_syscall_handlers()
+        self._setup_devices()
 
         self._setup_tls()
 
