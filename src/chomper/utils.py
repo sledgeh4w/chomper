@@ -20,6 +20,20 @@ def to_signed(value: int, size: int = 8) -> int:
     return value
 
 
+def to_unsigned(value: int, size: int = 8) -> int:
+    """Convert a signed integer to unsigned."""
+    nbits = size * 8
+    mask = (1 << nbits) - 1
+
+    if value < 0:
+        return value + (1 << nbits)
+
+    if value > mask:
+        return value & mask
+
+    return value
+
+
 def struct2bytes(st: Structure) -> bytes:
     """Convert struct to bytes."""
     buffer = create_string_buffer(sizeof(st))

@@ -9,7 +9,7 @@ from chomper.const import STACK_ADDRESS, STACK_SIZE
 from chomper.exceptions import EmulatorCrashed, SystemOperationFailed
 from chomper.loader import MachoLoader, Module
 from chomper.os.base import BaseOs, SyscallError
-from chomper.utils import log_call, struct2bytes
+from chomper.utils import log_call, struct2bytes, to_unsigned
 
 from .fixup import SystemModuleFixup
 from .hooks import get_hooks
@@ -122,6 +122,8 @@ DEFAULT_DEVICE_INFO = {
 class IosOs(BaseOs):
     """Provide iOS runtime environment."""
 
+    AT_FDCWD = to_unsigned(-2, size=4)
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
@@ -189,6 +191,32 @@ class IosOs(BaseOs):
             st_blocks=blocks,
             st_blksize=blksize,
             st_flags=flags,
+        )
+
+        return struct2bytes(st)
+
+    @staticmethod
+    def _construct_dev_stat64() -> bytes:
+        """Construct stat64 struct for device file."""
+        atimespec = Timespec.from_time_ns(0)
+        mtimespec = Timespec.from_time_ns(0)
+        ctimespec = Timespec.from_time_ns(0)
+
+        st = Stat64(
+            st_dev=0,
+            st_mode=0x2000,
+            st_nlink=0,
+            st_ino=0,
+            st_uid=0,
+            st_gid=0,
+            st_rdev=0,
+            st_atimespec=atimespec,
+            st_mtimespec=mtimespec,
+            st_ctimespec=ctimespec,
+            st_size=0,
+            st_blocks=0,
+            st_blksize=0,
+            st_flags=0,
         )
 
         return struct2bytes(st)
@@ -319,6 +347,16 @@ class IosOs(BaseOs):
         self.emu.write_u32(platform_ptr + 0x140, 2)
 
         self.emu.write_pointer(dyld_all_images.address + 0x50, platform_ptr)
+
+        # environ
+        environ_pointer = self.emu.find_symbol("_environ_pointer")
+        environ_value = self.emu.read_pointer(environ_pointer.address)
+
+        environ_buf = self.emu.create_buffer(8)
+        self.emu.write_pointer(environ_buf, environ_value)
+
+        environ = self.emu.find_symbol("_environ")
+        self.emu.write_pointer(environ.address, environ_buf)
 
     def _init_lib_system_kernel(self):
         """Initialize `libsystem_kernel.dylib`."""
@@ -613,6 +651,7 @@ class IosOs(BaseOs):
         """Initialize environment."""
         self._setup_hooks()
         self._setup_syscall_handlers()
+        self._setup_devices()
 
         self._setup_kernel_mmio()
 
