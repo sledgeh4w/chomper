@@ -18,7 +18,7 @@ class Timespec(ctypes.Structure):
 
 class Stat64(ctypes.Structure):
     _fields_ = [
-        ("st_dev", ctypes.c_int32),
+        ("st_dev", ctypes.c_int64),
         ("st_ino", ctypes.c_uint64),
         ("st_mode", ctypes.c_uint32),
         ("st_nlink", ctypes.c_uint32),

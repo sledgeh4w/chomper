@@ -27,6 +27,7 @@ SYSCALL_MAP: Dict[int, str] = {
     const.SYS_WRITE: "SYS_write",
     const.SYS_OPEN: "SYS_open",
     const.SYS_CLOSE: "SYS_close",
+    const.SYS_LINK: "SYS_link",
     const.SYS_UNLINK: "SYS_unlink",
     const.SYS_CHDIR: "SYS_chdir",
     const.SYS_FCHDIR: "SYS_fchdir",
@@ -37,6 +38,8 @@ SYSCALL_MAP: Dict[int, str] = {
     const.SYS_GETEUID: "SYS_geteuid",
     const.SYS_KILL: "SYS_kill",
     const.SYS_ACCESS: "SYS_access",
+    const.SYS_CHFLAGS: "SYS_chflags",
+    const.SYS_FCHFLAGS: "SYS_fchflags",
     const.SYS_GETPPID: "SYS_getppid",
     const.SYS_PIPE: "SYS_pipe",
     const.SYS_GETEGID: "SYS_getegid",
@@ -44,6 +47,7 @@ SYSCALL_MAP: Dict[int, str] = {
     const.SYS_SIGPROCMASK: "SYS_sigprocmask",
     const.SYS_SIGALTSTACK: "SYS_sigaltstack",
     const.SYS_IOCTL: "SYS_ioctl",
+    const.SYS_SYMLINK: "SYS_symlink",
     const.SYS_READLINK: "SYS_readlink",
     const.SYS_MUNMAP: "SYS_munmap",
     const.SYS_MADVISE: "SYS_madvise",
@@ -60,6 +64,7 @@ SYSCALL_MAP: Dict[int, str] = {
     const.SYS_RENAME: "SYS_rename",
     const.SYS_MKDIR: "SYS_mkdir",
     const.SYS_RMDIR: "SYS_rmdir",
+    const.SYS_ADJTIME: "SYS_adjtime",
     const.SYS_PREAD: "SYS_pread",
     const.SYS_QUOTACTL: "SYS_quotactl",
     const.SYS_CSOPS: "SYS_csops",
@@ -107,8 +112,10 @@ SYSCALL_MAP: Dict[int, str] = {
     const.SYS_FCHMODAT: "SYS_fchmodat",
     const.SYS_FCHOWNAT: "SYS_fchownat",
     const.SYS_FSTATAT64: "SYS_fstatat64",
+    const.SYS_LINKAT: "SYS_linkat",
     const.SYS_UNLINKAT: "SYS_unlinkat",
     const.SYS_READLINKAT: "SYS_readlinkat",
+    const.SYS_SYMLINKAT: "SYS_symlinkat",
     const.SYS_MKDIRAT: "SYS_mkdirat",
     const.SYS_GETENTROPY: "SYS_getentropy",
     const.SYS_ULOCK_WAIT: "SYS_ulock_wait",
@@ -127,6 +134,7 @@ SYSCALL_MAP: Dict[int, str] = {
 }
 
 ERROR_MAP = {
+    SyscallError.EPERM: (const.EPERM, "EPERM"),
     SyscallError.ENOENT: (const.ENOENT, "ENOENT"),
     SyscallError.EBADF: (const.EBADF, "EBADF"),
     SyscallError.EACCES: (const.EACCES, "EACCES"),
@@ -176,6 +184,10 @@ def register_syscall_handler(syscall_no: int):
     return wrapper
 
 
+def permission_denied():
+    raise SystemOperationFailed("No permission", SyscallError.EPERM)
+
+
 @register_syscall_handler(const.SYS_EXIT)
 def handle_sys_exit(emu: Chomper):
     status = emu.get_arg(0)
@@ -222,6 +234,16 @@ def handle_sys_close(emu: Chomper):
     fd = emu.get_arg(0)
 
     emu.os.close(fd)
+
+    return 0
+
+
+@register_syscall_handler(const.SYS_LINK)
+def handle_sys_link(emu: Chomper):
+    src_path = emu.read_string(emu.get_arg(0))
+    dst_path = emu.read_string(emu.get_arg(1))
+
+    emu.os.link(src_path, dst_path)
 
     return 0
 
@@ -286,7 +308,7 @@ def handle_sys_getuid(emu: Chomper):
 
 @register_syscall_handler(const.SYS_GETEUID)
 def handle_sys_geteuid(emu: Chomper):
-    return 1
+    return emu.os.uid
 
 
 @register_syscall_handler(const.SYS_KILL)
@@ -303,6 +325,16 @@ def handle_sys_access(emu: Chomper):
         return -1
 
     return 0
+
+
+@register_syscall_handler(const.SYS_CHFLAGS)
+def handle_sys_chflags(emu: Chomper):
+    permission_denied()
+
+
+@register_syscall_handler(const.SYS_FCHFLAGS)
+def handle_sys_fchflags(emu: Chomper):
+    permission_denied()
 
 
 @register_syscall_handler(const.SYS_GETPPID)
@@ -346,6 +378,16 @@ def handle_sys_ioctl(emu: Chomper):
     )
 
     emu.logger.warning("ioctl request not processed")
+    return 0
+
+
+@register_syscall_handler(const.SYS_SYMLINK)
+def handle_sys_symlink(emu: Chomper):
+    src_path = emu.read_string(emu.get_arg(0))
+    dst_path = emu.read_string(emu.get_arg(1))
+
+    emu.os.symlink(src_path, dst_path)
+
     return 0
 
 
@@ -503,6 +545,11 @@ def handle_sys_rmdir(emu: Chomper):
     return 0
 
 
+@register_syscall_handler(const.SYS_ADJTIME)
+def handle_sys_adjtime(emu: Chomper):
+    permission_denied()
+
+
 @register_syscall_handler(const.SYS_PREAD)
 @register_syscall_handler(const.SYS_PREAD_NOCANCEL)
 def handle_sys_pread(emu: Chomper):
@@ -548,21 +595,22 @@ def handle_sys_setrlimit(emu: Chomper):
 @register_syscall_handler(const.SYS_MMAP)
 def handle_sys_mmap(emu: Chomper):
     length = emu.get_arg(1)
-    fd = emu.get_arg(4)
+    fd = to_signed(emu.get_arg(4), 4)
     offset = emu.get_arg(5)
 
     buf = emu.create_buffer(length)
 
-    chunk_size = 1024 * 1024
-    content = b""
+    if fd != -1:
+        chunk_size = 1024 * 1024
+        content = b""
 
-    while True:
-        chunk = os.read(fd, chunk_size)
-        if not chunk:
-            break
-        content += chunk
+        while True:
+            chunk = os.read(fd, chunk_size)
+            if not chunk:
+                break
+            content += chunk
 
-    emu.write_bytes(buf, content[offset:])
+        emu.write_bytes(buf, content[offset:])
 
     return buf
 
@@ -859,7 +907,7 @@ def handle_sys_getattrlistbulk(emu: Chomper):
 @register_syscall_handler(const.SYS_OPENAT)
 @register_syscall_handler(const.SYS_OPENAT_NOCANCEL)
 def handle_sys_openat(emu: Chomper):
-    dir_fd = emu.get_arg(0)
+    dir_fd = to_signed(emu.get_arg(0), 4)
     path = emu.read_string(emu.get_arg(1))
     flags = emu.get_arg(2)
     mode = emu.get_arg(3)
@@ -867,29 +915,9 @@ def handle_sys_openat(emu: Chomper):
     return emu.os.openat(dir_fd, path, flags, mode)
 
 
-@register_syscall_handler(const.SYS_UNLINKAT)
-def handle_sys_unlinkat(emu: Chomper):
-    dir_fd = emu.get_arg(0)
-    path = emu.read_string(emu.get_arg(1))
-
-    emu.os.unlinkat(dir_fd, path)
-
-    return 0
-
-
-@register_syscall_handler(const.SYS_READLINKAT)
-def handle_sys_readlinkat(emu: Chomper):
-    dir_fd = emu.get_arg(0)
-    path = emu.read_string(emu.get_arg(1))
-
-    emu.os.readlinkat(dir_fd, path)
-
-    return 0
-
-
 @register_syscall_handler(const.SYS_FACCESSAT)
 def handle_sys_faccessat(emu: Chomper):
-    dir_fd = emu.get_arg(0)
+    dir_fd = to_signed(emu.get_arg(0), 4)
     path = emu.read_string(emu.get_arg(1))
     mode = emu.get_arg(2)
 
@@ -901,7 +929,7 @@ def handle_sys_faccessat(emu: Chomper):
 
 @register_syscall_handler(const.SYS_FCHMODAT)
 def handle_sys_fchmodat(emu: Chomper):
-    dir_fd = emu.get_arg(0)
+    dir_fd = to_signed(emu.get_arg(0), 4)
     path = emu.read_string(emu.get_arg(1))
     mode = emu.get_arg(2)
 
@@ -912,7 +940,7 @@ def handle_sys_fchmodat(emu: Chomper):
 
 @register_syscall_handler(const.SYS_FCHOWNAT)
 def handle_sys_fchownat(emu: Chomper):
-    dir_fd = emu.get_arg(0)
+    dir_fd = to_signed(emu.get_arg(0), 4)
     path = emu.read_string(emu.get_arg(1))
     uid = emu.get_arg(2)
     gid = emu.get_arg(3)
@@ -924,7 +952,7 @@ def handle_sys_fchownat(emu: Chomper):
 
 @register_syscall_handler(const.SYS_FSTATAT64)
 def handle_sys_fstatat64(emu: Chomper):
-    dir_fd = emu.get_arg(0)
+    dir_fd = to_signed(emu.get_arg(0), 4)
     path = emu.read_string(emu.get_arg(1))
     stat = emu.get_arg(2)
 
@@ -945,9 +973,53 @@ def handle_sys_renameat(emu: Chomper):
     return 0
 
 
+@register_syscall_handler(const.SYS_LINKAT)
+def handle_sys_linkat(emu: Chomper):
+    src_dir_fd = to_signed(emu.get_arg(0), 4)
+    src_path = emu.read_string(emu.get_arg(1))
+    dst_dir_fd = to_signed(emu.get_arg(2), 4)
+    dst_path = emu.read_string(emu.get_arg(3))
+
+    emu.os.linkat(src_dir_fd, src_path, dst_dir_fd, dst_path)
+
+    return 0
+
+
+@register_syscall_handler(const.SYS_UNLINKAT)
+def handle_sys_unlinkat(emu: Chomper):
+    dir_fd = to_signed(emu.get_arg(0), 4)
+    path = emu.read_string(emu.get_arg(1))
+
+    emu.os.unlinkat(dir_fd, path)
+
+    return 0
+
+
+@register_syscall_handler(const.SYS_READLINKAT)
+def handle_sys_readlinkat(emu: Chomper):
+    dir_fd = to_signed(emu.get_arg(0), 4)
+    path = emu.read_string(emu.get_arg(1))
+
+    emu.os.readlinkat(dir_fd, path)
+
+    return 0
+
+
+@register_syscall_handler(const.SYS_SYMLINKAT)
+def handle_sys_symlinkat(emu: Chomper):
+    src_dir_fd = to_signed(emu.get_arg(0), 4)
+    src_path = emu.read_string(emu.get_arg(1))
+    dst_dir_fd = to_signed(emu.get_arg(2), 4)
+    dst_path = emu.read_string(emu.get_arg(3))
+
+    emu.os.symlinkat(src_dir_fd, src_path, dst_dir_fd, dst_path)
+
+    return 0
+
+
 @register_syscall_handler(const.SYS_MKDIRAT)
 def handle_sys_mkdirat(emu: Chomper):
-    dir_fd = emu.get_arg(0)
+    dir_fd = to_signed(emu.get_arg(0), 4)
     path = emu.read_string(emu.get_arg(1))
     mode = emu.get_arg(2)
 

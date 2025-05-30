@@ -17,8 +17,11 @@ if TYPE_CHECKING:
 SYSCALL_MAP: Dict[int, str] = {
     const.NR_GETCWD: "NR_getcwd",
     const.NR_FCNTL: "NR_fcntl",
+    const.NR_IOCTL: "NR_ioctl",
     const.NR_MKDIRAT: "NR_mkdirat",
     const.NR_UNLINKAT: "NR_unlinkat",
+    const.NR_SYMLINKAT: "NR_symlinkat",
+    const.NR_LINKAT: "NR_linkat",
     const.NR_RENAMEAT: "NR_renameat",
     const.NR_FACCESSAT: "NR_faccessat",
     const.NR_CHDIR: "NR_chdir",
@@ -47,7 +50,10 @@ SYSCALL_MAP: Dict[int, str] = {
     const.NR_CLOCK_GETTIME: "NR_clock_gettime",
     const.NR_CLOCK_GETRES: "NR_clock_getres",
     const.NR_CLOCK_NANOSLEEP: "NR_clock_nanosleep",
+    const.NR_SETRESGID: "NR_setresgid",
+    const.NR_GETPGID: "NR_getpgid",
     const.NR_UNAME: "NR_uname",
+    const.NR_PRCTL: "NR_prctl",
     const.NR_GETTIMEOFDAY: "NR_gettimeofday",
     const.NR_GETPID: "NR_getpid",
     const.NR_GETPPID: "NR_getppid",
@@ -59,6 +65,7 @@ SYSCALL_MAP: Dict[int, str] = {
 }
 
 ERROR_MAP = {
+    SyscallError.EPERM: (const.EPERM, "EPERM"),
     SyscallError.ENOENT: (const.ENOENT, "ENOENT"),
     SyscallError.EBADF: (const.EBADF, "EBADF"),
     SyscallError.EACCES: (const.EACCES, "EACCES"),
@@ -103,6 +110,10 @@ def register_syscall_handler(syscall_no: int):
     return wrapper
 
 
+def permission_denied():
+    raise SystemOperationFailed("No permission", SyscallError.EPERM)
+
+
 @register_syscall_handler(const.NR_GETCWD)
 def handle_nr_getcwd(emu: Chomper):
     buf = emu.get_arg(0)
@@ -129,6 +140,11 @@ def handle_nr_fcntl(emu: Chomper):
     return 0
 
 
+@register_syscall_handler(const.NR_IOCTL)
+def handle_nr_ioctl(emu: Chomper):
+    return ios_syscall.handle_sys_ioctl(emu)
+
+
 @register_syscall_handler(const.NR_MKDIRAT)
 def handle_nr_mkdirat(emu: Chomper):
     return ios_syscall.handle_sys_mkdirat(emu)
@@ -137,6 +153,16 @@ def handle_nr_mkdirat(emu: Chomper):
 @register_syscall_handler(const.NR_UNLINKAT)
 def handle_nr_unlinkat(emu: Chomper):
     return ios_syscall.handle_sys_unlinkat(emu)
+
+
+@register_syscall_handler(const.NR_SYMLINKAT)
+def handle_nr_symlinkat(emu: Chomper):
+    return ios_syscall.handle_sys_symlinkat(emu)
+
+
+@register_syscall_handler(const.NR_LINKAT)
+def handle_nr_linkat(emu: Chomper):
+    return ios_syscall.handle_sys_linkat(emu)
 
 
 @register_syscall_handler(const.NR_RENAMEAT)
@@ -302,6 +328,26 @@ def handle_nr_clock_nanosleep(emu: Chomper):
     return 0
 
 
+@register_syscall_handler(const.NR_SETRESGID)
+def handle_nr_setresgid(emu: Chomper):
+    permission_denied()
+
+
+@register_syscall_handler(const.NR_GETPGID)
+def handle_nr_getpgid(emu: Chomper):
+    pid = emu.get_arg(0)
+
+    if pid != 0:
+        permission_denied()
+
+    return 1
+
+
+@register_syscall_handler(const.NR_PRCTL)
+def handle_nr_prctl(emu: Chomper):
+    return 0
+
+
 @register_syscall_handler(const.NR_GETTIMEOFDAY)
 def handle_nr_gettimeofday(emu: Chomper):
     return ios_syscall.handle_sys_gettimeofday(emu)
@@ -319,6 +365,11 @@ def handle_nr_getppid(emu: Chomper):
 
 @register_syscall_handler(const.NR_GETUID)
 def handle_ur_getuid(emu: Chomper):
+    return emu.os.uid
+
+
+@register_syscall_handler(const.NR_GETEUID)
+def handle_ur_geteuid(emu: Chomper):
     return emu.os.uid
 
 

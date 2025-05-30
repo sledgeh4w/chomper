@@ -238,8 +238,9 @@ def test_getcwd(request, emu_name):
 
     with multi_alloc_mem(emu, size) as (buf,):
         result = call_symbol(emu, "getcwd", buf, size)
-        assert result
-        assert len(emu.read_string(result))
+        result_str = emu.read_string(result)
+
+        assert result_str.startswith("/")
 
 
 @pytest.mark.parametrize("emu_name", ["emu_arm64", "emu_ios"])
@@ -254,6 +255,14 @@ def test_random(request, emu_name):
     emu = request.getfixturevalue(emu_name)
 
     result = call_symbol(emu, "random")
+    assert result >= 0
+
+
+@pytest.mark.parametrize("emu_name", ["emu_arm64", "emu_ios"])
+def test_arc4random(request, emu_name):
+    emu = request.getfixturevalue(emu_name)
+
+    result = call_symbol(emu, "arc4random")
     assert result >= 0
 
 
@@ -461,3 +470,40 @@ def test_getenv(request, emu_name):
 
     with multi_alloc_mem(emu, name) as (v1,):
         call_symbol(emu, "getenv", v1)
+
+
+@pytest.mark.parametrize("emu_name", ["emu_arm64", "emu_ios"])
+def test_link(request, emu_name):
+    emu = request.getfixturevalue(emu_name)
+
+    work_dir = "/usr/lib"
+
+    link_src = "libobjc.A.dylib"
+    link_dst = "libobjc.A.dylib.1"
+    link_dst2 = "libobjc.A.dylib.2"
+
+    with multi_alloc_mem(emu, work_dir, link_src, link_dst, link_dst2) as (
+        work_dir_p,
+        link_src_p,
+        link_dst_p,
+        link_dst2_p,
+    ):
+        call_symbol(emu, "chdir", work_dir_p)
+
+        call_symbol(emu, "link", link_src_p, link_dst_p)
+
+        result = call_symbol(emu, "access", link_dst_p, 0x4)
+        assert result
+
+        call_symbol(
+            emu,
+            "linkat",
+            emu.os.AT_FDCWD,
+            link_src_p,
+            emu.os.AT_FDCWD,
+            link_dst2_p,
+            0,
+        )
+
+        result = call_symbol(emu, "access", link_dst2_p, 0x4)
+        assert result

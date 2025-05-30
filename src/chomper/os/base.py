@@ -9,21 +9,24 @@ import time
 from abc import ABC
 from enum import Enum
 from pathlib import Path
-from typing import Dict, Optional, TYPE_CHECKING
+from typing import Dict, List, Optional, Type, TYPE_CHECKING
 
 from chomper.exceptions import SystemOperationFailed
 from chomper.log import get_logger
-from chomper.utils import log_call, safe_join
+from chomper.utils import log_call, safe_join, to_signed
+
+from .device import DeviceFile, NullDevice, RandomDevice, UrandomDevice
 
 if TYPE_CHECKING:
     from chomper.core import Chomper
 
 
 class SyscallError(Enum):
-    ENOENT = 1
-    EBADF = 2
-    EACCES = 3
-    ENOTDIR = 4
+    EPERM = 1
+    ENOENT = 2
+    EBADF = 3
+    EACCES = 4
+    ENOTDIR = 5
 
 
 class BaseOs(ABC):
@@ -34,7 +37,13 @@ class BaseOs(ABC):
         rootfs_path: As the root directory of the mapping file system.
     """
 
+    DIR_FD_START = 10000
     MAX_OPEN_DIR_NUM = 10000
+
+    DEV_FD_START = 20000
+    MAX_OPEN_DEV_NUM = 10000
+
+    AT_FDCWD: Optional[int] = None
 
     def __init__(self, emu: Chomper, rootfs_path: Optional[str] = None):
         self.emu = emu
@@ -66,6 +75,13 @@ class BaseOs(ABC):
         self.pid = random.randint(10000, 20000)
         self.uid = random.randint(10000, 20000)
 
+        self._devices: Dict[str, Type[DeviceFile]] = {}
+
+        # Virtual device file descriptors
+        self._dev_fds: Dict[int, str] = {}
+
+        self._dev_map: Dict[int, DeviceFile] = {}
+
     def get_working_dir(self) -> str:
         """Get current working directory."""
         return self._working_dir
@@ -83,17 +99,21 @@ class BaseOs(ABC):
 
         self._working_dir = path
 
-    def _resolve_link(self, path: str) -> str:
-        src_list = sorted(
-            self._symbolic_links.keys(),
-            key=lambda t: len(t),
-            reverse=True,
-        )
+    def _resolve_link(self, path: str, src_list: Optional[List[str]] = None) -> str:
+        if src_list is None:
+            src_list = sorted(
+                self._symbolic_links.keys(),
+                key=lambda t: len(t),
+                reverse=True,
+            )
         for src in src_list:
             dst = self._symbolic_links[src]
             if path.startswith(src):
                 path = path.replace(src, dst.rstrip("/"), 1)
-                path = self._resolve_link(path)
+                path = self._resolve_link(
+                    path,
+                    src_list=[t for t in src_list if t != src],
+                )
                 break
         return path
 
@@ -151,7 +171,7 @@ class BaseOs(ABC):
         On Windows, unable to obtain a file descriptor for a directory.
         """
         for index in range(1, self.MAX_OPEN_DIR_NUM + 1):
-            dir_fd = 10000 + index
+            dir_fd = self.DIR_FD_START + index
             if dir_fd not in self._dir_fds:
                 self._dir_fds[dir_fd] = self._get_absolute_path(path)
                 return dir_fd
@@ -166,6 +186,11 @@ class BaseOs(ABC):
     @staticmethod
     def _construct_stat64(st: os.stat_result) -> bytes:
         """Construct stat64 struct based on `stat_result`."""
+        return NotImplemented
+
+    @staticmethod
+    def _construct_dev_stat64() -> bytes:
+        """Construct stat64 struct for device file."""
         return NotImplemented
 
     @staticmethod
@@ -219,9 +244,32 @@ class BaseOs(ABC):
 
     def _resolve_dir_fd(self, dir_fd: int, path: str) -> str:
         """Returns the full path constructed by combining with `dir_fd`."""
-        if dir_fd not in self._dir_fds:
+        if path.startswith("/"):
             return path
-        return posixpath.join(self._dir_fds[dir_fd], path)
+        elif self.AT_FDCWD is not None and dir_fd == to_signed(self.AT_FDCWD, size=4):
+            return posixpath.join(self._working_dir, path)
+        elif dir_fd in self._dir_fds:
+            return posixpath.join(self._dir_fds[dir_fd], path)
+        raise SystemOperationFailed(
+            f"Bad file descriptor: {dir_fd}", SyscallError.EBADF
+        )
+
+    def _gen_dev_fd(self, path: str) -> int:
+        """Generate a virtual device file descriptor."""
+        for index in range(1, self.MAX_OPEN_DEV_NUM + 1):
+            dev_fd = self.DEV_FD_START + index
+            if dev_fd not in self._dev_fds:
+                self._dev_fds[dev_fd] = self._get_absolute_path(path)
+                return dev_fd
+        return 0
+
+    def mount_device(self, path: str, dev_cls: Type[DeviceFile]):
+        """Mount device file to virtual file system."""
+        self._devices[path] = dev_cls
+
+    def unmount_device(self, path: str):
+        """Unmount device file."""
+        del self._devices[path]
 
     @property
     def errno(self) -> int:
@@ -240,9 +288,21 @@ class BaseOs(ABC):
         if os.path.isdir(real_path):
             return self._gen_dir_fd(path)
 
+        if path in self._devices:
+            fd = self._gen_dev_fd(path)
+            self._dev_map[fd] = self._devices[path]()
+            self._fd_path_map[fd] = self._get_absolute_path(path)
+            return fd
+
         fd = os.open(real_path, flags, mode)
         self._fd_path_map[fd] = self._get_absolute_path(path)
         return fd
+
+    def _link(self, src_path: str, dst_path: str):
+        self.set_symbolic_link(src_path, dst_path)
+
+    def _symlink(self, src_path: str, dst_path: str):
+        self.set_symbolic_link(src_path, dst_path)
 
     @staticmethod
     def _unlink(path: str):
@@ -289,12 +349,34 @@ class BaseOs(ABC):
     @log_call
     def read(self, fd: int, size: int) -> bytes:
         self._check_fd(fd)
+
+        if fd in self._dev_fds:
+            device = self._dev_map[fd]
+            if not device.readable():
+                raise SystemOperationFailed("Not support read", SyscallError.EBADF)
+            result = device.read(size)
+            if result is None:
+                return b""
+            return result
+
         return os.read(fd, size)
 
     @log_call
     def write(self, fd: int, buf: int, size: int) -> int:
         self._check_fd(fd)
-        return os.write(fd, self.emu.read_bytes(buf, size))
+
+        data = self.emu.read_bytes(buf, size)
+
+        if fd in self._dev_fds:
+            device = self._dev_map[fd]
+            if not device.writable():
+                raise SystemOperationFailed("Not support write", SyscallError.EBADF)
+            result = device.write(data)
+            if result is None:
+                return 0
+            return result
+
+        return os.write(fd, data)
 
     @log_call
     def open(self, path: str, flags: int, mode: int) -> int:
@@ -310,12 +392,49 @@ class BaseOs(ABC):
         if fd in self._dir_fds:
             del self._dir_fds[fd]
             return 0
+        elif fd in self._dev_fds:
+            del self._dev_fds[fd]
+            del self._dev_map[fd]
+            del self._fd_path_map[fd]
+            return 0
 
         self._check_fd(fd)
 
         del self._fd_path_map[fd]
         os.close(fd)
         return 0
+
+    @log_call
+    def link(self, src_path: str, dst_path: str):
+        if not src_path.startswith("/"):
+            src_path = posixpath.join(self._working_dir, src_path)
+        if not dst_path.startswith("/"):
+            dst_path = posixpath.join(self._working_dir, dst_path)
+
+        self._link(src_path, dst_path)
+
+    @log_call
+    def linkat(self, src_dir_fd: int, src_path: str, dst_dir_fd: int, dst_path: str):
+        src_path = self._resolve_dir_fd(src_dir_fd, src_path)
+        dst_path = self._resolve_dir_fd(dst_dir_fd, dst_path)
+
+        self._link(src_path, dst_path)
+
+    @log_call
+    def symlink(self, src_path: str, dst_path: str):
+        if not src_path.startswith("/"):
+            src_path = posixpath.join(self._working_dir, src_path)
+        if not dst_path.startswith("/"):
+            dst_path = posixpath.join(self._working_dir, dst_path)
+
+        self._symlink(src_path, dst_path)
+
+    @log_call
+    def symlinkat(self, src_dir_fd: int, src_path: str, dst_dir_fd: int, dst_path: str):
+        src_path = self._resolve_dir_fd(src_dir_fd, src_path)
+        dst_path = self._resolve_dir_fd(dst_dir_fd, dst_path)
+
+        self._symlink(src_path, dst_path)
 
     @log_call
     def unlink(self, path: str):
@@ -340,13 +459,20 @@ class BaseOs(ABC):
         return self._readlink(path)
 
     @log_call
-    def readlinkat(self, dir_fd: int, path: str):
+    def readlinkat(self, dir_fd: int, path: str) -> Optional[str]:
         path = self._resolve_dir_fd(dir_fd, path)
         return self._readlink(path)
 
     @log_call
     def lseek(self, fd: int, offset: int, whence: int) -> int:
         self._check_fd(fd)
+
+        if fd in self._dev_fds:
+            device = self._dev_map[fd]
+            if not device.seekable():
+                raise SystemOperationFailed("Not support seek", SyscallError.EBADF)
+            return device.seek(offset, whence)
+
         return os.lseek(fd, offset, whence)
 
     @log_call
@@ -361,6 +487,9 @@ class BaseOs(ABC):
             return self.stat(path)
 
         self._check_fd(fd)
+
+        if fd in self._dev_fds:
+            return self._construct_dev_stat64()
 
         return self._construct_stat64(os.fstat(fd))
 
@@ -505,6 +634,12 @@ class BaseOs(ABC):
         self.emu.write_pointer(buffer + size - self.emu.arch.addr_size, 0)
 
         return buffer
+
+    def _setup_devices(self):
+        """Setup device files."""
+        self.mount_device("/dev/null", NullDevice)
+        self.mount_device("/dev/random", RandomDevice)
+        self.mount_device("/dev/urandom", UrandomDevice)
 
     def initialize(self):
         """Initialize environment."""
