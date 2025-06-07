@@ -363,13 +363,19 @@ def test_ui_device(emu_ios, objc):
 #         assert radio_access_technology
 
 
+def test_ns_log(emu_ios, objc):
+    with objc.autorelease_pool():
+        msg = pyobj2nsobj(emu_ios, "Test NSLog\n")
+        emu_ios.call_symbol("_NSLog", msg)
+
+
 def test_cf_network(emu_ios, objc):
     with objc.autorelease_pool():
         system_proxy_settings = emu_ios.call_symbol("_CFNetworkCopySystemProxySettings")
         assert system_proxy_settings
 
 
-def test_ns_log(emu_ios, objc):
+def test_cf_run_loop(emu_ios, objc):
     with objc.autorelease_pool():
-        msg = pyobj2nsobj(emu_ios, "Test NSLog\n")
-        emu_ios.call_symbol("_NSLog", msg)
+        run_loop = emu_ios.call_symbol("_CFRunLoopGetMain")
+        assert run_loop

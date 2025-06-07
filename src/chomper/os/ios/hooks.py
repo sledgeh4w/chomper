@@ -254,9 +254,7 @@ def hook_dispatch_async(uc: Uc, address: int, size: int, user_data: UserData):
     emu = user_data["emu"]
 
     from_ = emu.debug_symbol(emu.uc.reg_read(emu.arch.reg_lr))
-    emu.logger.warning(
-        f"'dispatch_async' is called from {from_}, " "and it is ignored by default."
-    )
+    emu.logger.warning(f"Emulator ignored a 'dispatch_async' call from {from_}.")
 
     return 0
 
@@ -277,8 +275,7 @@ def hook_dispatch_barrier_async(uc: Uc, address: int, size: int, user_data: User
 
     from_ = emu.debug_symbol(emu.uc.reg_read(emu.arch.reg_lr))
     emu.logger.warning(
-        f"'_dispatch_barrier_async' is called from {from_}, "
-        "and it is ignored by default."
+        f"Emulator ignored a 'dispatch_barrier_async' call from {from_}."
     )
 
     return 0
@@ -369,16 +366,6 @@ def hook_cf_notification_center_add_observer(
 def hook_cf_notification_center_post_notification(
     uc: Uc, address: int, size: int, user_data: UserData
 ):
-    return 0
-
-
-@register_hook("_CFRunLoopGetMain")
-def hook_cf_runloop_get_main(uc: Uc, address: int, size: int, user_data: UserData):
-    return 0
-
-
-@register_hook("_CFRunLoopAddObserver")
-def hook_cf_runloop_add_observer(uc: Uc, address: int, size: int, user_data: UserData):
     return 0
 
 

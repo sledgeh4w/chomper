@@ -13,6 +13,8 @@ from .structs import Timespec
 CTL_TYPE_MAP: Dict[Tuple[int, int], str] = {
     (const.CTL_KERN, const.KERN_OSTYPE): "kern.ostype",
     (const.CTL_KERN, const.KERN_OSRELEASE): "kern.osrelease",
+    (const.CTL_KERN, const.KERN_OSREV): "kern.osrevision",
+    (const.CTL_KERN, const.KERN_VERSION): "kern.version",
     (const.CTL_KERN, const.KERN_MAXVNODES): "kern.maxvnodes",
     (const.CTL_KERN, const.KERN_MAXPROC): "kern.maxproc",
     (const.CTL_KERN, const.KERN_ARGMAX): "kern.argmax",
@@ -45,6 +47,11 @@ CTL_TYPE_MAP: Dict[Tuple[int, int], str] = {
 KERNEL_PARAMETERS: Dict[str, SysctlReturnValue] = {
     "kern.ostype": "Darwin",
     "kern.osrelease": "20.1.0",
+    "kern.osrevision": 199506,
+    "kern.version": (
+        "Darwin Kernel Version 20.1.0: Fri Oct 30 00:34:17 PDT 2020; "
+        "root:xnu-7195.42.3~1/RELEASE_ARM64_T8101"
+    ),
     "kern.maxvnodes": 5700,
     "kern.maxproc": 2000,
     "kern.argmax": "262144",

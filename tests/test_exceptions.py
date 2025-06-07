@@ -7,7 +7,12 @@ from .utils import multi_alloc_mem
 
 from chomper import Chomper
 from chomper.const import ARCH_ARM64
-from chomper.exceptions import EmulatorCrashed, SymbolMissing, ObjCUnrecognizedSelector
+from chomper.exceptions import (
+    EmulatorCrashed,
+    SymbolMissing,
+    ObjCUnrecognizedSelector,
+    ProgramTerminated,
+)
 
 
 def test_unhandled_system_call_exception():
@@ -41,11 +46,22 @@ def test_symbol_missing_exception(emu_ios):
 
 
 def test_objc_unrecognized_selector_exception(emu_ios, objc):
-    with pytest.raises(ObjCUnrecognizedSelector):
+    with pytest.raises(
+        ObjCUnrecognizedSelector,
+        match=r"Unrecognized selector '.*' of class",
+    ):
         with objc.autorelease_pool():
             objc.msg_send("NSString", "undefinedSelector")
 
-    with pytest.raises(ObjCUnrecognizedSelector):
+    with pytest.raises(
+        ObjCUnrecognizedSelector,
+        match=r"Unrecognized selector '.*' of instance",
+    ):
         with objc.autorelease_pool():
             string = objc.msg_send("NSString", "stringWithUTF8String:", "")
             objc.msg_send(string, "undefinedSelector")
+
+
+def test_program_terminated_exception(emu_ios):
+    with pytest.raises(ProgramTerminated):
+        emu_ios.call_symbol("_exit")

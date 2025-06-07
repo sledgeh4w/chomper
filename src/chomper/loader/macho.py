@@ -108,6 +108,13 @@ class MachoLoader(BaseLoader):
                 )
                 symbols.append(symbol_struct)
 
+                if binding_name != symbol_name:
+                    symbol_struct = Symbol(
+                        address=symbol_address,
+                        name=binding_name,
+                    )
+                    symbols.append(symbol_struct)
+
         return symbols
 
     def _get_symbol_reloc_addr(

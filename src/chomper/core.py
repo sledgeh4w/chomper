@@ -2,7 +2,7 @@ import logging
 from functools import wraps
 from typing import Callable, Dict, List, Optional, Sequence, Tuple, Union
 
-from capstone import CS_ARCH_ARM, CS_ARCH_ARM64, CS_MODE_ARM, CS_MODE_THUMB, Cs
+from capstone import CS_ARCH_ARM, CS_MODE_ARM, CS_MODE_THUMB, Cs
 from unicorn import (
     UC_ARCH_ARM,
     UC_ARCH_ARM64,
@@ -28,6 +28,11 @@ from .log import get_logger
 from .os import AndroidOs, ANDROID_SYSCALL_MAP, IosOs, IOS_SYSCALL_MAP
 from .typing import UserData, HookFuncCallable, HookMemCallable
 from .utils import aligned, to_signed
+
+try:
+    from capstone import CS_ARCH_AARCH64
+except ImportError:
+    from capstone import CS_ARCH_ARM64 as CS_ARCH_AARCH64
 
 
 class Chomper:
@@ -141,7 +146,7 @@ class Chomper:
     @staticmethod
     def _create_cs(arch: int, mode: int) -> Cs:
         """Create Capstone instance."""
-        arch = CS_ARCH_ARM if arch == const.ARCH_ARM else CS_ARCH_ARM64
+        arch = CS_ARCH_ARM if arch == const.ARCH_ARM else CS_ARCH_AARCH64
         mode = CS_MODE_THUMB if mode == const.MODE_THUMB else CS_MODE_ARM
 
         return Cs(arch, mode)
@@ -443,7 +448,7 @@ class Chomper:
         if self._trace_inst_callback:
             self._trace_inst_callback(uc, address, size, user_data)
         else:
-            inst = next(self.cs.disasm_lite(uc.mem_read(address, size), 0))
+            inst = next(self.cs.disasm_lite(uc.mem_read(address, size), address))
             self.logger.info(
                 f"Trace at {self.debug_symbol(address)}: {inst[-2]} {inst[-1]}"
             )

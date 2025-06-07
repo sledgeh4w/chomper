@@ -208,7 +208,8 @@ class AndroidOs(BaseOs):
 
         self.emu.load_module(libc_path, exec_init_array=False)
 
-    def _fd_open(self, fd: int, mode: str, unbuffered: bool = False) -> int:
+    def _create_fp(self, fd: int, mode: str, unbuffered: bool = False) -> int:
+        """Wrap file descriptor to file object by calling `fdopen`."""
         mode_p = self.emu.create_string(mode)
 
         try:
@@ -230,13 +231,13 @@ class AndroidOs(BaseOs):
         stderr_p = self.emu.find_symbol("stderr")
 
         if isinstance(self.stdin, int):
-            stdin_fp = self._fd_open(self.stdin, "r")
+            stdin_fp = self._create_fp(self.stdin, "r")
             self.emu.write_pointer(stdin_p.address, stdin_fp)
 
-        stdout_fp = self._fd_open(self.stdout, "w", unbuffered=True)
+        stdout_fp = self._create_fp(self.stdout, "w", unbuffered=True)
         self.emu.write_pointer(stdout_p.address, stdout_fp)
 
-        stderr_fp = self._fd_open(self.stderr, "w", unbuffered=True)
+        stderr_fp = self._create_fp(self.stderr, "w", unbuffered=True)
         self.emu.write_pointer(stderr_p.address, stderr_fp)
 
     def _setup_environ(self):
