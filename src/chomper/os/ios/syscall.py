@@ -124,13 +124,20 @@ SYSCALL_MAP: Dict[int, str] = {
     const.MACH_ABSOLUTE_TIME_TRAP: "MACH_ABSOLUTE_TIME_TRAP",
     const.KERNELRPC_MACH_VM_ALLOCATE_TRAP: "KERNELRPC_MACH_VM_ALLOCATE_TRAP",
     const.KERNELRPC_MACH_VM_DEALLOCATE_TRAP: "KERNELRPC_MACH_VM_DEALLOCATE_TRAP",
+    const.KERNELRPC_MACH_PORT_ALLOCATE_TRAP: "KERNELRPC_MACH_PORT_ALLOCATE_TRAP",
+    const.KERNELRPC_MACH_PORT_INSERT_MEMBER_TRAP: (
+        "KERNELRPC_MACH_PORT_INSERT_MEMBER_TRAP"
+    ),
+    const.KERNELRPC_MACH_VM_PROTECT_TRAP: "KERNELRPC_MACH_VM_PROTECT_TRAP",
     const.KERNELRPC_MACH_VM_MAP_TRAP: "KERNELRPC_MACH_VM_MAP_TRAP",
+    const.KERNELRPC_MACH_PORT_CONSTRUCT_TRAP: "KERNELRPC_MACH_PORT_CONSTRUCT_TRAP",
     const.MACH_REPLY_PORT_TRAP: "MACH_REPLY_PORT_TRAP",
     const.TASK_SELF_TRAP: "TASK_SELF_TRAP",
     const.HOST_SELF_TRAP: "HOST_SELF_TRAP",
     const.MACH_MSG_TRAP: "MACH_MSG_TRAP",
     const.KERNELRPC_MACH_PORT_TYPE_TRAP: "KERNELRPC_MACH_PORT_TYPE_TRAP",
     const.MACH_TIMEBASE_INFO_TRAP: "MACH_TIMEBASE_INFO_TRAP",
+    const.MK_TIMER_CREATE_TRAP: "MK_TIMER_CREATE_TRAP",
 }
 
 ERROR_MAP = {
@@ -766,12 +773,17 @@ def handle_sys_issetugid(emu: Chomper):
 
 @register_syscall_handler(const.SYS_PROC_INFO)
 def handle_sys_proc_info(emu: Chomper):
-    # pid = emu.get_arg(1)
+    pid = emu.get_arg(1)
     flavor = emu.get_arg(2)
     buffer = emu.get_arg(4)
 
-    if flavor == 11:
-        emu.write_string(buffer, getattr(emu.os, "program_path"))
+    if pid != emu.ios_os.pid:
+        permission_denied()
+
+    if flavor == 3:
+        emu.write_string(buffer, emu.ios_os.program_path.split("/")[-1])
+    elif flavor == 11:
+        emu.write_string(buffer, emu.ios_os.program_path)
 
     return 0
 
@@ -861,6 +873,8 @@ def handle_sys_fsstat64(emu: Chomper):
 
 @register_syscall_handler(const.SYS_BSDTHREAD_CREATE)
 def handle_sys_bsdthread_create(emu: Chomper):
+    emu.logger.warning("Emulator ignored a thread create reqeust.")
+    emu.log_backtrace()
     return 0
 
 
@@ -1090,6 +1104,11 @@ def handle_kernelrpc_mach_vm_deallocate_trap(emu: Chomper):
     return 0
 
 
+@register_syscall_handler(const.KERNELRPC_MACH_VM_PROTECT_TRAP)
+def handle_kernelrpc_mach_vm_protect_trap(emu: Chomper):
+    return 0
+
+
 @register_syscall_handler(const.KERNELRPC_MACH_VM_MAP_TRAP)
 def handle_kernelrpc_mach_vm_map_trap(emu: Chomper):
     address = emu.get_arg(1)
@@ -1097,6 +1116,26 @@ def handle_kernelrpc_mach_vm_map_trap(emu: Chomper):
 
     mem = emu.memory_manager.alloc(size)
     emu.write_pointer(address, mem)
+
+    return 0
+
+
+@register_syscall_handler(const.KERNELRPC_MACH_PORT_ALLOCATE_TRAP)
+def handle_kernelrpc_mach_port_allocate_trap(emu: Chomper):
+    return 0
+
+
+@register_syscall_handler(const.KERNELRPC_MACH_PORT_INSERT_MEMBER_TRAP)
+def handle_kernelrpc_mach_port_insert_member_trap(emu: Chomper):
+    return 0
+
+
+@register_syscall_handler(const.KERNELRPC_MACH_PORT_CONSTRUCT_TRAP)
+def handle_kernelrpc_mach_port_construct_trap(emu: Chomper):
+    name = emu.get_arg(3)
+
+    # mach_port_name
+    emu.write_u32(name, 1)
 
     return 0
 
@@ -1153,3 +1192,9 @@ def handle_mach_timebase_info_trap(emu: Chomper):
     emu.write_u32(info + 4, 1)
 
     return 0
+
+
+@register_syscall_handler(const.MK_TIMER_CREATE_TRAP)
+def handle_mk_timer_create_trap(emu: Chomper):
+    # Return mach_port_name
+    return 1
