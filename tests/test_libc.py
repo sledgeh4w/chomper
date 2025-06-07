@@ -266,7 +266,7 @@ def test_arc4random(request, emu_name):
     assert result >= 0
 
 
-@pytest.mark.parametrize("emu_name", ["emu_ios"])
+@pytest.mark.parametrize("emu_name", ["emu_arm64", "emu_ios"])
 def test_localtime_r(request, emu_name):
     emu = request.getfixturevalue(emu_name)
 
