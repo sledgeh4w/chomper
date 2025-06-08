@@ -82,6 +82,7 @@ SYSCALL_MAP: Dict[int, str] = {
     const.SYS_SHM_OPEN: "SYS_shm_open",
     const.SYS_SYSCTLBYNAME: "SYS_sysctlbyname",
     const.SYS_GETTID: "SYS_gettid",
+    const.SYS_IDENTITYSVC: "SYS_identitysvc",
     const.SYS_PSYNCH_MUTEXWAIT: "SYS_psynch_mutexwait",
     const.SYS_ISSETUGID: "SYS_issetugid",
     const.SYS_PROC_INFO: "SYS_proc_info",
@@ -759,6 +760,11 @@ def handle_sys_sysctlbyname(emu: Chomper):
 @register_syscall_handler(const.SYS_GETTID)
 def handle_sys_gettid(emu: Chomper):
     return 1000
+
+
+@register_syscall_handler(const.SYS_IDENTITYSVC)
+def handle_sys_identitysvc(emu: Chomper):
+    permission_denied()
 
 
 @register_syscall_handler(const.SYS_PSYNCH_MUTEXWAIT)

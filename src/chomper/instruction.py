@@ -18,7 +18,7 @@ INST_ARG_PATTERNS = [
 ]
 
 
-class Instruction(ABC):
+class BaseInstruction(ABC):
     """Extend instructions not supported by Unicorn."""
 
     SUPPORTS: Sequence[str]
@@ -66,12 +66,16 @@ class Instruction(ABC):
     def write_reg(self, reg_id: int, value: int):
         self.emu.uc.reg_write(reg_id, value)
 
+    def exec_next(self):
+        next_addr = self.read_reg(self.emu.arch.reg_pc) + 4
+        self.write_reg(self.emu.arch.reg_pc, next_addr)
+
     @abstractmethod
     def execute(self):
         pass
 
 
-class AutomicInstruction(Instruction):
+class AutomicInstruction(BaseInstruction):
     """Extend atomic instructions.
 
     The iOS system libraries will use atomic instructions from ARM v8.1.
@@ -108,18 +112,17 @@ class AutomicInstruction(Instruction):
             result %= 2**self._op_bits
             self.emu.write_int(address, result, self._op_bits // 8)
 
-        next_addr = self.read_reg(self.emu.arch.reg_pc) + 4
-        self.write_reg(self.emu.arch.reg_pc, next_addr)
+        self.exec_next()
 
 
-class PACInstruction(Instruction):
+class PACInstruction(BaseInstruction):
     """Extend PAC instructions.
 
     The iOS system libraries for the arm64e architecture will use PAC
     instructions.
     """
 
-    SUPPORTS = ("braa", "blraaz", "retab")
+    SUPPORTS = ("braa", "blraaz", "retab", "paciza")
 
     def execute(self):
         if self._inst[2] == "braa":
@@ -133,6 +136,8 @@ class PACInstruction(Instruction):
         elif self._inst[2] == "retab":
             ret_addr = self.read_reg(self.emu.arch.reg_lr)
             self.write_reg(self.emu.arch.reg_pc, ret_addr)
+        elif self._inst[2] in ("paciza",):
+            self.exec_next()
 
 
 EXTEND_INSTRUCTIONS = [AutomicInstruction, PACInstruction]

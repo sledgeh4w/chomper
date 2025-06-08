@@ -1,3 +1,17 @@
+## v0.3.5
+
+Released: 2025-06-08
+
+- Compatible with rebasing in the `LC_DYLD_CHAINED_FIXUPS` command.
+- Fix zero-size memory allocation in `os_alloc_once`.
+- Implement dynamic loading of system modules at runtime for `dlopen`.
+- Add support for standard IO (`stdin`, `stdout`, `stderr`).
+- Add `Block` class for easier Objective-C block construction.
+- Add `add_mem_hook` method for exporting unicorn memory hook functionality.
+- Support emulation of device files such as `/dev/null` and `/dev/urandom`.
+- Fix compatibility with `-[NSFileManager directoryContentsAtPath:]`, `-[NSUserDefaults setObject:forKey:]`, `NSLog` and `CFNetworkCopySystemProxySettings`.
+- Compatible with capstone 6.0.0a4.
+
 ## v0.3.4
 
 Released: 2025-03-06
@@ -60,7 +74,7 @@ Released: 2022-11-26
 
 Released: 2022-11-21
 
-- Change ``add_hook`` to return the handle from ``Uc.hook_add`` and add ``del_hook`` method.
+- Change `add_hook` to return the handle from `Uc.hook_add` and add `del_hook` method.
 - Close library files after loaded.
 
 ## v0.1.0
@@ -73,12 +87,12 @@ Released: 2022-09-17
 
 Released: 2022-09-10
 
-- Fix wrong ``end`` argument when calling ``Uc.hook_add``.
-- Add ``user_data`` param to ``add_hook`` to pass params to callback.
-- Support tracing symbol calls by using ``trace_symbol_calls`` param.
-- Improve exception message of ``EmulatorCrashedException`` when missing symbol is required.
-- Add ``logger`` param to ``Infernum``.
-- Add ``free`` method to ``Infernum`` to release allocated memory.
+- Fix wrong `end` argument when calling `Uc.hook_add`.
+- Add `user_data` param to `add_hook` to pass params to callback.
+- Support tracing symbol calls by using `trace_symbol_calls` param.
+- Improve exception message of `EmulatorCrashedException` when missing symbol is required.
+- Add `logger` param to `Infernum`.
+- Add `free` method to `Infernum` to release allocated memory.
 
 ## v0.0.1
 
