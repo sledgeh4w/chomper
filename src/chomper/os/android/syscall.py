@@ -69,6 +69,7 @@ ERROR_MAP = {
     SyscallError.ENOENT: (const.ENOENT, "ENOENT"),
     SyscallError.EBADF: (const.EBADF, "EBADF"),
     SyscallError.EACCES: (const.EACCES, "EACCES"),
+    SyscallError.EEXIST: (const.EEXIST, "EEXIST"),
     SyscallError.ENOTDIR: (const.ENOTDIR, "ENOTDIR"),
 }
 
@@ -93,6 +94,8 @@ def register_syscall_handler(syscall_no: int):
                 retval = f(emu)
             except (FileNotFoundError, PermissionError):
                 error_type = SyscallError.ENOENT
+            except FileExistsError:
+                error_type = SyscallError.EEXIST
             except SystemOperationFailed as e:
                 error_type = e.error_type
 

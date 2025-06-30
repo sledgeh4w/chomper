@@ -112,6 +112,7 @@ class SystemModuleFixup:
             "__objc_protolist",
             "__objc_selrefs",
             "__objc_protorefs",
+            "__objc_arraydata",
             "__la_resolver",
         ]
 
@@ -122,6 +123,11 @@ class SystemModuleFixup:
 
             begin = module_base + section.virtual_address
             end = begin + section.size
+
+            if section_name == "__objc_arraydata":
+                for offset in range(begin, end, 8):
+                    self.add_refs_relocation(offset - module_base)
+                continue
 
             values = self.emu.read_array(begin, end)
 
@@ -336,32 +342,38 @@ class SystemModuleFixup:
 
     def fixup_data_const_segment(self, binary: lief.MachO.Binary):
         """Fixup pointers in the `__DATA_CONST` segment."""
-        section = binary.get_section("__DATA_CONST", "__const")
-        if not section:
-            return
+        data_sections = [
+            binary.get_section("__DATA", "__data"),
+            binary.get_section("__DATA_CONST", "__const"),
+            binary.get_section("__DATA_DIRTY", "__data"),
+            binary.get_section("__TEXT", "__const"),
+        ]
 
-        section_content = bytes(section.content)
-        if not section_content:
-            return
+        data_sections = [t for t in data_sections if t]
 
         text_section = binary.get_section("__TEXT", "__text")
+
         text_begin = text_section.virtual_address
         text_end = text_begin + text_section.size
 
-        const_section = binary.get_section("__TEXT", "__const")
-        const_begin = const_section.virtual_address
-        const_end = const_begin + const_section.size
+        for ref_section in data_sections:
+            section_content = bytes(ref_section.content)
+            if not section_content:
+                return
 
-        for offset in range(0, section.size, 8):
-            address = int.from_bytes(section_content[offset : offset + 8], "little")
-            if (
-                text_begin < address < text_end
-                or const_begin < address < const_end
-                or section.virtual_address
-                < address
-                < section.virtual_address + section.size
-            ):
-                self.add_refs_relocation(address)
+            for offset in range(0, ref_section.size, 1):
+                address = int.from_bytes(section_content[offset : offset + 8], "little")
+
+                for data_section in data_sections:
+                    if (
+                        data_section.virtual_address
+                        < address
+                        < data_section.virtual_address + data_section.size
+                    ):
+                        self.add_refs_relocation(address)
+
+                if offset % 4 == 0 and text_begin < address < text_end:
+                    self.add_refs_relocation(address)
 
     def fixup_stubs_refs(self, binary: lief.MachO.Binary):
         """Fixup references to the `__stubs` section."""

@@ -206,25 +206,28 @@ def hook_dlopen(uc: Uc, address: int, size: int, user_data: UserData):
         return emu.modules[-1].base
 
     path = emu.read_string(emu.get_arg(0))
-    module_name = path.split("/")[-1]
 
-    # Check module loading status
-    for module in emu.modules:
-        if path.endswith(module.name):
-            return module.base
+    module_base = emu.ios_os.load_module_internal(path)
+    if module_base is None:
+        raise EmulatorCrashed(f"doesn't support dlopen: '{path}'")
 
-    # For system modules, attempt to load
-    try:
-        emu.os.search_module_binary(module_name)  # type: ignore
-        emu.os.resolve_modules([module_name])  # type: ignore
+    return module_base
 
-        found_module = emu.find_module(module_name)
-        if found_module:
-            return found_module.base
-    except FileNotFoundError:
-        pass
 
-    raise EmulatorCrashed(f"doesn't support dlopen: '{path}'")
+@register_hook("__sl_dlopen_audited")
+def hook_sl_dlopen_audited(uc: Uc, address: int, size: int, user_data: UserData):
+    emu = user_data["emu"]
+
+    if not emu.get_arg(0):
+        return emu.modules[-1].base
+
+    path = emu.read_string(emu.read_pointer(emu.get_arg(0)))
+
+    module_base = emu.ios_os.load_module_internal(path)
+    if module_base is None:
+        raise EmulatorCrashed(f"doesn't support _sl_dlopen_audited: '{path}'")
+
+    return module_base
 
 
 @register_hook("_dlsym")

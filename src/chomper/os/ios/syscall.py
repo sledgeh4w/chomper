@@ -50,6 +50,7 @@ SYSCALL_MAP: Dict[int, str] = {
     const.SYS_SYMLINK: "SYS_symlink",
     const.SYS_READLINK: "SYS_readlink",
     const.SYS_MUNMAP: "SYS_munmap",
+    const.SYS_MPROTECT: "SYS_mprotect",
     const.SYS_MADVISE: "SYS_madvise",
     const.SYS_FCNTL: "SYS_fcntl",
     const.SYS_FSYNC: "SYS_fsync",
@@ -84,6 +85,7 @@ SYSCALL_MAP: Dict[int, str] = {
     const.SYS_GETTID: "SYS_gettid",
     const.SYS_IDENTITYSVC: "SYS_identitysvc",
     const.SYS_PSYNCH_MUTEXWAIT: "SYS_psynch_mutexwait",
+    const.SYS_PROCESS_POLICY: "SYS_process_policy",
     const.SYS_ISSETUGID: "SYS_issetugid",
     const.SYS_PROC_INFO: "SYS_proc_info",
     const.SYS_STAT64: "SYS_stat64",
@@ -118,12 +120,17 @@ SYSCALL_MAP: Dict[int, str] = {
     const.SYS_READLINKAT: "SYS_readlinkat",
     const.SYS_SYMLINKAT: "SYS_symlinkat",
     const.SYS_MKDIRAT: "SYS_mkdirat",
+    const.SYS_PERSONA: "SYS_persona",
     const.SYS_GETENTROPY: "SYS_getentropy",
     const.SYS_ULOCK_WAIT: "SYS_ulock_wait",
     const.SYS_PREADV: "SYS_preadv",
     const.SYS_PREADV_NOCANCEL: "SYS_preadv_nocancel",
+    const.SYS_GUARDED_OPEN_NP: "SYS_guarded_open_np",
     const.MACH_ABSOLUTE_TIME_TRAP: "MACH_ABSOLUTE_TIME_TRAP",
     const.KERNELRPC_MACH_VM_ALLOCATE_TRAP: "KERNELRPC_MACH_VM_ALLOCATE_TRAP",
+    const.KERNELRPC_MACH_VM_PURGABLE_CONTROL_TRAP: (
+        "KERNELRPC_MACH_VM_PURGABLE_CONTROL_TRAP"
+    ),
     const.KERNELRPC_MACH_VM_DEALLOCATE_TRAP: "KERNELRPC_MACH_VM_DEALLOCATE_TRAP",
     const.KERNELRPC_MACH_PORT_ALLOCATE_TRAP: "KERNELRPC_MACH_PORT_ALLOCATE_TRAP",
     const.KERNELRPC_MACH_PORT_INSERT_MEMBER_TRAP: (
@@ -146,6 +153,7 @@ ERROR_MAP = {
     SyscallError.ENOENT: (const.ENOENT, "ENOENT"),
     SyscallError.EBADF: (const.EBADF, "EBADF"),
     SyscallError.EACCES: (const.EACCES, "EACCES"),
+    SyscallError.EEXIST: (const.EEXIST, "EEXIST"),
     SyscallError.ENOTDIR: (const.ENOTDIR, "ENOTDIR"),
 }
 
@@ -170,6 +178,8 @@ def register_syscall_handler(syscall_no: int):
                 retval = f(emu)
             except (FileNotFoundError, PermissionError):
                 error_type = SyscallError.ENOENT
+            except FileExistsError:
+                error_type = SyscallError.EEXIST
             except SystemOperationFailed as e:
                 error_type = e.error_type
 
@@ -420,6 +430,11 @@ def handle_sys_munmap(emu: Chomper):
 
     emu.free(addr)
 
+    return 0
+
+
+@register_syscall_handler(const.SYS_MPROTECT)
+def handle_sys_mprotect(emu: Chomper):
     return 0
 
 
@@ -772,6 +787,11 @@ def handle_sys_psynch_mutexwait(emu: Chomper):
     return 0
 
 
+@register_syscall_handler(const.SYS_PROCESS_POLICY)
+def handle_sys_process_policy(emu: Chomper):
+    return 0
+
+
 @register_syscall_handler(const.SYS_ISSETUGID)
 def handle_sys_issetugid(emu: Chomper):
     return 0
@@ -905,6 +925,11 @@ def handle_sys_mac_syscall(emu: Chomper):
     else:
         emu.logger.warning(f"Unhandled mac syscall command: {cmd}")
 
+    return 0
+
+
+@register_syscall_handler(const.SYS_PERSONA)
+def handle_sys_persona(emu: Chomper):
     return 0
 
 
@@ -1085,6 +1110,15 @@ def handle_sys_preadv(emu: Chomper):
     return result
 
 
+@register_syscall_handler(const.SYS_GUARDED_OPEN_NP)
+def handle_sys_guarded_open_np(emu: Chomper):
+    path = emu.read_string(emu.get_arg(0))
+    flags = emu.get_arg(3)
+    mode = emu.get_arg(4)
+
+    return emu.os.open(path, flags, mode)
+
+
 @register_syscall_handler(const.MACH_ABSOLUTE_TIME_TRAP)
 def handle_mach_absolute_time_trap(emu: Chomper):
     return int(time.time_ns() % (3600 * 10**9))
@@ -1098,6 +1132,11 @@ def handle_kernelrpc_mach_vm_allocate_trap(emu: Chomper):
     mem = emu.memory_manager.alloc(size)
     emu.write_pointer(address, mem)
 
+    return 0
+
+
+@register_syscall_handler(const.KERNELRPC_MACH_VM_PURGABLE_CONTROL_TRAP)
+def handle_kernelrpc_mach_vm_purgable_control_trap(emu: Chomper):
     return 0
 
 
