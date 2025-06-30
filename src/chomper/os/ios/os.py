@@ -1,6 +1,5 @@
 import ctypes
 import os
-import pickle
 import plistlib
 import sys
 from typing import List, Optional
@@ -324,8 +323,13 @@ class IosOs(BaseOs):
         environ_pointer = self.emu.find_symbol("_environ_pointer")
         self.emu.write_pointer(environ_pointer.address, environ)
 
+        progname = self.emu.create_buffer(8)
+        self.emu.write_pointer(
+            progname, self.emu.create_string(DEFAULT_BUNDLE_EXECUTABLE)
+        )
+
         progname_pointer = self.emu.find_symbol("___progname_pointer")
-        self.emu.write_pointer(progname_pointer.address, self.emu.create_string(""))
+        self.emu.write_pointer(progname_pointer.address, progname)
 
     def _init_dyld_vars(self):
         """Initialize global variables in `libdyld.dylib`."""
@@ -435,6 +439,12 @@ class IosOs(BaseOs):
 
     def search_module_binary(self, module_name: str) -> str:
         """Search system module binary in rootfs directory.
+
+        Args:
+            module_name: The module name.
+
+        Returns:
+            Full file path if module found.
 
         raises:
             FileNotFoundError: If module not found.
@@ -572,14 +582,20 @@ class IosOs(BaseOs):
 
             self._setup_bundle_dir()
 
+            progname_str = self.emu.create_string(self.program_path.split("/")[-1])
+            process_path_str = self.emu.create_string(self.program_path)
+
+            progname = self.emu.create_buffer(8)
+            self.emu.write_pointer(progname, progname_str)
+
+            progname_pointer = self.emu.find_symbol("___progname_pointer")
+            self.emu.write_pointer(progname_pointer.address, progname)
+
             cf_progname = self.emu.find_symbol("___CFprogname")
             cf_process_path = self.emu.find_symbol("___CFProcessPath")
 
-            cf_progname_str = self.emu.create_string(self.program_path.split("/")[-1])
-            cf_process_path_str = self.emu.create_string(self.program_path)
-
-            self.emu.write_pointer(cf_progname.address, cf_progname_str)
-            self.emu.write_pointer(cf_process_path.address, cf_process_path_str)
+            self.emu.write_pointer(cf_progname.address, progname_str)
+            self.emu.write_pointer(cf_process_path.address, process_path_str)
 
         # Set path forwarding to executable and Info.plist
         self.forward_path(
@@ -592,32 +608,31 @@ class IosOs(BaseOs):
         )
 
     def fix_method_signature_rom_table(self):
-        """Fix MethodSignatureROMTable by using pre dumped data file."""
-        if sys.version_info >= (3, 9):
-            import importlib.resources
-
-            data_path = importlib.resources.files(__package__.split(".")[0]) / "res"
-        else:
-            import pkg_resources
-
-            data_path = pkg_resources.resource_filename(
-                __package__.split(".")[0], "res"
-            )
-
-        with open(os.path.join(data_path, "method_signature_rom_table.pkl"), "rb") as f:
-            table_data = pickle.load(f)
-
+        """Fix `MethodSignatureROMTable` of `CoreFoundation`."""
         table = self.emu.find_symbol("_MethodSignatureROMTable")
 
-        for index, item in enumerate(table_data):
-            offset = table.address + index * 24
-            str_ptr = self.emu.create_string(item[1])
+        table_size = 7892
 
-            self.emu.write_pointer(offset + 8, str_ptr)
-            self.emu.write_u64(offset + 16, item[2])
+        objc_module = self.emu.find_module("libobjc.A.dylib")
+        objc_offset = objc_module.base - objc_module.image_base
+
+        for index in range(table_size):
+            offset = table.address + index * 24 + 8
+
+            address = self.emu.read_pointer(offset)
+            self.emu.write_pointer(offset, objc_offset + address)
 
     def _create_fp(self, fd: int, mode: str, unbuffered: bool = False) -> int:
-        """Wrap file descriptor to file object by calling `fdopen`."""
+        """Wrap file descriptor to file object by calling `fdopen`.
+
+        Args:
+            fd: File descriptor.
+            mode: File open mode.
+            unbuffered: If True, set unbuffered flag to the file object.
+
+        Returns:
+            File object pointer.
+        """
         mode_p = self.emu.create_string(mode)
 
         try:
@@ -633,7 +648,10 @@ class IosOs(BaseOs):
             self.emu.free(mode_p)
 
     def _setup_standard_io(self):
-        """Setup standard IO: `stdin`, `stdout`, `stderr`."""
+        """Setup standard IO: `stdin`, `stdout`, `stderr`.
+
+        Convert stdio file descriptors into FILE objects and set to target symbols.
+        """
         stdin_p = self.emu.find_symbol("___stdinp")
         stdout_p = self.emu.find_symbol("___stdoutp")
         stderr_p = self.emu.find_symbol("___stderrp")
@@ -647,6 +665,38 @@ class IosOs(BaseOs):
 
         stderr_fp = self._create_fp(self.stderr, "w", unbuffered=True)
         self.emu.write_pointer(stderr_p.address, stderr_fp)
+
+    def load_module_internal(self, path: str) -> Optional[int]:
+        """Provide full module loading capabilities to `dlopen` and `_sl_dlopen_audited`.
+
+        Presently supports system module loading only.
+
+        Args:
+            path: Module path or just the module name.
+
+        Returns:
+            If the module exists or is loaded successfully, returns the module's base
+            address; otherwise returns `None`.
+        """
+        module_name = path.split("/")[-1]
+
+        # Check module loading status
+        for module in self.emu.modules:
+            if path.endswith(module.name):
+                return module.base
+
+        # For system modules, attempt to load
+        try:
+            self.search_module_binary(module_name)
+            self.resolve_modules([module_name])
+
+            found_module = self.emu.find_module(module_name)
+            if found_module:
+                return found_module.base
+        except FileNotFoundError:
+            pass
+
+        return None
 
     def initialize(self):
         """Initialize environment."""

@@ -26,7 +26,8 @@ class SyscallError(Enum):
     ENOENT = 2
     EBADF = 3
     EACCES = 4
-    ENOTDIR = 5
+    EEXIST = 5
+    ENOTDIR = 6
 
 
 class BaseOs(ABC):
