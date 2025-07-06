@@ -81,26 +81,30 @@ class AutomicInstruction(BaseInstruction):
     The iOS system libraries will use atomic instructions from ARM v8.1.
     """
 
-    SUPPORTS = ("ldxr", "ldadd", "ldset", "swp", "cas")
+    SUPPORTS = ("ldxr", "ldadd", "ldset", "ldclr", "swp", "cas")
 
     def execute(self):
+        inst_str = self._inst[2]
         address = self.read_reg(self._regs[-1])
         value = self.emu.read_int(address, self._op_bits // 8)
 
         result = None
 
-        if self._inst[2].startswith("ldxr"):
+        if inst_str.startswith("ldxr"):
             self.write_reg(self._regs[0], value)
-        elif self._inst[2].startswith("ldadd"):
+        elif inst_str.startswith("ldadd"):
             self.write_reg(self._regs[1], value)
             result = value + self.read_reg(self._regs[0])
-        elif self._inst[2].startswith("ldset"):
+        elif inst_str.startswith("ldset"):
             self.write_reg(self._regs[1], value)
             result = value | self.read_reg(self._regs[0])
-        elif self._inst[2].startswith("swp"):
+        elif inst_str.startswith("ldclr"):
+            self.write_reg(self._regs[1], value)
+            result = value & self.read_reg(self._regs[0])
+        elif inst_str.startswith("swp"):
             self.write_reg(self._regs[1], value)
             result = self.read_reg(self._regs[0])
-        elif self._inst[2].startswith("cas"):
+        elif inst_str.startswith("cas"):
             n = self.read_reg(self._regs[0])
 
             self.write_reg(self._regs[0], value)
@@ -125,18 +129,20 @@ class PACInstruction(BaseInstruction):
     SUPPORTS = ("braa", "blraaz", "retab", "paciza")
 
     def execute(self):
-        if self._inst[2] == "braa":
+        inst_str = self._inst[2]
+
+        if inst_str == "braa":
             call_addr = self.read_reg(self._regs[0])
             self.write_reg(self.emu.arch.reg_pc, call_addr)
-        elif self._inst[2] == "blraaz":
+        elif inst_str == "blraaz":
             call_addr = self.read_reg(self._regs[0])
             ret_addr = self.read_reg(self.emu.arch.reg_pc) + 4
             self.write_reg(self.emu.arch.reg_pc, call_addr)
             self.write_reg(self.emu.arch.reg_lr, ret_addr)
-        elif self._inst[2] == "retab":
+        elif inst_str == "retab":
             ret_addr = self.read_reg(self.emu.arch.reg_lr)
             self.write_reg(self.emu.arch.reg_pc, ret_addr)
-        elif self._inst[2] in ("paciza",):
+        elif inst_str in ("paciza",):
             self.exec_next()
 
 

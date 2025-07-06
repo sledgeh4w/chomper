@@ -126,3 +126,21 @@ class Rusage(ctypes.Structure):
         ("ru_nvcsw", ctypes.c_int64),
         ("ru_nivcsw", ctypes.c_int64),
     ]
+
+
+class SockaddrUn(ctypes.Structure):
+    _fields_ = [
+        ("sun_len", ctypes.c_uint8),
+        ("sun_family", ctypes.c_uint8),
+        ("sun_path", ctypes.c_char * 104),
+    ]
+
+
+class SockaddrIn(ctypes.Structure):
+    _fields_ = [
+        ("sin_len", ctypes.c_uint8),
+        ("sin_family", ctypes.c_uint8),
+        ("sin_port", ctypes.c_uint16),
+        ("sin_addr", ctypes.c_uint32),
+        ("sin_zero", ctypes.c_char * 8),
+    ]

@@ -30,15 +30,15 @@ def download_sample_file(binary_path: str) -> str:
 
     url = "https://sourceforge.net/projects/chomper-emu/files/%s/download" % binary_path
     print(f"Downloading sample file: {url}")
-    urllib.request.urlretrieve(url, path)
 
+    urllib.request.urlretrieve(url, path)
     return filepath
 
 
 def main():
     binary_path = "examples/binaries/ios/com.csair.MBP/CSMBP-AppStore-Package"
 
-    # Download sample file from SourceForge
+    # Download sample file
     download_sample_file(binary_path)
     download_sample_file(f"{binary_path}/../Info.plist")
 
@@ -59,12 +59,13 @@ def main():
         app_key = pyobj2nsobj(emu, "xPEj7uv0KuziQnXUyPIBNUjnDvvHuW09VOYFuLYBcY-jV6fgqmfy5B1y75_iSuRM5U2zNq7MRoR9N1F-UthTEgv-QBWk68gr95BrAySzWuDzt08FrkeBZWQCGyZ0iAybalYLOJEF7nkKBtmDGLewcw==")
         objc.msg_send(ali_tiger_tally_instance, "initialize:", app_key)
 
-        # vmpSign
+        # Get wtoken
         data = pyobj2nsobj(emu, b'{"biClassId":["2","3","4"]}')
-        vmp_sign = objc.msg_send(ali_tiger_tally_instance, "vmpSign:", data)
-        vmp_sign_str = emu.read_string(objc.msg_send(vmp_sign, "cStringUsingEncoding:", 4))
 
-        logger.info("AliTigerTally vmpSign: %s", vmp_sign_str)
+        wtoken = objc.msg_send(ali_tiger_tally_instance, "vmpSign:", data)
+        wtoken_str = emu.read_string(objc.msg_send(wtoken, "cStringUsingEncoding:", 4))
+
+        logger.info("wtoken: %s", wtoken_str)
 
 
 if __name__ == "__main__":

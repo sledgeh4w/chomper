@@ -29,10 +29,14 @@ def hook_ui_device_identifier_for_vendor(uc, address, size, user_data):
 
 
 def on_mem_read(uc, access, address, size, value, user_data):
-    print(f"[READ] {hex(address)} ({size} bytes), value = {hex(value)}")
+    emu = user_data["emu"]
+    emu.logger.info(f"[READ] {hex(address)} ({size} bytes), value = {hex(value)}")
+
 
 def on_mem_write(uc, access, address, size, value, user_data):
-    print(f"[WRITE] {hex(address)} ({size} bytes), value = {hex(value)}")
+    emu = user_data["emu"]
+    emu.logger.info(f"[WRITE] {hex(address)} ({size} bytes), value = {hex(value)}")
+
 
 def main():
     emu = Chomper(
@@ -51,11 +55,11 @@ def main():
 
     # Hook Objetive-C function by symbol name
     emu.add_hook("+[UIDevice currentDevice]", hook_ui_device_current_device)
-    
+
     # Hook Memory Read/Write
-    emu.add_mem_hook(HOOK_MEM_READ,on_mem_read)
-    emu.add_mem_hook(HOOK_MEM_WRITE,on_mem_write)
-    
+    emu.add_mem_hook(HOOK_MEM_READ, on_mem_read)
+    emu.add_mem_hook(HOOK_MEM_WRITE, on_mem_write)
+
     # Hook and intercept
     emu.add_interceptor("-[UIDevice identifierForVendor]", hook_ui_device_identifier_for_vendor)
 

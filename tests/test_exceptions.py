@@ -27,7 +27,7 @@ def test_unhandled_system_call_exception():
 
 def test_missing_symbol_required_exception():
     with pytest.raises(EmulatorCrashed, match=r"Missing symbol.*"):
-        module_path = conftest.download_binary_file(
+        module_path = conftest.download_sample_file(
             binary_path="examples/binaries/android/com.shizhuang.duapp/libszstone.so"
         )
 

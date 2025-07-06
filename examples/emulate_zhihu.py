@@ -30,15 +30,15 @@ def download_sample_file(binary_path: str) -> str:
 
     url = "https://sourceforge.net/projects/chomper-emu/files/%s/download" % binary_path
     print(f"Downloading sample file: {url}")
-    urllib.request.urlretrieve(url, path)
 
+    urllib.request.urlretrieve(url, path)
     return filepath
 
 
 def main():
     binary_path = "examples/binaries/ios/com.zhihu.ios/osee2unifiedRelease"
 
-    # Download sample file from SourceForge
+    # Download sample file
     download_sample_file(binary_path)
     download_sample_file(f"{binary_path}/../Info.plist")
 
@@ -74,23 +74,26 @@ def main():
             signature_version
         )
         result_str = emu.read_string(objc.msg_send(result, "cStringUsingEncoding:", 4))
+
         logger.info("x-zse-96: %s", result_str)
 
-        # ZHRUIDHelper decrypt
+        # +[ZHRUIDHelper decryptWithJson:decryptKey:iv:]
         data = pyobj2nsobj(emu, "0mGSqs8Wu8UdhQQnQiPsmaW/+rjJ0F21dou7hNNHqjk=")
         key = pyobj2nsobj(emu, "19cc5914cb717bb5a4ecd4e2b61b7fbf3013464c6a214141873f40103c0cf1f11b4f5d81b8a527be83bed1d107851161dbc195b0053b263cd363e7adfa0ee030f6c2a211aa78f48d0e224e1d7177581fa4fdcda185d4bd1764243a1ccdb9a9806969193e136e32ad284065876351c510685c0c36600fb0ea5306b844c3a16710c18f7fae7eb4ba865bd57166185da1328f93a63b2747a7927928bb282c6350dcf8b59b587d744c75c71f15a0a308d5d8b37e8a2a")
         iv = pyobj2nsobj(emu, "18df3016faf4869c")
 
         result = objc.msg_send("ZHRUIDHelper", "decryptWithJson:decryptKey:iv:", data, key, iv)
         result_str = emu.read_string(objc.msg_send(result, "cStringUsingEncoding:", 4))
-        logger.info("ZHRUIDHelper decrypt result: %s", result_str)
 
-        # ZHWhiteBoxEncryptTool encrypt
+        logger.info("+[ZHRUIDHelper decryptWithJson:decryptKey:iv:] result: %s", result_str)
+
+        # +[ZHWhiteBoxEncryptTool encryptDataBase64String:]
         data = pyobj2nsobj(emu, b"test")
 
         result = objc.msg_send("ZHWhiteBoxEncryptTool", "encryptDataBase64String:", data)
         result_str = emu.read_string(objc.msg_send(result, "cStringUsingEncoding:", 4))
-        logger.info("ZHWhiteBoxEncryptTool encrypt result: %s", result_str)
+
+        logger.info("+[ZHWhiteBoxEncryptTool encryptDataBase64String:] result: %s", result_str)
 
 
 if __name__ == "__main__":
