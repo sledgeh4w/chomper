@@ -33,14 +33,12 @@ class AndroidOs(BaseOs):
         # Used by `getdents`
         self._dir_read_offset = {}
 
-    @property
-    def errno(self) -> int:
+    def get_errno(self) -> int:
         """Get the value of `errno`."""
         errno_ptr = self.emu.read_pointer(TLS_ADDRESS + 0x10)
         return self.emu.read_s32(errno_ptr)
 
-    @errno.setter
-    def errno(self, value: int):
+    def set_errno(self, value: int):
         """Set the value of `errno`."""
         errno_ptr = self.emu.read_pointer(TLS_ADDRESS + 0x10)
         self.emu.write_s32(errno_ptr, value)

@@ -507,3 +507,11 @@ def test_link(request, emu_name):
 
         result = call_symbol(emu, "access", link_dst2_p, 0x4)
         assert result
+
+
+@pytest.mark.parametrize("emu_name", ["emu_ios"])
+def test_getprogname(request, emu_name):
+    emu = request.getfixturevalue(emu_name)
+
+    result = call_symbol(emu, "getprogname")
+    emu.read_string(result)
