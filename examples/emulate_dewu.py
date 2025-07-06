@@ -30,15 +30,15 @@ def download_sample_file(binary_path: str) -> str:
 
     url = "https://sourceforge.net/projects/chomper-emu/files/%s/download" % binary_path
     print(f"Downloading sample file: {url}")
-    urllib.request.urlretrieve(url, path)
 
+    urllib.request.urlretrieve(url, path)
     return filepath
 
 
 def main():
     binary_path = "examples/binaries/ios/com.siwuai.duapp/5.61.4/DUApp"
 
-    # Download sample file from SourceForge
+    # Download sample file
     download_sample_file(binary_path)
     download_sample_file(f"{binary_path}/../Info.plist")
 

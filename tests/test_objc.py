@@ -183,16 +183,23 @@ def test_ns_url(emu_ios, objc):
         url = objc.msg_send("NSURL", "URLWithString:", url_str)
         assert url
 
-
-def test_ns_request(emu_ios, objc):
-    with objc.autorelease_pool():
-        url_str = objc.msg_send(
-            "NSString", "stringWithUTF8String:", "https://github.com/sledgeh4w/chomper"
-        )
-        url = objc.msg_send("NSURL", "URLWithString:", url_str)
-
-        request = objc.msg_send("NSMutableURLRequest", "requestWithURL:", url)
+        request = objc.msg_send("NSURLRequest", "requestWithURL:", url)
         assert request
+
+        config = objc.msg_send(
+            "NSURLSessionConfiguration", "defaultSessionConfiguration"
+        )
+        assert config
+
+        session = objc.msg_send("NSURLSession", "sessionWithConfiguration:", config)
+        assert session
+
+        task = objc.msg_send(
+            session, "dataTaskWithRequest:completionHandler:", request, 0
+        )
+        assert task
+
+        objc.msg_send(task, "resume")
 
 
 def test_ns_locale(emu_ios, objc):
@@ -303,17 +310,6 @@ def test_ns_write_to_file_atomically(emu_ios, objc):
 
         result = objc.msg_send(string, "writeToFile:atomically:", filename, 1)
         assert result
-
-
-def test_ns_url_session(emu_ios, objc):
-    with objc.autorelease_pool():
-        config = objc.msg_send(
-            "NSURLSessionConfiguration", "defaultSessionConfiguration"
-        )
-        assert config
-
-        session = objc.msg_send("NSURLSession", "sessionWithConfiguration:", config)
-        assert session
 
 
 def test_ns_file_manager(emu_ios, objc):

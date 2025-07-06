@@ -4,7 +4,7 @@ import plistlib
 import sys
 from typing import List, Optional
 
-from chomper.const import STACK_ADDRESS, STACK_SIZE
+from chomper.const import STACK_ADDRESS, STACK_SIZE, TLS_ADDRESS
 from chomper.exceptions import EmulatorCrashed, SystemOperationFailed
 from chomper.loader import MachoLoader, Module
 from chomper.os.base import BaseOs, SyscallError
@@ -123,6 +123,14 @@ class IosOs(BaseOs):
 
     AT_FDCWD = to_unsigned(-2, size=4)
 
+    AF_UNIX = 1
+    AF_INET = 2
+
+    SOCK_STREAM = 1
+
+    IPPROTO_IP = 0
+    IPPROTO_ICMP = 1
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
@@ -140,17 +148,18 @@ class IosOs(BaseOs):
         self.preferences = DEFAULT_PREFERENCES.copy()
         self.device_info = DEFAULT_DEVICE_INFO.copy()
 
-    @property
-    def errno(self) -> int:
+    def get_errno(self) -> int:
         """Get the value of `errno`."""
         errno = self.emu.find_symbol("_errno")
-        return self.emu.read_u32(errno.address)
+        return self.emu.read_s32(errno.address)
 
-    @errno.setter
-    def errno(self, value: int):
+    def set_errno(self, value: int):
         """Set the value of `errno`."""
         errno = self.emu.find_symbol("_errno")
-        self.emu.write_u32(errno.address, value)
+        self.emu.write_s32(errno.address, value)
+
+        errno_ptr = self.emu.read_pointer(TLS_ADDRESS + 0x8)
+        self.emu.write_u32(errno_ptr, value)
 
     @staticmethod
     def _construct_stat64(st: os.stat_result) -> bytes:
@@ -279,6 +288,13 @@ class IosOs(BaseOs):
         """Initialize system call handlers."""
         self.emu.syscall_handlers.update(get_syscall_handlers())
 
+    def _setup_tls(self):
+        """Initialize thread local storage (TLS)."""
+        errno_ptr = self.emu.create_buffer(0x8)
+
+        self.emu.write_pointer(TLS_ADDRESS + 0x8, errno_ptr)
+        self.emu.write_u32(TLS_ADDRESS + 0x18, 5)
+
     def _setup_kernel_mmio(self):
         """Initialize MMIO used by system libraries."""
 
@@ -375,6 +391,11 @@ class IosOs(BaseOs):
 
         main_thread_ptr = self.emu.find_symbol("__main_thread_ptr")
         self.emu.write_pointer(main_thread_ptr.address, main_thread)
+
+        pthread_supported_features = self.emu.find_symbol(
+            "___pthread_supported_features"
+        )
+        self.emu.write_u32(pthread_supported_features.address, 0x50)
 
     def _init_lib_xpc(self):
         """Initialize `libxpc.dylib`."""
@@ -698,10 +719,15 @@ class IosOs(BaseOs):
 
         return None
 
+    def set_current_queue(self, queue: int):
+        self.emu.write_u64(TLS_ADDRESS + 0xA0, queue)
+        self.emu.write_u64(TLS_ADDRESS + 0xA8, 0)
+
     def initialize(self):
         """Initialize environment."""
         self._setup_hooks()
         self._setup_syscall_handlers()
+        self._setup_tls()
         self._setup_devices()
 
         self._setup_kernel_mmio()

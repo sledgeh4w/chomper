@@ -262,16 +262,6 @@ def hook_dispatch_async(uc: Uc, address: int, size: int, user_data: UserData):
     return 0
 
 
-@register_hook("_dispatch_resume")
-def hook_dispatch_resume(uc: Uc, address: int, size: int, user_data: UserData):
-    return 0
-
-
-@register_hook("_dispatch_activate")
-def hook_dispatch_activate(uc: Uc, address: int, size: int, user_data: UserData):
-    return 0
-
-
 @register_hook("_dispatch_barrier_async")
 def hook_dispatch_barrier_async(uc: Uc, address: int, size: int, user_data: UserData):
     emu = user_data["emu"]
@@ -432,13 +422,6 @@ def hook_sec_item_copy_matching(uc: Uc, address: int, size: int, user_data: User
     if a2:
         emu.write_u64(a2, result)
 
-    return 0
-
-
-@register_hook("_nw_path_create_evaluator_for_endpoint")
-def hook_nw_path_create_evaluator_for_endpoint(
-    uc: Uc, address: int, size: int, user_data: UserData
-):
     return 0
 
 

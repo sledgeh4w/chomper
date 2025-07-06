@@ -37,15 +37,15 @@ def download_sample_file(binary_path: str) -> str:
 
     url = "https://sourceforge.net/projects/chomper-emu/files/%s/download" % binary_path
     print(f"Downloading sample file: {url}")
-    urllib.request.urlretrieve(url, path)
 
+    urllib.request.urlretrieve(url, path)
     return filepath
 
 
 def main():
     binary_path = "examples/binaries/ios/com.csair.MBP/CSMBP-AppStore-Package"
 
-    # Download sample file from SourceForge
+    # Download sample file
     download_sample_file(binary_path)
     download_sample_file(f"{binary_path}/../Info.plist")
 
@@ -61,12 +61,13 @@ def main():
         exec_init_array=True,
     )
 
-    # Skip a special check of ijm
+    # Pass a check
     emu.add_interceptor(czair.base + 0x38F0004, hook_retval(1))
 
     with objc.autorelease_pool():
         # Encrypt
         encrypt_input = pyobj2nsobj(emu, '{"biClassId":["2","3","4"]}')
+
         encrypt_result = objc.msg_send("JMBox125", "JMBox167:JMBox501:", encrypt_input, 1)
         encrypt_result_str = emu.read_string(objc.msg_send(encrypt_result, "cStringUsingEncoding:", 4))
 
@@ -74,6 +75,7 @@ def main():
 
         # Decrypt
         decrypt_input = pyobj2nsobj(emu, "XKQYFMCP9Eb0IUzrQ9KaRRvTeFcYYyLcInrS/IWp6be1+VZa14GanCrzeb3DR45HW+XH0xiZLA5WUjUcXnlpM+CC6EtauUDUxCLap3QPWRyewLUosCB/ESHE7341DQca6lx5KFcP0XCkBpGlEKpACR5v7TwNBxc62auNBDvmEY422LTAUEEBrC8FDE+Y4DS2IJTLN6h9f7hdmQ4zUnY4cwyZXwgdIoH+bVuNy6TSw1JjQaFF/fLLHVZOQovrMcjtTpMZGr8xOSoW/+msiZzKwET3")
+
         decrypt_result = objc.msg_send("JMBox125", "JMBox153:JMBox501:", decrypt_input, 1)
         decrypt_result_str = emu.read_string(objc.msg_send(decrypt_result, "cStringUsingEncoding:", 4))
 

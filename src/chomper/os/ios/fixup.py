@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from typing import Dict, Set, TYPE_CHECKING
 
 import lief
@@ -16,7 +18,7 @@ class SystemModuleFixup:
     and they are lost part relocation information, which needs to be fixed.
     """
 
-    def __init__(self, emu: "Chomper"):
+    def __init__(self, emu: Chomper):
         self.emu = emu
 
         # Filter duplicate relocations

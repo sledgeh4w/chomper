@@ -103,7 +103,7 @@ def register_syscall_handler(syscall_no: int):
                 error_no, error_name = ERROR_MAP[error_type]
 
                 emu.logger.info(f"Set errno {error_name}({error_no})")
-                emu.os.errno = error_no
+                emu.os.set_errno(error_no)
 
             return retval
 
