@@ -719,7 +719,13 @@ class IosOs(BaseOs):
 
         return None
 
-    def set_current_queue(self, queue: int):
+    def set_dispatch_queue(self, queue: int):
+        """Set current async dispatch queue.
+
+        Some async callback functions invoke `dispatch_assert_queue$V2`
+        or `dispatch_assert_queue_not$V2` to perform assertion checks on
+        the current dispatch queue.
+        """
         self.emu.write_u64(TLS_ADDRESS + 0xA0, queue)
         self.emu.write_u64(TLS_ADDRESS + 0xA8, 0)
 

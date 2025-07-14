@@ -4,7 +4,7 @@ from typing import Callable, Dict
 from unicorn import Uc
 
 from chomper.os.ios import hooks as ios_hooks
-from chomper.typing import UserData
+from chomper.typing import HookContext
 
 hooks: Dict[str, Callable] = {}
 
@@ -19,7 +19,7 @@ def register_hook(symbol_name: str):
 
     def wrapper(func):
         @wraps(func)
-        def decorator(uc: Uc, address: int, size: int, user_data: UserData):
+        def decorator(uc: Uc, address: int, size: int, user_data: HookContext):
             return func(uc, address, size, user_data)
 
         hooks[symbol_name] = decorator
@@ -29,27 +29,27 @@ def register_hook(symbol_name: str):
 
 
 @register_hook("malloc")
-def hook_malloc(uc: Uc, address: int, size: int, user_data: UserData):
+def hook_malloc(uc: Uc, address: int, size: int, user_data: HookContext):
     return ios_hooks.hook_malloc(uc, address, size, user_data)
 
 
 @register_hook("calloc")
-def hook_calloc(uc: Uc, address: int, size: int, user_data: UserData):
+def hook_calloc(uc: Uc, address: int, size: int, user_data: HookContext):
     return ios_hooks.hook_calloc(uc, address, size, user_data)
 
 
 @register_hook("realloc")
-def hook_realloc(uc: Uc, address: int, size: int, user_data: UserData):
+def hook_realloc(uc: Uc, address: int, size: int, user_data: HookContext):
     return ios_hooks.hook_realloc(uc, address, size, user_data)
 
 
 @register_hook("free")
-def hook_free(uc: Uc, address: int, size: int, user_data: UserData):
+def hook_free(uc: Uc, address: int, size: int, user_data: HookContext):
     return ios_hooks.hook_free(uc, address, size, user_data)
 
 
 @register_hook("memalign")
-def hook_memalign(uc: Uc, address: int, size: int, user_data: UserData):
+def hook_memalign(uc: Uc, address: int, size: int, user_data: HookContext):
     emu = user_data["emu"]
 
     alignment = emu.get_arg(0)
@@ -61,20 +61,20 @@ def hook_memalign(uc: Uc, address: int, size: int, user_data: UserData):
 
 
 @register_hook("posix_memalign")
-def hook_posix_memalign(uc: Uc, address: int, size: int, user_data: UserData):
+def hook_posix_memalign(uc: Uc, address: int, size: int, user_data: HookContext):
     return ios_hooks.hook_posix_memalign(uc, address, size, user_data)
 
 
 @register_hook("pthread_mutex_lock")
-def hook_pthread_mutex_lock(uc: Uc, address: int, size: int, user_data: UserData):
+def hook_pthread_mutex_lock(uc: Uc, address: int, size: int, user_data: HookContext):
     return 0
 
 
 @register_hook("pthread_mutex_unlock")
-def hook_pthread_mutex_unlock(uc: Uc, address: int, size: int, user_data: UserData):
+def hook_pthread_mutex_unlock(uc: Uc, address: int, size: int, user_data: HookContext):
     return 0
 
 
 @register_hook("__ctype_get_mb_cur_max")
-def hook_ctype_get_mb_cur_max(uc: Uc, address: int, size: int, user_data: UserData):
+def hook_ctype_get_mb_cur_max(uc: Uc, address: int, size: int, user_data: HookContext):
     return 1

@@ -17,6 +17,11 @@ def hook_stat(uc, address, size, user_data):
     emu.logger.info("stat called")
 
 
+def hook_stat_return(uc, address, size, user_data):
+    emu = user_data["emu"]
+    emu.logger.info("stat returned")
+
+
 def hook_ui_device_current_device(uc, address, size, user_data):
     emu = user_data["emu"]
     emu.logger.info("+[UIDevice currentDevice] called")
@@ -51,7 +56,7 @@ def main():
 
     # Hook function by address
     stat = emu.find_symbol("_stat")
-    emu.add_hook(stat.address, hook_stat)
+    emu.add_hook(stat.address, hook_stat, return_callback=hook_stat_return)
 
     # Hook Objetive-C function by symbol name
     emu.add_hook("+[UIDevice currentDevice]", hook_ui_device_current_device)
