@@ -26,7 +26,7 @@ from .instruction import EXTEND_INSTRUCTIONS
 from .memory import MemoryManager
 from .log import get_logger
 from .os import AndroidOs, ANDROID_SYSCALL_MAP, IosOs, IOS_SYSCALL_MAP
-from .typing import UserData, HookFuncCallable, HookMemCallable
+from .typing import HookContext, HookFuncCallable, HookMemCallable
 from .utils import aligned, to_signed
 
 try:
@@ -312,8 +312,9 @@ class Chomper:
     def add_hook(
         self,
         symbol_or_addr: Union[int, str],
-        callback: HookFuncCallable,
+        callback: Optional[HookFuncCallable] = None,
         user_data: Optional[dict] = None,
+        return_callback: Optional[HookFuncCallable] = None,
     ) -> int:
         """Add hook to the emulator.
 
@@ -326,10 +327,46 @@ class Chomper:
             user_data: A ``dict`` that contains the data you want to pass to the
                 callback function. The ``Chomper`` instance will also be passed in
                 as an emulator field.
+            return_callback: If a function is hooked, the callback will be triggered
+                upon its return.
 
         Raises:
             SymbolMissingException: If symbol not found.
         """
+        if not callback and not return_callback:
+            raise ValueError("No callback specified")
+
+        def wrapper(uc: Uc, address: int, size: int, user_data_: HookContext):
+            if callback:
+                callback(uc, address, size, user_data_)
+
+            if return_callback:
+                return_addr = self.uc.reg_read(self.arch.reg_lr)
+
+                if self.arch == arm64_arch:
+                    inst_code = 0xD65F03C0  # ret
+                elif self.arch == arm_arch:
+                    inst_code = 0xE12FFF1E  # bx lr
+                else:
+                    raise EmulatorCrashed("Unsupported arch")
+
+                buffer = self.create_buffer(4)
+                self.write_u32(buffer, inst_code)
+
+                self.uc.reg_write(self.arch.reg_lr, buffer)
+
+                self.add_hook(
+                    buffer,
+                    return_wrapper,
+                    user_data={"return_addr": return_addr, **(user_data or {})},
+                )
+
+        def return_wrapper(uc: Uc, address: int, size: int, user_data_: HookContext):
+            assert return_callback
+            return_callback(uc, address, size, user_data_)
+
+            self.uc.reg_write(self.arch.reg_lr, user_data_["return_addr"])
+
         if isinstance(symbol_or_addr, int):
             hook_addr = symbol_or_addr
         else:
@@ -341,7 +378,7 @@ class Chomper:
 
         return self.uc.hook_add(
             UC_HOOK_CODE,
-            callback,
+            wrapper,
             begin=hook_addr,
             end=hook_addr,
             user_data={"emu": self, **(user_data or {})},
@@ -395,7 +432,7 @@ class Chomper:
         """Add interceptor to the emulator."""
 
         @wraps(callback)
-        def decorator(uc: Uc, address: int, size: int, user_data_: UserData):
+        def decorator(uc: Uc, address: int, size: int, user_data_: HookContext):
             emu = user_data_["emu"]
             address = emu.uc.reg_read(emu.arch.reg_pc)
 
@@ -441,7 +478,9 @@ class Chomper:
         else:
             self.logger.info(f'Symbol "{symbol.name}" called')
 
-    def trace_inst_callback(self, uc: Uc, address: int, size: int, user_data: UserData):
+    def trace_inst_callback(
+        self, uc: Uc, address: int, size: int, user_data: HookContext
+    ):
         """Trace instruction."""
         if self._trace_inst_callback:
             self._trace_inst_callback(uc, address, size, user_data)
