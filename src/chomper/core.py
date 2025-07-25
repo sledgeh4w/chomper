@@ -94,6 +94,10 @@ class Chomper:
         self.hooks: Dict[str, Callable] = {}
         self.syscall_handlers: Dict[int, Callable] = {}
 
+        # Improve performance of `find_symbol`
+        self._cached_modules: List[str] = []
+        self._symbol_cache: Dict[str, Symbol] = {}
+
         self.memory_manager = MemoryManager(
             uc=self.uc,
             address=const.HEAP_ADDRESS,
@@ -257,8 +261,16 @@ class Chomper:
         Raises:
             SymbolMissingException: If symbol not found.
         """
+        if symbol_name in self._symbol_cache:
+            return self._symbol_cache[symbol_name]
+
         for module in self.modules:
+            if module.name in self._cached_modules:
+                continue
+
             for symbol in module.symbols:
+                self._symbol_cache[symbol.name] = symbol
+
                 if symbol.name == symbol_name:
                     return symbol
 
@@ -857,11 +869,7 @@ class Chomper:
         if size is None:
             size = self.arch.addr_size
 
-        data = b""
-
-        for value in array:
-            data += value.to_bytes(size, byteorder=self.endian)
-
+        data = b"".join(value.to_bytes(size, self.endian) for value in array)
         self.write_bytes(address, data)
 
     def call_symbol(

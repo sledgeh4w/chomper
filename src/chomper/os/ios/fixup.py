@@ -49,15 +49,17 @@ class SystemModuleFixup:
     def relocate_refs(self, binary: lief.MachO.Binary, module_base: int):
         """Relocate all references."""
         for section in binary.sections:
+            # Reduce iterations to optimize performance
+            if section.name in ("__text",):
+                continue
+
             content = section.content
 
-            value = int.from_bytes(content[:7], "little") << 8
-
-            for pos in range(0, len(content) - 7):
-                value = (value >> 8) + (content[pos + 7] << (7 * 8))
+            for offset in range(0, len(content), 8):
+                value = int.from_bytes(content[offset : offset + 8], "little")
 
                 if value in self._refs_relocations:
-                    address = module_base + section.virtual_address + pos
+                    address = module_base + section.virtual_address + offset
                     self.emu.write_pointer(address, module_base + value)
 
     @staticmethod
@@ -359,12 +361,12 @@ class SystemModuleFixup:
         text_end = text_begin + text_section.size
 
         for ref_section in data_sections:
-            section_content = bytes(ref_section.content)
-            if not section_content:
+            content = bytes(ref_section.content)
+            if not content:
                 return
 
-            for offset in range(0, ref_section.size, 1):
-                address = int.from_bytes(section_content[offset : offset + 8], "little")
+            for offset in range(0, ref_section.size, 8):
+                address = int.from_bytes(content[offset : offset + 8], "little")
 
                 for data_section in data_sections:
                     if (
