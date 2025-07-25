@@ -172,13 +172,11 @@ class AndroidOs(BaseOs):
 
     def _setup_tls(self):
         """Initialize thread local storage (TLS)."""
-        tid = 1000
-
         if self.emu.arch == arm64_arch:
             thread_ptr = self.emu.create_buffer(0x18)
             errno_ptr = self.emu.create_buffer(0x4)
 
-            self.emu.write_u32(thread_ptr + 0x10, tid)
+            self.emu.write_u32(thread_ptr + 0x10, self.tid)
             self.emu.write_u32(thread_ptr + 0x14, self.pid)
 
             self.emu.write_pointer(TLS_ADDRESS + 0x8, thread_ptr)

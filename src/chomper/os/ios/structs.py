@@ -144,3 +144,14 @@ class SockaddrIn(ctypes.Structure):
         ("sin_addr", ctypes.c_uint32),
         ("sin_zero", ctypes.c_char * 8),
     ]
+
+
+class MachMsgHeaderT(ctypes.Structure):
+    _fields_ = [
+        ("msgh_bits", ctypes.c_uint32),
+        ("msgh_size", ctypes.c_uint32),
+        ("msgh_remote_port", ctypes.c_uint32),
+        ("msgh_local_port", ctypes.c_uint32),
+        ("msgh_voucher_port", ctypes.c_uint32),
+        ("msgh_id", ctypes.c_int32),
+    ]
