@@ -1,10 +1,14 @@
+import ctypes
 import inspect
 import os
 from ctypes import addressof, create_string_buffer, sizeof, memmove, Structure
 from functools import wraps
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Optional, Type, TypeVar
 
 from .log import get_logger
+
+
+StructureT = TypeVar("StructureT", bound=ctypes.Structure)
 
 
 def aligned(x: int, n: int) -> int:
@@ -39,6 +43,18 @@ def struct2bytes(st: Structure) -> bytes:
     buffer = create_string_buffer(sizeof(st))
     memmove(buffer, addressof(st), sizeof(st))
     return buffer.raw
+
+
+def bytes2struct(data: bytes, struct_class: Type[StructureT]) -> StructureT:
+    """Create struct from bytes."""
+    instance = struct_class()
+    size = ctypes.sizeof(struct_class)
+
+    if len(data) < size:
+        raise ValueError("Not enough data length")
+
+    ctypes.memmove(ctypes.addressof(instance), data, size)
+    return instance
 
 
 def log_call(f: Callable[..., Any]):

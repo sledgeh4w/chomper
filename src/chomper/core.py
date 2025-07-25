@@ -25,7 +25,7 @@ from .loader import Module, Symbol
 from .instruction import EXTEND_INSTRUCTIONS
 from .memory import MemoryManager
 from .log import get_logger
-from .os import AndroidOs, ANDROID_SYSCALL_MAP, IosOs, IOS_SYSCALL_MAP
+from .os import AndroidOs, android_get_syscall_name, IosOs, ios_get_syscall_name
 from .typing import HookContext, HookFuncCallable, HookMemCallable
 from .utils import aligned, to_signed
 
@@ -286,6 +286,9 @@ class Chomper:
         ]
 
         frame = self.uc.reg_read(self.arch.reg_fp)
+        if not frame:
+            return stack
+
         limit = 32
 
         for _ in range(limit - 1):
@@ -300,7 +303,7 @@ class Chomper:
 
             stack.append(address - 4)
 
-        return [address for address in stack if address]
+        return stack
 
     def log_backtrace(self):
         """Output backtrace log."""
@@ -535,18 +538,10 @@ class Chomper:
 
         if self.os_type == const.OS_IOS:
             syscall_no = to_signed(self.uc.reg_read(arm64_const.UC_ARM64_REG_W16), 4)
-            syscall_name = (
-                f"'{IOS_SYSCALL_MAP[syscall_no]}'"
-                if syscall_no in IOS_SYSCALL_MAP
-                else hex(syscall_no)
-            )
+            syscall_name = ios_get_syscall_name(syscall_no) or hex(syscall_no)
         elif self.os_type == const.OS_ANDROID and self.arch == arm64_arch:
             syscall_no = to_signed(self.uc.reg_read(arm64_const.UC_ARM64_REG_W8), 4)
-            syscall_name = (
-                f"'{ANDROID_SYSCALL_MAP[syscall_no]}'"
-                if syscall_no in ANDROID_SYSCALL_MAP
-                else hex(syscall_no)
-            )
+            syscall_name = android_get_syscall_name(syscall_no) or hex(syscall_no)
 
         if syscall_no and syscall_name:
             from_ = self.debug_symbol(self.uc.reg_read(self.arch.reg_pc))

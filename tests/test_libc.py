@@ -515,3 +515,25 @@ def test_getprogname(request, emu_name):
 
     result = call_symbol(emu, "getprogname")
     emu.read_string(result)
+
+
+@pytest.mark.parametrize("emu_name", ["emu_ios"])
+def test_pthread_mutex(request, emu_name):
+    emu = request.getfixturevalue(emu_name)
+
+    with multi_alloc_mem(emu, 64, 64) as (mutex, lock_attr):
+        result = call_symbol(emu, "pthread_mutexattr_init", lock_attr)
+        assert result == 0
+
+        # PTHREAD_MUTEX_ERRORCHECK=1
+        result = call_symbol(emu, "pthread_mutexattr_settype", lock_attr, 1)
+        assert result == 0
+
+        result = call_symbol(emu, "pthread_mutex_init", mutex, lock_attr)
+        assert result == 0
+
+        result = call_symbol(emu, "pthread_mutex_lock", mutex)
+        assert result == 0
+
+        result = call_symbol(emu, "pthread_mutex_unlock", mutex)
+        assert result == 0

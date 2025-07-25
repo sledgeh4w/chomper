@@ -5,169 +5,24 @@ import os
 import random
 import time
 from functools import wraps
-from typing import Dict, TYPE_CHECKING
+from typing import Dict, Optional, TYPE_CHECKING
 
 from unicorn import arm64_const
 
 from chomper.exceptions import SystemOperationFailed, ProgramTerminated
 from chomper.os.base import SyscallError
 from chomper.typing import SyscallHandleCallable
-from chomper.utils import struct2bytes, to_signed
+from chomper.utils import struct2bytes, bytes2struct, to_signed
 
 from . import const
-from .structs import Rusage
+from .structs import Rusage, MachMsgHeaderT
 from .sysctl import sysctl, sysctlbyname
 
 if TYPE_CHECKING:
     from chomper.core import Chomper
 
-SYSCALL_MAP: Dict[int, str] = {
-    const.SYS_EXIT: "SYS_exit",
-    const.SYS_READ: "SYS_read",
-    const.SYS_WRITE: "SYS_write",
-    const.SYS_OPEN: "SYS_open",
-    const.SYS_CLOSE: "SYS_close",
-    const.SYS_LINK: "SYS_link",
-    const.SYS_UNLINK: "SYS_unlink",
-    const.SYS_CHDIR: "SYS_chdir",
-    const.SYS_FCHDIR: "SYS_fchdir",
-    const.SYS_CHMOD: "SYS_chmod",
-    const.SYS_CHOWN: "SYS_chown",
-    const.SYS_GETPID: "SYS_getpid",
-    const.SYS_GETUID: "SYS_getuid",
-    const.SYS_GETEUID: "SYS_geteuid",
-    const.SYS_SENDMSG: "SYS_sendmsg",
-    const.SYS_RECVFROM: "SYS_recvfrom",
-    const.SYS_ACCESS: "SYS_access",
-    const.SYS_CHFLAGS: "SYS_chflags",
-    const.SYS_FCHFLAGS: "SYS_fchflags",
-    const.SYS_KILL: "SYS_kill",
-    const.SYS_GETPPID: "SYS_getppid",
-    const.SYS_PIPE: "SYS_pipe",
-    const.SYS_GETEGID: "SYS_getegid",
-    const.SYS_SIGACTION: "SYS_sigaction",
-    const.SYS_SIGPROCMASK: "SYS_sigprocmask",
-    const.SYS_SIGALTSTACK: "SYS_sigaltstack",
-    const.SYS_IOCTL: "SYS_ioctl",
-    const.SYS_SYMLINK: "SYS_symlink",
-    const.SYS_READLINK: "SYS_readlink",
-    const.SYS_MUNMAP: "SYS_munmap",
-    const.SYS_MPROTECT: "SYS_mprotect",
-    const.SYS_MADVISE: "SYS_madvise",
-    const.SYS_FCNTL: "SYS_fcntl",
-    const.SYS_FSYNC: "SYS_fsync",
-    const.SYS_SOCKET: "SYS_socket",
-    const.SYS_CONNECT: "SYS_connect",
-    const.SYS_SETSOCKOPT: "SYS_setsockopt",
-    const.SYS_SIGSUSPEND: "SYS_sigsuspend",
-    const.SYS_GETTIMEOFDAY: "SYS_gettimeofday",
-    const.SYS_GETRUSAGE: "SYS_getrusage",
-    const.SYS_GETSOCKOPT: "SYS_getsockopt",
-    const.SYS_READV: "SYS_readv",
-    const.SYS_WRITEV: "SYS_writev",
-    const.SYS_FCHOWN: "SYS_fchown",
-    const.SYS_FCHMOD: "SYS_fchmod",
-    const.SYS_RENAME: "SYS_rename",
-    const.SYS_SENDTO: "SYS_sendto",
-    const.SYS_SOCKETPAIR: "SYS_socketpair",
-    const.SYS_MKDIR: "SYS_mkdir",
-    const.SYS_RMDIR: "SYS_rmdir",
-    const.SYS_ADJTIME: "SYS_adjtime",
-    const.SYS_PREAD: "SYS_pread",
-    const.SYS_PWRITE: "SYS_pwrite",
-    const.SYS_QUOTACTL: "SYS_quotactl",
-    const.SYS_CSOPS: "SYS_csops",
-    const.SYS_CSOPS_AUDITTOKEN: "SYS_csops_audittoken",
-    const.SYS_RLIMIT: "SYS_rlimit",
-    const.SYS_SETRLIMIT: "SYS_setrlimit",
-    const.SYS_MMAP: "SYS_mmap",
-    const.SYS_LSEEK: "SYS_lseek",
-    const.SYS_SYSCTL: "SYS_sysctl",
-    const.SYS_OPEN_DPROTECTED_NP: "SYS_open_dprotected_np",
-    const.SYS_GETATTRLIST: "SYS_getattrlist",
-    const.SYS_SETXATTR: "SYS_setxattr",
-    const.SYS_FSETXATTR: "SYS_fsetxattr",
-    const.SYS_LISTXATTR: "SYS_listxattr",
-    const.SYS_SHM_OPEN: "SYS_shm_open",
-    const.SYS_SYSCTLBYNAME: "SYS_sysctlbyname",
-    const.SYS_GETTID: "SYS_gettid",
-    const.SYS_IDENTITYSVC: "SYS_identitysvc",
-    const.SYS_PSYNCH_MUTEXWAIT: "SYS_psynch_mutexwait",
-    const.SYS_PROCESS_POLICY: "SYS_process_policy",
-    const.SYS_ISSETUGID: "SYS_issetugid",
-    const.SYS_PROC_INFO: "SYS_proc_info",
-    const.SYS_STAT64: "SYS_stat64",
-    const.SYS_FSTAT64: "SYS_fstat64",
-    const.SYS_LSTAT64: "SYS_lstat64",
-    const.SYS_GETDIRENTRIES64: "SYS_getdirentries64",
-    const.SYS_STATFS64: "SYS_statfs64",
-    const.SYS_FSTATFS64: "SYS_fstatfs64",
-    const.SYS_FSSTAT64: "SYS_fsstat64",
-    const.SYS_BSDTHREAD_CREATE: "SYS_bsdthread_create",
-    const.SYS_LCHOWN: "SYS_lchown",
-    const.SYS_WORKQ_OPEN: "SYS_workq_open",
-    const.SYS_WORKQ_KERNRETURN: "SYS_workq_kernreturn",
-    const.SYS_KEVENT_QOS: "SYS_kevent_qos",
-    const.SYS_MAC_SYSCALL: "SYS_mac_syscall",
-    const.SYS_READ_NOCANCEL: "SYS_read_nocancel",
-    const.SYS_WRITE_NOCANCEL: "SYS_write_nocancel",
-    const.SYS_OPEN_NOCANCEL: "SYS_open_nocancel",
-    const.SYS_CLOSE_NOCANCEL: "SYS_close_nocancel",
-    const.SYS_SENDMSG_NOCANCEL: "SYS_sendmsg_nocancel",
-    const.SYS_RECVFROM_NOCANCEL: "SYS_recvfrom_nocancel",
-    const.SYS_FCNTL_NOCANCEL: "SYS_fcntl_nocancel",
-    const.SYS_FSYNC_NOCANCEL: "SYS_fsync_nocancel",
-    const.SYS_CONNECT_NOCANCEL: "SYS_connect_nocancel",
-    const.SYS_READV_NOCANCEL: "SYS_readv_nocancel",
-    const.SYS_WRITEV_NOCANCEL: "SYS_writev_nocancel",
-    const.SYS_SENDTO_NOCANCEL: "SYS_sendto_nocancel",
-    const.SYS_PREAD_NOCANCEL: "SYS_pread_nocancel",
-    const.SYS_PWRITE_NOCANCEL: "SYS_pwrite_nocancel",
-    const.SYS_GUARDED_OPEN_NP: "SYS_guarded_open_np",
-    const.SYS_GUARDED_CLOSE_NP: "SYS_guarded_close_np",
-    const.SYS_GETATTRLISTBULK: "SYS_getattrlistbulk",
-    const.SYS_OPENAT: "SYS_openat",
-    const.SYS_OPENAT_NOCANCEL: "SYS_openat_nocancel",
-    const.SYS_RENAMEAT: "SYS_renameat",
-    const.SYS_FACCESSAT: "SYS_faccessat",
-    const.SYS_FCHMODAT: "SYS_fchmodat",
-    const.SYS_FCHOWNAT: "SYS_fchownat",
-    const.SYS_FSTATAT64: "SYS_fstatat64",
-    const.SYS_LINKAT: "SYS_linkat",
-    const.SYS_UNLINKAT: "SYS_unlinkat",
-    const.SYS_READLINKAT: "SYS_readlinkat",
-    const.SYS_SYMLINKAT: "SYS_symlinkat",
-    const.SYS_MKDIRAT: "SYS_mkdirat",
-    const.SYS_GUARDED_PWRITE_NP: "SYS_guarded_pwrite_np",
-    const.SYS_PERSONA: "SYS_persona",
-    const.SYS_GETENTROPY: "SYS_getentropy",
-    const.SYS_NECP_OPEN: "SYS_necp_open",
-    const.SYS_ULOCK_WAIT: "SYS_ulock_wait",
-    const.SYS_PREADV: "SYS_preadv",
-    const.SYS_PREADV_NOCANCEL: "SYS_preadv_nocancel",
-    const.MACH_ABSOLUTE_TIME_TRAP: "MACH_ABSOLUTE_TIME_TRAP",
-    const.KERNELRPC_MACH_VM_ALLOCATE_TRAP: "KERNELRPC_MACH_VM_ALLOCATE_TRAP",
-    const.KERNELRPC_MACH_VM_PURGABLE_CONTROL_TRAP: (
-        "KERNELRPC_MACH_VM_PURGABLE_CONTROL_TRAP"
-    ),
-    const.KERNELRPC_MACH_VM_DEALLOCATE_TRAP: "KERNELRPC_MACH_VM_DEALLOCATE_TRAP",
-    const.KERNELRPC_MACH_PORT_ALLOCATE_TRAP: "KERNELRPC_MACH_PORT_ALLOCATE_TRAP",
-    const.KERNELRPC_MACH_PORT_INSERT_MEMBER_TRAP: (
-        "KERNELRPC_MACH_PORT_INSERT_MEMBER_TRAP"
-    ),
-    const.KERNELRPC_MACH_VM_PROTECT_TRAP: "KERNELRPC_MACH_VM_PROTECT_TRAP",
-    const.KERNELRPC_MACH_VM_MAP_TRAP: "KERNELRPC_MACH_VM_MAP_TRAP",
-    const.KERNELRPC_MACH_PORT_CONSTRUCT_TRAP: "KERNELRPC_MACH_PORT_CONSTRUCT_TRAP",
-    const.MACH_REPLY_PORT_TRAP: "MACH_REPLY_PORT_TRAP",
-    const.TASK_SELF_TRAP: "TASK_SELF_TRAP",
-    const.HOST_SELF_TRAP: "HOST_SELF_TRAP",
-    const.MACH_MSG_TRAP: "MACH_MSG_TRAP",
-    const.KERNELRPC_MACH_PORT_TYPE_TRAP: "KERNELRPC_MACH_PORT_TYPE_TRAP",
-    const.MACH_TIMEBASE_INFO_TRAP: "MACH_TIMEBASE_INFO_TRAP",
-    const.MK_TIMER_CREATE_TRAP: "MK_TIMER_CREATE_TRAP",
-}
 
-ERROR_MAP = {
+SYSCALL_ERRORS = {
     SyscallError.EPERM: (const.EPERM, "EPERM"),
     SyscallError.ENOENT: (const.ENOENT, "ENOENT"),
     SyscallError.EBADF: (const.EBADF, "EBADF"),
@@ -177,6 +32,7 @@ ERROR_MAP = {
 }
 
 syscall_handlers: Dict[int, SyscallHandleCallable] = {}
+syscall_names: Dict[int, str] = {}
 
 
 def get_syscall_handlers() -> Dict[int, SyscallHandleCallable]:
@@ -184,7 +40,12 @@ def get_syscall_handlers() -> Dict[int, SyscallHandleCallable]:
     return syscall_handlers.copy()
 
 
-def register_syscall_handler(syscall_no: int):
+def get_syscall_name(syscall_no: int) -> Optional[str]:
+    """Get name of the system call."""
+    return syscall_names.get(syscall_no)
+
+
+def register_syscall_handler(syscall_no: int, syscall_name: Optional[str] = None):
     """Decorator to register a system call handler."""
 
     def wrapper(f):
@@ -202,8 +63,8 @@ def register_syscall_handler(syscall_no: int):
             except SystemOperationFailed as e:
                 error_type = e.error_type
 
-            if error_type in ERROR_MAP:
-                error_no, error_name = ERROR_MAP[error_type]
+            if error_type in SYSCALL_ERRORS:
+                error_no, error_name = SYSCALL_ERRORS[error_type]
 
                 emu.logger.info(f"Set errno {error_name}({error_no})")
                 emu.os.set_errno(error_no)
@@ -216,6 +77,10 @@ def register_syscall_handler(syscall_no: int):
             return retval
 
         syscall_handlers[syscall_no] = decorator
+
+        if syscall_name:
+            syscall_names[syscall_no] = syscall_name
+
         return f
 
     return wrapper
@@ -225,15 +90,15 @@ def permission_denied():
     raise SystemOperationFailed("No permission", SyscallError.EPERM)
 
 
-@register_syscall_handler(const.SYS_EXIT)
+@register_syscall_handler(const.SYS_EXIT, "SYS_exit")
 def handle_sys_exit(emu: Chomper):
     status = emu.get_arg(0)
 
     raise ProgramTerminated("Program terminated with status: %s" % status)
 
 
-@register_syscall_handler(const.SYS_READ)
-@register_syscall_handler(const.SYS_READ_NOCANCEL)
+@register_syscall_handler(const.SYS_READ, "SYS_read")
+@register_syscall_handler(const.SYS_READ_NOCANCEL, "SYS_read_nocancel")
 def handle_sys_read(emu: Chomper):
     fd = emu.get_arg(0)
     buf = emu.get_arg(1)
@@ -245,8 +110,8 @@ def handle_sys_read(emu: Chomper):
     return len(data)
 
 
-@register_syscall_handler(const.SYS_WRITE)
-@register_syscall_handler(const.SYS_WRITE_NOCANCEL)
+@register_syscall_handler(const.SYS_WRITE, "SYS_write")
+@register_syscall_handler(const.SYS_WRITE_NOCANCEL, "SYS_write_nocancel")
 def handle_sys_write(emu: Chomper):
     fd = emu.get_arg(0)
     buf = emu.get_arg(1)
@@ -255,8 +120,8 @@ def handle_sys_write(emu: Chomper):
     return emu.os.write(fd, buf, size)
 
 
-@register_syscall_handler(const.SYS_OPEN)
-@register_syscall_handler(const.SYS_OPEN_NOCANCEL)
+@register_syscall_handler(const.SYS_OPEN, "SYS_open")
+@register_syscall_handler(const.SYS_OPEN_NOCANCEL, "SYS_open_nocancel")
 def handle_sys_open(emu: Chomper):
     path = emu.read_string(emu.get_arg(0))
     flags = emu.get_arg(1)
@@ -265,8 +130,8 @@ def handle_sys_open(emu: Chomper):
     return emu.os.open(path, flags, mode)
 
 
-@register_syscall_handler(const.SYS_CLOSE)
-@register_syscall_handler(const.SYS_CLOSE_NOCANCEL)
+@register_syscall_handler(const.SYS_CLOSE, "SYS_close")
+@register_syscall_handler(const.SYS_CLOSE_NOCANCEL, "SYS_close_nocancel")
 def handle_sys_close(emu: Chomper):
     fd = emu.get_arg(0)
 
@@ -275,7 +140,7 @@ def handle_sys_close(emu: Chomper):
     return 0
 
 
-@register_syscall_handler(const.SYS_LINK)
+@register_syscall_handler(const.SYS_LINK, "SYS_link")
 def handle_sys_link(emu: Chomper):
     src_path = emu.read_string(emu.get_arg(0))
     dst_path = emu.read_string(emu.get_arg(1))
@@ -285,7 +150,7 @@ def handle_sys_link(emu: Chomper):
     return 0
 
 
-@register_syscall_handler(const.SYS_UNLINK)
+@register_syscall_handler(const.SYS_UNLINK, "SYS_unlink")
 def handle_sys_unlink(emu: Chomper):
     path = emu.read_string(emu.get_arg(0))
 
@@ -294,7 +159,7 @@ def handle_sys_unlink(emu: Chomper):
     return 0
 
 
-@register_syscall_handler(const.SYS_CHDIR)
+@register_syscall_handler(const.SYS_CHDIR, "SYS_chdir")
 def handle_sys_chdir(emu: Chomper):
     path = emu.read_string(emu.get_arg(0))
 
@@ -303,7 +168,7 @@ def handle_sys_chdir(emu: Chomper):
     return 0
 
 
-@register_syscall_handler(const.SYS_FCHDIR)
+@register_syscall_handler(const.SYS_FCHDIR, "SYS_fchdir")
 def handle_sys_fchdir(emu: Chomper):
     fd = emu.get_arg(0)
 
@@ -312,7 +177,7 @@ def handle_sys_fchdir(emu: Chomper):
     return 0
 
 
-@register_syscall_handler(const.SYS_CHMOD)
+@register_syscall_handler(const.SYS_CHMOD, "SYS_chmod")
 def handle_sys_chmod(emu: Chomper):
     path = emu.read_string(emu.get_arg(0))
     mode = emu.get_arg(1)
@@ -322,7 +187,7 @@ def handle_sys_chmod(emu: Chomper):
     return 0
 
 
-@register_syscall_handler(const.SYS_CHOWN)
+@register_syscall_handler(const.SYS_CHOWN, "SYS_chown")
 def handle_sys_chown(emu: Chomper):
     path = emu.read_string(emu.get_arg(0))
     uid = emu.get_arg(1)
@@ -333,23 +198,23 @@ def handle_sys_chown(emu: Chomper):
     return 0
 
 
-@register_syscall_handler(const.SYS_GETPID)
+@register_syscall_handler(const.SYS_GETPID, "SYS_getpid")
 def handle_sys_getpid(emu: Chomper):
     return emu.os.pid
 
 
-@register_syscall_handler(const.SYS_GETUID)
+@register_syscall_handler(const.SYS_GETUID, "SYS_getuid")
 def handle_sys_getuid(emu: Chomper):
     return emu.os.uid
 
 
-@register_syscall_handler(const.SYS_GETEUID)
+@register_syscall_handler(const.SYS_GETEUID, "SYS_geteuid")
 def handle_sys_geteuid(emu: Chomper):
     return emu.os.uid
 
 
-@register_syscall_handler(const.SYS_SENDMSG)
-@register_syscall_handler(const.SYS_SENDMSG_NOCANCEL)
+@register_syscall_handler(const.SYS_SENDMSG, "SYS_sendmsg")
+@register_syscall_handler(const.SYS_SENDMSG_NOCANCEL, "SYS_sendmsg_nocancel")
 def handle_sys_sendmsg(emu: Chomper):
     sock = emu.get_arg(0)
     buffer = emu.get_arg(1)
@@ -358,8 +223,8 @@ def handle_sys_sendmsg(emu: Chomper):
     return emu.os.sendmsg(sock, buffer, flags)
 
 
-@register_syscall_handler(const.SYS_RECVFROM)
-@register_syscall_handler(const.SYS_RECVFROM_NOCANCEL)
+@register_syscall_handler(const.SYS_RECVFROM, "SYS_recvfrom")
+@register_syscall_handler(const.SYS_RECVFROM_NOCANCEL, "SYS_recvfrom_nocancel")
 def handle_sys_recvfrom(emu: Chomper):
     sock = emu.get_arg(0)
     buffer = emu.get_arg(1)
@@ -371,12 +236,12 @@ def handle_sys_recvfrom(emu: Chomper):
     return emu.os.recvfrom(sock, buffer, length, flags, address, address_len)
 
 
-@register_syscall_handler(const.SYS_KILL)
+@register_syscall_handler(const.SYS_KILL, "SYS_kill")
 def handle_sys_kill(emu: Chomper):
     return -1
 
 
-@register_syscall_handler(const.SYS_ACCESS)
+@register_syscall_handler(const.SYS_ACCESS, "SYS_access")
 def handle_sys_access(emu: Chomper):
     path = emu.read_string(emu.get_arg(0))
     mode = emu.get_arg(1)
@@ -387,42 +252,46 @@ def handle_sys_access(emu: Chomper):
     return 0
 
 
-@register_syscall_handler(const.SYS_CHFLAGS)
+@register_syscall_handler(const.SYS_CHFLAGS, "SYS_chflags")
 def handle_sys_chflags(emu: Chomper):
     permission_denied()
 
+    return 0
 
-@register_syscall_handler(const.SYS_FCHFLAGS)
+
+@register_syscall_handler(const.SYS_FCHFLAGS, "SYS_fchflags")
 def handle_sys_fchflags(emu: Chomper):
     permission_denied()
 
+    return 0
 
-@register_syscall_handler(const.SYS_GETPPID)
+
+@register_syscall_handler(const.SYS_GETPPID, "SYS_getppid")
 def handle_sys_getppid(emu: Chomper):
     return 1
 
 
-@register_syscall_handler(const.SYS_PIPE)
+@register_syscall_handler(const.SYS_PIPE, "SYS_pipe")
 def handle_sys_pipe(emu: Chomper):
     return -1
 
 
-@register_syscall_handler(const.SYS_SIGACTION)
+@register_syscall_handler(const.SYS_SIGACTION, "SYS_sigaction")
 def handle_sys_sigaction(emu: Chomper):
     return 0
 
 
-@register_syscall_handler(const.SYS_SIGPROCMASK)
+@register_syscall_handler(const.SYS_SIGPROCMASK, "SYS_sigprocmask")
 def handle_sys_sigprocmask(emu: Chomper):
     return 0
 
 
-@register_syscall_handler(const.SYS_SIGALTSTACK)
+@register_syscall_handler(const.SYS_SIGALTSTACK, "SYS_sigaltstack")
 def handle_sys_sigaltstack(emu: Chomper):
     return 0
 
 
-@register_syscall_handler(const.SYS_IOCTL)
+@register_syscall_handler(const.SYS_IOCTL, "SYS_ioctl")
 def handle_sys_ioctl(emu: Chomper):
     fd = emu.get_arg(0)
     req = emu.get_arg(1)
@@ -441,7 +310,7 @@ def handle_sys_ioctl(emu: Chomper):
     return 0
 
 
-@register_syscall_handler(const.SYS_SYMLINK)
+@register_syscall_handler(const.SYS_SYMLINK, "SYS_symlink")
 def handle_sys_symlink(emu: Chomper):
     src_path = emu.read_string(emu.get_arg(0))
     dst_path = emu.read_string(emu.get_arg(1))
@@ -451,7 +320,7 @@ def handle_sys_symlink(emu: Chomper):
     return 0
 
 
-@register_syscall_handler(const.SYS_READLINK)
+@register_syscall_handler(const.SYS_READLINK, "SYS_readlink")
 def handle_sys_readlink(emu: Chomper):
     path = emu.read_string(emu.get_arg(0))
     buf = emu.get_arg(1)
@@ -466,7 +335,7 @@ def handle_sys_readlink(emu: Chomper):
     return 0
 
 
-@register_syscall_handler(const.SYS_MUNMAP)
+@register_syscall_handler(const.SYS_MUNMAP, "SYS_munmap")
 def handle_sys_munmap(emu: Chomper):
     addr = emu.get_arg(0)
 
@@ -475,22 +344,22 @@ def handle_sys_munmap(emu: Chomper):
     return 0
 
 
-@register_syscall_handler(const.SYS_MPROTECT)
+@register_syscall_handler(const.SYS_MPROTECT, "SYS_mprotect")
 def handle_sys_mprotect(emu: Chomper):
     return 0
 
 
-@register_syscall_handler(const.SYS_MADVISE)
+@register_syscall_handler(const.SYS_MADVISE, "SYS_madvise")
 def handle_sys_madvise(emu: Chomper):
     return 0
 
 
-@register_syscall_handler(const.SYS_GETEGID)
+@register_syscall_handler(const.SYS_GETEGID, "SYS_getegid")
 def handle_sys_getegid(emu: Chomper):
     return 1
 
 
-@register_syscall_handler(const.SYS_GETTIMEOFDAY)
+@register_syscall_handler(const.SYS_GETTIMEOFDAY, "SYS_gettimeofday")
 def handle_sys_gettimeofday(emu: Chomper):
     tv = emu.get_arg(0)
 
@@ -500,7 +369,7 @@ def handle_sys_gettimeofday(emu: Chomper):
     return 0
 
 
-@register_syscall_handler(const.SYS_GETRUSAGE)
+@register_syscall_handler(const.SYS_GETRUSAGE, "SYS_getrusage")
 def handle_sys_getrusage(emu: Chomper):
     r = emu.get_arg(1)
 
@@ -510,8 +379,8 @@ def handle_sys_getrusage(emu: Chomper):
     return 0
 
 
-@register_syscall_handler(const.SYS_READV)
-@register_syscall_handler(const.SYS_READV_NOCANCEL)
+@register_syscall_handler(const.SYS_READV, "SYS_readv")
+@register_syscall_handler(const.SYS_READV_NOCANCEL, "SYS_readv_nocancel")
 def handle_sys_readv(emu: Chomper):
     fd = emu.get_arg(0)
     iov = emu.get_arg(1)
@@ -536,8 +405,8 @@ def handle_sys_readv(emu: Chomper):
     return result
 
 
-@register_syscall_handler(const.SYS_WRITEV)
-@register_syscall_handler(const.SYS_WRITEV_NOCANCEL)
+@register_syscall_handler(const.SYS_WRITEV, "SYS_writev")
+@register_syscall_handler(const.SYS_WRITEV_NOCANCEL, "SYS_writev_nocancel")
 def handle_sys_writev(emu: Chomper):
     fd = emu.get_arg(0)
     iov = emu.get_arg(1)
@@ -560,7 +429,7 @@ def handle_sys_writev(emu: Chomper):
     return result
 
 
-@register_syscall_handler(const.SYS_FCHOWN)
+@register_syscall_handler(const.SYS_FCHOWN, "SYS_fchown")
 def handle_sys_fchown(emu: Chomper):
     fd = emu.get_arg(0)
     uid = emu.get_arg(1)
@@ -571,7 +440,7 @@ def handle_sys_fchown(emu: Chomper):
     return 0
 
 
-@register_syscall_handler(const.SYS_FCHMOD)
+@register_syscall_handler(const.SYS_FCHMOD, "SYS_fchmod")
 def handle_sys_fchmod(emu: Chomper):
     fd = emu.get_arg(0)
     mode = emu.get_arg(1)
@@ -581,7 +450,7 @@ def handle_sys_fchmod(emu: Chomper):
     return 0
 
 
-@register_syscall_handler(const.SYS_RENAME)
+@register_syscall_handler(const.SYS_RENAME, "SYS_rename")
 def handle_sys_rename(emu: Chomper):
     old = emu.read_string(emu.get_arg(0))
     new = emu.read_string(emu.get_arg(1))
@@ -591,8 +460,8 @@ def handle_sys_rename(emu: Chomper):
     return 0
 
 
-@register_syscall_handler(const.SYS_SENDTO)
-@register_syscall_handler(const.SYS_SENDTO_NOCANCEL)
+@register_syscall_handler(const.SYS_SENDTO, "SYS_sendto")
+@register_syscall_handler(const.SYS_SENDTO_NOCANCEL, "SYS_sendto_nocancel")
 def handle_sys_sendto(emu: Chomper):
     sock = emu.get_arg(0)
     buffer = emu.get_arg(1)
@@ -604,7 +473,7 @@ def handle_sys_sendto(emu: Chomper):
     return emu.os.sendto(sock, buffer, length, flags, dest_addr, dest_len)
 
 
-@register_syscall_handler(const.SYS_SOCKETPAIR)
+@register_syscall_handler(const.SYS_SOCKETPAIR, "SYS_socketpair")
 def handle_sys_socketpair(emu):
     domain = emu.get_arg(0)
     sock_type = emu.get_arg(1)
@@ -621,7 +490,7 @@ def handle_sys_socketpair(emu):
     return 0
 
 
-@register_syscall_handler(const.SYS_MKDIR)
+@register_syscall_handler(const.SYS_MKDIR, "SYS_mkdir")
 def handle_sys_mkdir(emu: Chomper):
     path = emu.read_string(emu.get_arg(0))
     mode = emu.get_arg(1)
@@ -631,7 +500,7 @@ def handle_sys_mkdir(emu: Chomper):
     return 0
 
 
-@register_syscall_handler(const.SYS_RMDIR)
+@register_syscall_handler(const.SYS_RMDIR, "SYS_rmdir")
 def handle_sys_rmdir(emu: Chomper):
     path = emu.read_string(emu.get_arg(0))
 
@@ -640,13 +509,15 @@ def handle_sys_rmdir(emu: Chomper):
     return 0
 
 
-@register_syscall_handler(const.SYS_ADJTIME)
+@register_syscall_handler(const.SYS_ADJTIME, "SYS_adjtime")
 def handle_sys_adjtime(emu: Chomper):
     permission_denied()
 
+    return 0
 
-@register_syscall_handler(const.SYS_PREAD)
-@register_syscall_handler(const.SYS_PREAD_NOCANCEL)
+
+@register_syscall_handler(const.SYS_PREAD, "SYS_pread")
+@register_syscall_handler(const.SYS_PREAD_NOCANCEL, "SYS_pread_nocancel")
 def handle_sys_pread(emu: Chomper):
     fd = emu.get_arg(0)
     buf = emu.get_arg(1)
@@ -659,8 +530,8 @@ def handle_sys_pread(emu: Chomper):
     return len(data)
 
 
-@register_syscall_handler(const.SYS_PWRITE)
-@register_syscall_handler(const.SYS_PWRITE_NOCANCEL)
+@register_syscall_handler(const.SYS_PWRITE, "SYS_pwrite")
+@register_syscall_handler(const.SYS_PWRITE_NOCANCEL, "SYS_pwrite_nocancel")
 def handle_sys_pwrite(emu: Chomper):
     fd = emu.get_arg(0)
     buf = emu.get_arg(1)
@@ -670,12 +541,12 @@ def handle_sys_pwrite(emu: Chomper):
     return emu.os.pwrite(fd, buf, size, offset)
 
 
-@register_syscall_handler(const.SYS_QUOTACTL)
+@register_syscall_handler(const.SYS_QUOTACTL, "SYS_quotactl")
 def handle_sys_quotactl(emu: Chomper):
     return 0
 
 
-@register_syscall_handler(const.SYS_CSOPS)
+@register_syscall_handler(const.SYS_CSOPS, "SYS_csops")
 def handle_sys_csops(emu: Chomper):
     useraddr = emu.get_arg(2)
     emu.write_u32(useraddr, 0x4000800)
@@ -683,22 +554,22 @@ def handle_sys_csops(emu: Chomper):
     return 0
 
 
-@register_syscall_handler(const.SYS_CSOPS_AUDITTOKEN)
+@register_syscall_handler(const.SYS_CSOPS_AUDITTOKEN, "SYS_csops_audittoken")
 def handle_sys_csops_audittoken(emu: Chomper):
     return 0
 
 
-@register_syscall_handler(const.SYS_RLIMIT)
+@register_syscall_handler(const.SYS_RLIMIT, "SYS_rlimit")
 def handle_sys_rlimit(emu: Chomper):
     return 0
 
 
-@register_syscall_handler(const.SYS_SETRLIMIT)
+@register_syscall_handler(const.SYS_SETRLIMIT, "SYS_setrlimit")
 def handle_sys_setrlimit(emu: Chomper):
     return 0
 
 
-@register_syscall_handler(const.SYS_MMAP)
+@register_syscall_handler(const.SYS_MMAP, "SYS_mmap")
 def handle_sys_mmap(emu: Chomper):
     length = emu.get_arg(1)
     fd = to_signed(emu.get_arg(4), 4)
@@ -721,7 +592,7 @@ def handle_sys_mmap(emu: Chomper):
     return buf
 
 
-@register_syscall_handler(const.SYS_LSEEK)
+@register_syscall_handler(const.SYS_LSEEK, "SYS_lseek")
 def handle_sys_lseek(emu: Chomper):
     fd = emu.get_arg(0)
     offset = emu.get_arg(1)
@@ -732,8 +603,8 @@ def handle_sys_lseek(emu: Chomper):
     return emu.os.lseek(fd, offset, whence)
 
 
-@register_syscall_handler(const.SYS_FSYNC)
-@register_syscall_handler(const.SYS_FSYNC_NOCANCEL)
+@register_syscall_handler(const.SYS_FSYNC, "SYS_fsync")
+@register_syscall_handler(const.SYS_FSYNC_NOCANCEL, "SYS_fsync_nocancel")
 def handle_sys_fsync(emu: Chomper):
     fd = emu.get_arg(0)
 
@@ -742,7 +613,7 @@ def handle_sys_fsync(emu: Chomper):
     return 0
 
 
-@register_syscall_handler(const.SYS_SOCKET)
+@register_syscall_handler(const.SYS_SOCKET, "SYS_socket")
 def handle_sys_socket(emu):
     domain = emu.get_arg(0)
     sock_type = emu.get_arg(1)
@@ -751,8 +622,8 @@ def handle_sys_socket(emu):
     return emu.os.socket(domain, sock_type, protocol)
 
 
-@register_syscall_handler(const.SYS_CONNECT)
-@register_syscall_handler(const.SYS_CONNECT_NOCANCEL)
+@register_syscall_handler(const.SYS_CONNECT, "SYS_connect")
+@register_syscall_handler(const.SYS_CONNECT_NOCANCEL, "SYS_connect_nocancel")
 def handle_sys_connect(emu):
     sock = emu.get_arg(0)
     address = emu.get_arg(1)
@@ -761,7 +632,7 @@ def handle_sys_connect(emu):
     return emu.os.connect(sock, address, address_len)
 
 
-@register_syscall_handler(const.SYS_SETSOCKOPT)
+@register_syscall_handler(const.SYS_SETSOCKOPT, "SYS_setsockopt")
 def handle_sys_setsockopt(emu):
     sock = emu.get_arg(0)
     level = emu.get_arg(1)
@@ -772,7 +643,7 @@ def handle_sys_setsockopt(emu):
     return emu.os.setsockopt(sock, level, option_name, option_value, option_len)
 
 
-@register_syscall_handler(const.SYS_GETSOCKOPT)
+@register_syscall_handler(const.SYS_GETSOCKOPT, "SYS_getsockopt")
 def handle_sys_getsockopt(emu):
     sock = emu.get_arg(0)
     level = emu.get_arg(1)
@@ -783,13 +654,13 @@ def handle_sys_getsockopt(emu):
     return emu.os.getsockopt(sock, level, option_name, option_value, option_len)
 
 
-@register_syscall_handler(const.SYS_SIGSUSPEND)
+@register_syscall_handler(const.SYS_SIGSUSPEND, "SYS_sigsuspend")
 def handle_sys_sigsuspend(emu: Chomper):
     return -1
 
 
-@register_syscall_handler(const.SYS_FCNTL)
-@register_syscall_handler(const.SYS_FCNTL_NOCANCEL)
+@register_syscall_handler(const.SYS_FCNTL, "SYS_fcntl")
+@register_syscall_handler(const.SYS_FCNTL_NOCANCEL, "SYS_fcntl_nocancel")
 def handle_sys_fcntl(emu: Chomper):
     fd = emu.get_arg(0)
     cmd = emu.get_arg(1)
@@ -810,7 +681,7 @@ def handle_sys_fcntl(emu: Chomper):
     return 0
 
 
-@register_syscall_handler(const.SYS_SYSCTL)
+@register_syscall_handler(const.SYS_SYSCTL, "SYS_sysctl")
 def handle_sys_sysctl(emu: Chomper):
     name = emu.get_arg(0)
     oldp = emu.get_arg(2)
@@ -833,7 +704,7 @@ def handle_sys_sysctl(emu: Chomper):
     return 0
 
 
-@register_syscall_handler(const.SYS_OPEN_DPROTECTED_NP)
+@register_syscall_handler(const.SYS_OPEN_DPROTECTED_NP, "SYS_open_dprotected_np")
 def handle_sys_open_dprotected_np(emu: Chomper):
     path = emu.read_string(emu.get_arg(0))
     flags = emu.get_arg(1)
@@ -842,32 +713,32 @@ def handle_sys_open_dprotected_np(emu: Chomper):
     return emu.os.open(path, flags, mode)
 
 
-@register_syscall_handler(const.SYS_GETATTRLIST)
+@register_syscall_handler(const.SYS_GETATTRLIST, "SYS_getattrlist")
 def handle_sys_getattrlist(emu: Chomper):
     return -1
 
 
-@register_syscall_handler(const.SYS_SETXATTR)
+@register_syscall_handler(const.SYS_SETXATTR, "SYS_setxattr")
 def handle_sys_setxattr(emu: Chomper):
     return 0
 
 
-@register_syscall_handler(const.SYS_FSETXATTR)
+@register_syscall_handler(const.SYS_FSETXATTR, "SYS_fsetxattr")
 def handle_sys_fsetxattr(emu: Chomper):
     return 0
 
 
-@register_syscall_handler(const.SYS_LISTXATTR)
+@register_syscall_handler(const.SYS_LISTXATTR, "SYS_listxattr")
 def handle_sys_listxattr(emu: Chomper):
     return 0
 
 
-@register_syscall_handler(const.SYS_SHM_OPEN)
+@register_syscall_handler(const.SYS_SHM_OPEN, "SYS_shm_open")
 def handle_sys_shm_open(emu: Chomper):
     return 0x80000000
 
 
-@register_syscall_handler(const.SYS_SYSCTLBYNAME)
+@register_syscall_handler(const.SYS_SYSCTLBYNAME, "SYS_sysctlbyname")
 def handle_sys_sysctlbyname(emu: Chomper):
     name = emu.read_string(emu.get_arg(0))
     oldp = emu.get_arg(2)
@@ -891,32 +762,34 @@ def handle_sys_sysctlbyname(emu: Chomper):
     return 0
 
 
-@register_syscall_handler(const.SYS_GETTID)
+@register_syscall_handler(const.SYS_GETTID, "SYS_gettid")
 def handle_sys_gettid(emu: Chomper):
-    return 1000
+    return emu.os.tid
 
 
-@register_syscall_handler(const.SYS_IDENTITYSVC)
+@register_syscall_handler(const.SYS_IDENTITYSVC, "SYS_identitysvc")
 def handle_sys_identitysvc(emu: Chomper):
     permission_denied()
 
+    return 0
 
-@register_syscall_handler(const.SYS_PSYNCH_MUTEXWAIT)
+
+@register_syscall_handler(const.SYS_PSYNCH_MUTEXWAIT, "SYS_psynch_mutexwait")
 def handle_sys_psynch_mutexwait(emu: Chomper):
     return 0
 
 
-@register_syscall_handler(const.SYS_PROCESS_POLICY)
+@register_syscall_handler(const.SYS_PROCESS_POLICY, "SYS_process_policy")
 def handle_sys_process_policy(emu: Chomper):
     return 0
 
 
-@register_syscall_handler(const.SYS_ISSETUGID)
+@register_syscall_handler(const.SYS_ISSETUGID, "SYS_issetugid")
 def handle_sys_issetugid(emu: Chomper):
     return 0
 
 
-@register_syscall_handler(const.SYS_PROC_INFO)
+@register_syscall_handler(const.SYS_PROC_INFO, "SYS_proc_info")
 def handle_sys_proc_info(emu: Chomper):
     pid = emu.get_arg(1)
     flavor = emu.get_arg(2)
@@ -933,7 +806,7 @@ def handle_sys_proc_info(emu: Chomper):
     return 0
 
 
-@register_syscall_handler(const.SYS_STAT64)
+@register_syscall_handler(const.SYS_STAT64, "SYS_stat64")
 def handle_sys_stat64(emu: Chomper):
     path = emu.read_string(emu.get_arg(0))
     stat = emu.get_arg(1)
@@ -943,7 +816,7 @@ def handle_sys_stat64(emu: Chomper):
     return 0
 
 
-@register_syscall_handler(const.SYS_FSTAT64)
+@register_syscall_handler(const.SYS_FSTAT64, "SYS_fstat64")
 def handle_sys_fstat64(emu: Chomper):
     fd = emu.get_arg(0)
     stat = emu.get_arg(1)
@@ -953,7 +826,7 @@ def handle_sys_fstat64(emu: Chomper):
     return 0
 
 
-@register_syscall_handler(const.SYS_LSTAT64)
+@register_syscall_handler(const.SYS_LSTAT64, "SYS_lstat64")
 def handle_sys_lstat64(emu: Chomper):
     path = emu.read_string(emu.get_arg(0))
     stat = emu.get_arg(1)
@@ -963,7 +836,7 @@ def handle_sys_lstat64(emu: Chomper):
     return 0
 
 
-@register_syscall_handler(const.SYS_GETDIRENTRIES64)
+@register_syscall_handler(const.SYS_GETDIRENTRIES64, "SYS_getdirentries64")
 def handle_sys_getdirentries64(emu: Chomper):
     fd = emu.get_arg(0)
     buf = emu.get_arg(1)
@@ -985,7 +858,7 @@ def handle_sys_getdirentries64(emu: Chomper):
     return len(result)
 
 
-@register_syscall_handler(const.SYS_STATFS64)
+@register_syscall_handler(const.SYS_STATFS64, "SYS_statfs64")
 def handle_sys_statfs64(emu: Chomper):
     path = emu.read_string(emu.get_arg(0))
     statfs = emu.get_arg(1)
@@ -995,7 +868,7 @@ def handle_sys_statfs64(emu: Chomper):
     return 0
 
 
-@register_syscall_handler(const.SYS_FSTATFS64)
+@register_syscall_handler(const.SYS_FSTATFS64, "SYS_fstatfs64")
 def handle_sys_fstatfs64(emu: Chomper):
     fd = emu.get_arg(0)
     statfs = emu.get_arg(1)
@@ -1005,7 +878,7 @@ def handle_sys_fstatfs64(emu: Chomper):
     return 0
 
 
-@register_syscall_handler(const.SYS_FSSTAT64)
+@register_syscall_handler(const.SYS_FSSTAT64, "SYS_fsstat64")
 def handle_sys_fsstat64(emu: Chomper):
     statfs = emu.get_arg(0)
     if not statfs:
@@ -1016,14 +889,14 @@ def handle_sys_fsstat64(emu: Chomper):
     return 0
 
 
-@register_syscall_handler(const.SYS_BSDTHREAD_CREATE)
+@register_syscall_handler(const.SYS_BSDTHREAD_CREATE, "SYS_bsdthread_create")
 def handle_sys_bsdthread_create(emu: Chomper):
     emu.logger.warning("Emulator ignored a thread create reqeust.")
     emu.log_backtrace()
     return 0
 
 
-@register_syscall_handler(const.SYS_LCHOWN)
+@register_syscall_handler(const.SYS_LCHOWN, "SYS_lchown")
 def handle_sys_lchown(emu: Chomper):
     path = emu.read_string(emu.get_arg(0))
     uid = emu.get_arg(1)
@@ -1034,22 +907,22 @@ def handle_sys_lchown(emu: Chomper):
     return 0
 
 
-@register_syscall_handler(const.SYS_WORKQ_OPEN)
+@register_syscall_handler(const.SYS_WORKQ_OPEN, "SYS_workq_open")
 def handle_sys_workq_open(emu: Chomper):
     return 0
 
 
-@register_syscall_handler(const.SYS_WORKQ_KERNRETURN)
+@register_syscall_handler(const.SYS_WORKQ_KERNRETURN, "SYS_workq_kernreturn")
 def handle_sys_workq_kernreturn(emu: Chomper):
     return 0
 
 
-@register_syscall_handler(const.SYS_KEVENT_QOS)
+@register_syscall_handler(const.SYS_KEVENT_QOS, "SYS_kevent_qos")
 def handle_sys_kevent_qos(emu: Chomper):
     return 0
 
 
-@register_syscall_handler(const.SYS_MAC_SYSCALL)
+@register_syscall_handler(const.SYS_MAC_SYSCALL, "SYS_mac_syscall")
 def handle_sys_mac_syscall(emu: Chomper):
     cmd = emu.read_string(emu.get_arg(0))
     emu.logger.info(f"Recv mac syscall command: {cmd}")
@@ -1062,12 +935,12 @@ def handle_sys_mac_syscall(emu: Chomper):
     return 0
 
 
-@register_syscall_handler(const.SYS_PERSONA)
+@register_syscall_handler(const.SYS_PERSONA, "SYS_persona")
 def handle_sys_persona(emu: Chomper):
     return 0
 
 
-@register_syscall_handler(const.SYS_GETENTROPY)
+@register_syscall_handler(const.SYS_GETENTROPY, "SYS_getentropy")
 def handle_sys_getentropy(emu: Chomper):
     buffer = emu.get_arg(0)
     size = emu.get_arg(1)
@@ -1078,12 +951,12 @@ def handle_sys_getentropy(emu: Chomper):
     return 0
 
 
-@register_syscall_handler(const.SYS_NECP_OPEN)
+@register_syscall_handler(const.SYS_NECP_OPEN, "SYS_necp_open")
 def handle_necp_open(emu: Chomper):
     return -1
 
 
-@register_syscall_handler(const.SYS_GUARDED_OPEN_NP)
+@register_syscall_handler(const.SYS_GUARDED_OPEN_NP, "SYS_guarded_open_np")
 def handle_sys_guarded_open_np(emu: Chomper):
     path = emu.read_string(emu.get_arg(0))
     flags = emu.get_arg(3)
@@ -1092,7 +965,7 @@ def handle_sys_guarded_open_np(emu: Chomper):
     return emu.os.open(path, flags, mode)
 
 
-@register_syscall_handler(const.SYS_GUARDED_CLOSE_NP)
+@register_syscall_handler(const.SYS_GUARDED_CLOSE_NP, "SYS_guarded_close_np")
 def handle_sys_guarded_close_np(emu: Chomper):
     fd = emu.get_arg(0)
 
@@ -1101,13 +974,13 @@ def handle_sys_guarded_close_np(emu: Chomper):
     return 0
 
 
-@register_syscall_handler(const.SYS_GETATTRLISTBULK)
+@register_syscall_handler(const.SYS_GETATTRLISTBULK, "SYS_getattrlistbulk")
 def handle_sys_getattrlistbulk(emu: Chomper):
     return 0
 
 
-@register_syscall_handler(const.SYS_OPENAT)
-@register_syscall_handler(const.SYS_OPENAT_NOCANCEL)
+@register_syscall_handler(const.SYS_OPENAT, "SYS_openat")
+@register_syscall_handler(const.SYS_OPENAT_NOCANCEL, "SYS_openat_nocancel")
 def handle_sys_openat(emu: Chomper):
     dir_fd = to_signed(emu.get_arg(0), 4)
     path = emu.read_string(emu.get_arg(1))
@@ -1117,7 +990,7 @@ def handle_sys_openat(emu: Chomper):
     return emu.os.openat(dir_fd, path, flags, mode)
 
 
-@register_syscall_handler(const.SYS_FACCESSAT)
+@register_syscall_handler(const.SYS_FACCESSAT, "SYS_faccessat")
 def handle_sys_faccessat(emu: Chomper):
     dir_fd = to_signed(emu.get_arg(0), 4)
     path = emu.read_string(emu.get_arg(1))
@@ -1129,7 +1002,7 @@ def handle_sys_faccessat(emu: Chomper):
     return 0
 
 
-@register_syscall_handler(const.SYS_FCHMODAT)
+@register_syscall_handler(const.SYS_FCHMODAT, "SYS_fchmodat")
 def handle_sys_fchmodat(emu: Chomper):
     dir_fd = to_signed(emu.get_arg(0), 4)
     path = emu.read_string(emu.get_arg(1))
@@ -1140,7 +1013,7 @@ def handle_sys_fchmodat(emu: Chomper):
     return 0
 
 
-@register_syscall_handler(const.SYS_FCHOWNAT)
+@register_syscall_handler(const.SYS_FCHOWNAT, "SYS_fchownat")
 def handle_sys_fchownat(emu: Chomper):
     dir_fd = to_signed(emu.get_arg(0), 4)
     path = emu.read_string(emu.get_arg(1))
@@ -1152,7 +1025,7 @@ def handle_sys_fchownat(emu: Chomper):
     return 0
 
 
-@register_syscall_handler(const.SYS_FSTATAT64)
+@register_syscall_handler(const.SYS_FSTATAT64, "SYS_fstatat64")
 def handle_sys_fstatat64(emu: Chomper):
     dir_fd = to_signed(emu.get_arg(0), 4)
     path = emu.read_string(emu.get_arg(1))
@@ -1163,7 +1036,7 @@ def handle_sys_fstatat64(emu: Chomper):
     return 0
 
 
-@register_syscall_handler(const.SYS_RENAMEAT)
+@register_syscall_handler(const.SYS_RENAMEAT, "SYS_renameat")
 def handle_sys_renameat(emu: Chomper):
     src_fd = emu.get_arg(0)
     old = emu.read_string(emu.get_arg(1))
@@ -1175,7 +1048,7 @@ def handle_sys_renameat(emu: Chomper):
     return 0
 
 
-@register_syscall_handler(const.SYS_LINKAT)
+@register_syscall_handler(const.SYS_LINKAT, "SYS_linkat")
 def handle_sys_linkat(emu: Chomper):
     src_dir_fd = to_signed(emu.get_arg(0), 4)
     src_path = emu.read_string(emu.get_arg(1))
@@ -1187,7 +1060,7 @@ def handle_sys_linkat(emu: Chomper):
     return 0
 
 
-@register_syscall_handler(const.SYS_UNLINKAT)
+@register_syscall_handler(const.SYS_UNLINKAT, "SYS_unlinkat")
 def handle_sys_unlinkat(emu: Chomper):
     dir_fd = to_signed(emu.get_arg(0), 4)
     path = emu.read_string(emu.get_arg(1))
@@ -1197,7 +1070,7 @@ def handle_sys_unlinkat(emu: Chomper):
     return 0
 
 
-@register_syscall_handler(const.SYS_READLINKAT)
+@register_syscall_handler(const.SYS_READLINKAT, "SYS_readlinkat")
 def handle_sys_readlinkat(emu: Chomper):
     dir_fd = to_signed(emu.get_arg(0), 4)
     path = emu.read_string(emu.get_arg(1))
@@ -1207,7 +1080,7 @@ def handle_sys_readlinkat(emu: Chomper):
     return 0
 
 
-@register_syscall_handler(const.SYS_SYMLINKAT)
+@register_syscall_handler(const.SYS_SYMLINKAT, "SYS_symlinkat")
 def handle_sys_symlinkat(emu: Chomper):
     src_dir_fd = to_signed(emu.get_arg(0), 4)
     src_path = emu.read_string(emu.get_arg(1))
@@ -1219,7 +1092,7 @@ def handle_sys_symlinkat(emu: Chomper):
     return 0
 
 
-@register_syscall_handler(const.SYS_MKDIRAT)
+@register_syscall_handler(const.SYS_MKDIRAT, "SYS_mkdirat")
 def handle_sys_mkdirat(emu: Chomper):
     dir_fd = to_signed(emu.get_arg(0), 4)
     path = emu.read_string(emu.get_arg(1))
@@ -1230,7 +1103,7 @@ def handle_sys_mkdirat(emu: Chomper):
     return 0
 
 
-@register_syscall_handler(const.SYS_GUARDED_PWRITE_NP)
+@register_syscall_handler(const.SYS_GUARDED_PWRITE_NP, "SYS_guarded_pwrite_np")
 def handle_sys_guarded_pwrite_np(emu: Chomper):
     fd = emu.get_arg(0)
     buf = emu.get_arg(2)
@@ -1240,13 +1113,45 @@ def handle_sys_guarded_pwrite_np(emu: Chomper):
     return emu.os.pwrite(fd, buf, size, offset)
 
 
-# @register_syscall_handler(const.SYS_ULOCK_WAIT)
-# def handle_sys_ulock_wait(emu: Chomper):
-#     return 0
+@register_syscall_handler(const.SYS_ULOCK_WAIT, "SYS_ulock_wait")
+def handle_sys_ulock_wait(emu: Chomper):
+    return 0
 
 
-@register_syscall_handler(const.SYS_PREADV)
-@register_syscall_handler(const.SYS_PREADV_NOCANCEL)
+@register_syscall_handler(
+    const.SYS_TERMINATE_WITH_PAYLOAD, "SYS_terminate_with_payload"
+)
+def handle_terminate_with_payload(emu: Chomper):
+    payload = emu.get_arg(5)
+    msg = emu.read_string(payload)
+
+    emu.log_backtrace()
+
+    raise ProgramTerminated("terminate with payload: %s" % msg)
+
+
+@register_syscall_handler(const.SYS_ABORT_WITH_PAYLOAD, "SYS_abort_with_payload")
+def handle_abort_with_payload(emu: Chomper):
+    payload = emu.get_arg(4)
+    msg = emu.read_string(payload)
+
+    emu.log_backtrace()
+
+    raise ProgramTerminated("abort with payload: %s" % msg)
+
+
+@register_syscall_handler(const.SYS_OS_FAULT_WITH_PAYLOAD, "SYS_os_fault_with_payload")
+def handle_os_fault_with_payload(emu: Chomper):
+    payload = emu.get_arg(2)
+    msg = emu.read_string(payload)
+
+    emu.log_backtrace()
+
+    raise ProgramTerminated("OS fault with payload: %s" % msg)
+
+
+@register_syscall_handler(const.SYS_PREADV, "SYS_preadv")
+@register_syscall_handler(const.SYS_PREADV_NOCANCEL, "SYS_preadv_nocancel")
 def handle_sys_preadv(emu: Chomper):
     fd = emu.get_arg(0)
     iov = emu.get_arg(1)
@@ -1277,12 +1182,14 @@ def handle_sys_preadv(emu: Chomper):
     return result
 
 
-@register_syscall_handler(const.MACH_ABSOLUTE_TIME_TRAP)
+@register_syscall_handler(const.MACH_ABSOLUTE_TIME_TRAP, "MACH_ABSOLUTE_TIME_TRAP")
 def handle_mach_absolute_time_trap(emu: Chomper):
     return int(time.time_ns() % (3600 * 10**9))
 
 
-@register_syscall_handler(const.KERNELRPC_MACH_VM_ALLOCATE_TRAP)
+@register_syscall_handler(
+    const.KERNELRPC_MACH_VM_ALLOCATE_TRAP, "KERNELRPC_MACH_VM_ALLOCATE_TRAP"
+)
 def handle_kernelrpc_mach_vm_allocate_trap(emu: Chomper):
     address = emu.get_arg(1)
     size = emu.get_arg(2)
@@ -1293,12 +1200,17 @@ def handle_kernelrpc_mach_vm_allocate_trap(emu: Chomper):
     return 0
 
 
-@register_syscall_handler(const.KERNELRPC_MACH_VM_PURGABLE_CONTROL_TRAP)
+@register_syscall_handler(
+    const.KERNELRPC_MACH_VM_PURGABLE_CONTROL_TRAP,
+    "KERNELRPC_MACH_VM_PURGABLE_CONTROL_TRAP",
+)
 def handle_kernelrpc_mach_vm_purgable_control_trap(emu: Chomper):
     return 0
 
 
-@register_syscall_handler(const.KERNELRPC_MACH_VM_DEALLOCATE_TRAP)
+@register_syscall_handler(
+    const.KERNELRPC_MACH_VM_DEALLOCATE_TRAP, "KERNELRPC_MACH_VM_DEALLOCATE_TRAP"
+)
 def handle_kernelrpc_mach_vm_deallocate_trap(emu: Chomper):
     mem = emu.get_arg(1)
 
@@ -1307,12 +1219,16 @@ def handle_kernelrpc_mach_vm_deallocate_trap(emu: Chomper):
     return 0
 
 
-@register_syscall_handler(const.KERNELRPC_MACH_VM_PROTECT_TRAP)
+@register_syscall_handler(
+    const.KERNELRPC_MACH_VM_PROTECT_TRAP, "KERNELRPC_MACH_VM_PROTECT_TRAP"
+)
 def handle_kernelrpc_mach_vm_protect_trap(emu: Chomper):
     return 0
 
 
-@register_syscall_handler(const.KERNELRPC_MACH_VM_MAP_TRAP)
+@register_syscall_handler(
+    const.KERNELRPC_MACH_VM_MAP_TRAP, "KERNELRPC_MACH_VM_MAP_TRAP"
+)
 def handle_kernelrpc_mach_vm_map_trap(emu: Chomper):
     address = emu.get_arg(1)
     size = emu.get_arg(2)
@@ -1323,17 +1239,24 @@ def handle_kernelrpc_mach_vm_map_trap(emu: Chomper):
     return 0
 
 
-@register_syscall_handler(const.KERNELRPC_MACH_PORT_ALLOCATE_TRAP)
+@register_syscall_handler(
+    const.KERNELRPC_MACH_PORT_ALLOCATE_TRAP, "KERNELRPC_MACH_PORT_ALLOCATE_TRAP"
+)
 def handle_kernelrpc_mach_port_allocate_trap(emu: Chomper):
     return 0
 
 
-@register_syscall_handler(const.KERNELRPC_MACH_PORT_INSERT_MEMBER_TRAP)
+@register_syscall_handler(
+    const.KERNELRPC_MACH_PORT_INSERT_MEMBER_TRAP,
+    "KERNELRPC_MACH_PORT_INSERT_MEMBER_TRAP",
+)
 def handle_kernelrpc_mach_port_insert_member_trap(emu: Chomper):
     return 0
 
 
-@register_syscall_handler(const.KERNELRPC_MACH_PORT_CONSTRUCT_TRAP)
+@register_syscall_handler(
+    const.KERNELRPC_MACH_PORT_CONSTRUCT_TRAP, "KERNELRPC_MACH_PORT_CONSTRUCT_TRAP"
+)
 def handle_kernelrpc_mach_port_construct_trap(emu: Chomper):
     name = emu.get_arg(3)
 
@@ -1343,38 +1266,57 @@ def handle_kernelrpc_mach_port_construct_trap(emu: Chomper):
     return 0
 
 
-@register_syscall_handler(const.MACH_REPLY_PORT_TRAP)
+@register_syscall_handler(const.MACH_REPLY_PORT_TRAP, "MACH_REPLY_PORT_TRAP")
 def handle_mach_reply_port_trap(emu: Chomper):
     return 0
 
 
-@register_syscall_handler(const.TASK_SELF_TRAP)
+@register_syscall_handler(const.TASK_SELF_TRAP, "TASK_SELF_TRAP")
 def handle_task_self_trap(emu: Chomper):
-    return 0
+    return emu.ios_os.MACH_PORT_TASK_SELF
 
 
-@register_syscall_handler(const.HOST_SELF_TRAP)
+@register_syscall_handler(const.HOST_SELF_TRAP, "HOST_SELF_TRAP")
 def handle_host_self_trap(emu: Chomper):
     return 2563
 
 
-@register_syscall_handler(const.MACH_MSG_TRAP)
+@register_syscall_handler(const.MACH_MSG_TRAP, "MACH_MSG_TRAP")
 def handle_mach_msg_trap(emu: Chomper):
-    # msg = emu.get_arg(0)
+    msg_ptr = emu.get_arg(0)
+    msg_raw = emu.read_bytes(msg_ptr, ctypes.sizeof(MachMsgHeaderT))
+    msg = bytes2struct(msg_raw, MachMsgHeaderT)
 
-    # msgh_size:
-    # emu.write_u32(msg + 0x4, 36)
+    msg_id = msg.msgh_id
+    remote_port = msg.msgh_remote_port
 
-    # msgh_remote_port
-    # emu.write_u32(msg + 0x8, 0)
+    emu.logger.info("Recv mach msg: msg_id=%s, remote_port=%s", msg_id, remote_port)
 
-    # msgh_id
-    # emu.write_u32(msg + 0x14, 8100)
+    if remote_port == emu.ios_os.MACH_PORT_TASK_SELF:
+        return 6
+    elif remote_port == emu.ios_os.MACH_PORT_NOTIFICATION_CENTER:
+        return 0
 
     return 6
 
 
-@register_syscall_handler(const.KERNELRPC_MACH_PORT_TYPE_TRAP)
+@register_syscall_handler(
+    const.THREAD_GET_SPECIAL_REPLY_PORT, "THREAD_GET_SPECIAL_REPLY_PORT"
+)
+def handle_thread_get_special_reply_port(emu: Chomper):
+    return 0
+
+
+@register_syscall_handler(
+    const.HOST_CREATE_MACH_VOUCHER_TRAP, "HOST_CREATE_MACH_VOUCHER_TRAP"
+)
+def handle_host_create_mach_voucher_trap(emu: Chomper):
+    return 0
+
+
+@register_syscall_handler(
+    const.KERNELRPC_MACH_PORT_TYPE_TRAP, "KERNELRPC_MACH_PORT_TYPE_TRAP"
+)
 def handle_kernelrpc_mach_port_type_trap(emu: Chomper):
     ptype = emu.get_arg(2)
 
@@ -1387,7 +1329,7 @@ def handle_kernelrpc_mach_port_type_trap(emu: Chomper):
     return 0
 
 
-@register_syscall_handler(const.MACH_TIMEBASE_INFO_TRAP)
+@register_syscall_handler(const.MACH_TIMEBASE_INFO_TRAP, "MACH_TIMEBASE_INFO_TRAP")
 def handle_mach_timebase_info_trap(emu: Chomper):
     info = emu.get_arg(0)
 
@@ -1397,7 +1339,7 @@ def handle_mach_timebase_info_trap(emu: Chomper):
     return 0
 
 
-@register_syscall_handler(const.MK_TIMER_CREATE_TRAP)
+@register_syscall_handler(const.MK_TIMER_CREATE_TRAP, "MK_TIMER_CREATE_TRAP")
 def handle_mk_timer_create_trap(emu: Chomper):
     # Return mach_port_name
-    return 1
+    return emu.ios_os.MACH_PORT_TIMER

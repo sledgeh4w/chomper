@@ -121,7 +121,7 @@ def sysctlbyname(name: str) -> Optional[SysctlReturnValue]:
         # can_has_debugger = 3
         result |= 3 << 2
 
-        # internal_release_type = 3
-        result |= 3 << 4
+        # internal_release_type = 2
+        result |= 2 << 4
 
     return result

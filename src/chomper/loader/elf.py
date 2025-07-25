@@ -6,7 +6,7 @@ from elftools.elf.elffile import ELFFile
 from elftools.elf.enums import ENUM_RELOC_TYPE_AARCH64, ENUM_RELOC_TYPE_ARM
 from elftools.elf.relocation import Relocation
 
-from chomper.utils import aligned
+from chomper.utils import aligned, to_unsigned
 
 from .base import BaseLoader, Module, Symbol, SymbolType
 
@@ -101,6 +101,7 @@ class ELFLoader(BaseLoader):
                 reloc_addr = module_base + relocation["r_addend"]
 
         if reloc_addr:
+            reloc_addr = to_unsigned(reloc_addr, size=self.emu.arch.addr_size)
             self.emu.write_pointer(reloc_offset, reloc_addr)
 
     def _process_relocation(
