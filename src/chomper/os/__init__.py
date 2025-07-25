@@ -1,5 +1,5 @@
 from .base import BaseOs
 from .android import AndroidOs
-from .android.syscall import SYSCALL_MAP as ANDROID_SYSCALL_MAP
+from .android.syscall import get_syscall_name as android_get_syscall_name
 from .ios import IosOs
-from .ios.syscall import SYSCALL_MAP as IOS_SYSCALL_MAP
+from .ios.syscall import get_syscall_name as ios_get_syscall_name

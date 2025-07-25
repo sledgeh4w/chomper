@@ -95,6 +95,8 @@ class BaseOs(ABC):
         self.pid = random.randint(10000, 20000)
         self.uid = random.randint(10000, 20000)
 
+        self.tid = 1000
+
         self._devices: Dict[str, Type[DeviceFile]] = {}
 
         # Virtual device file descriptors

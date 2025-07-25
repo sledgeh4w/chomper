@@ -1,5 +1,7 @@
 from chomper.objc import pyobj2nsobj, pyobj2cfobj
 
+from .utils import multi_alloc_mem
+
 
 def test_pyobj2nsobj(emu_ios):
     result = pyobj2nsobj(emu_ios, 1)
@@ -375,3 +377,19 @@ def test_cf_run_loop(emu_ios, objc):
     with objc.autorelease_pool():
         run_loop = emu_ios.call_symbol("_CFRunLoopGetMain")
         assert run_loop
+
+
+def test_sc_network_reachability(emu_ios, objc):
+    with objc.autorelease_pool():
+        name = "apple.com"
+
+        with multi_alloc_mem(emu_ios, name, 8) as (name_ptr, flags):
+            reachability = emu_ios.call_symbol(
+                "_SCNetworkReachabilityCreateWithName", 0, name_ptr
+            )
+            assert reachability
+
+            result = emu_ios.call_symbol(
+                "_SCNetworkReachabilityGetFlags", reachability, flags
+            )
+            assert result

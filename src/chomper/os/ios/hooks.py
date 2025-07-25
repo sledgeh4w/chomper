@@ -183,23 +183,6 @@ def hook_posix_memalign(uc: Uc, address: int, size: int, user_data: HookContext)
     return 0
 
 
-@register_hook("__os_activity_initiate")
-def hook_os_activity_initiate(uc: Uc, address: int, size: int, user_data: HookContext):
-    return 0
-
-
-@register_hook("_notify_register_dispatch")
-def hook_notify_register_dispatch(
-    uc: Uc, address: int, size: int, user_data: HookContext
-):
-    return 0
-
-
-@register_hook("_notify_register_check")
-def hook_notify_register_check(uc: Uc, address: int, size: int, user_data: HookContext):
-    return 0
-
-
 @register_hook("_dlopen")
 def hook_dlopen(uc: Uc, address: int, size: int, user_data: HookContext):
     emu = user_data["emu"]
@@ -345,27 +328,6 @@ def hook_cf_x_preferences_copy_current_application_state_with_deadlock_avoidance
     return pyobj2cfobj(emu, emu.ios_os.preferences)
 
 
-@register_hook("_CFNotificationCenterGetLocalCenter")
-def hook_cf_notification_center_get_local_center(
-    uc: Uc, address: int, size: int, user_data: HookContext
-):
-    return 0
-
-
-@register_hook("_CFNotificationCenterAddObserver")
-def hook_cf_notification_center_add_observer(
-    uc: Uc, address: int, size: int, user_data: HookContext
-):
-    return 0
-
-
-@register_hook("_CFNotificationCenterPostNotification")
-def hook_cf_notification_center_post_notification(
-    uc: Uc, address: int, size: int, user_data: HookContext
-):
-    return 0
-
-
 @register_hook("_SecItemAdd")
 def hook_sec_item_add(uc: Uc, address: int, size: int, user_data: HookContext):
     return 0
@@ -433,6 +395,24 @@ def hook_sec_item_copy_matching(
 
 @register_hook("_bootstrap_look_up2")
 def hook_bootstrap_look_up2(uc: Uc, address: int, size: int, user_data: HookContext):
+    emu = user_data["emu"]
+
+    mach_service_map = {
+        "com.apple.system.notification_center": (
+            emu.ios_os.MACH_PORT_NOTIFICATION_CENTER
+        ),
+    }
+
+    service_name = emu.read_string(emu.get_arg(1))
+    service_port = emu.get_arg(2)
+
+    emu.logger.info(
+        "'bootstrap_look_up2' is called to look up '%s' service", service_name
+    )
+
+    if service_name in mach_service_map:
+        emu.write_u32(service_port, mach_service_map[service_name])
+
     return 0
 
 

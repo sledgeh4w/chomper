@@ -131,6 +131,11 @@ class IosOs(BaseOs):
     IPPROTO_IP = 0
     IPPROTO_ICMP = 1
 
+    MACH_PORT_NULL = 0
+    MACH_PORT_TASK_SELF = 1
+    MACH_PORT_TIMER = 2
+    MACH_PORT_NOTIFICATION_CENTER = 3
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
@@ -292,6 +297,7 @@ class IosOs(BaseOs):
         """Initialize thread local storage (TLS)."""
         errno_ptr = self.emu.create_buffer(0x8)
 
+        self.emu.write_u64(TLS_ADDRESS - 0x8, self.tid)
         self.emu.write_pointer(TLS_ADDRESS + 0x8, errno_ptr)
         self.emu.write_u32(TLS_ADDRESS + 0x18, 5)
 
@@ -378,11 +384,20 @@ class IosOs(BaseOs):
         environ = self.emu.find_symbol("_environ")
         self.emu.write_pointer(environ.address, environ_buf)
 
-    def _init_lib_system_kernel(self):
+    def _init_system_kernel(self):
         """Initialize `libsystem_kernel.dylib`."""
         self.emu.call_symbol("_mach_init_doit")
 
-    def _init_lib_system_pthread(self):
+    def _init_system_c(self):
+        """Initialize `libsystem_pthread.dylib`."""
+        self._init_program_vars()
+
+        # ___xlocale_init
+        locale_key = self.emu.find_symbol("___locale_key")
+        if self.emu.read_s64(locale_key.address) == -1:
+            self.emu.write_s64(locale_key.address, 10)
+
+    def _init_system_pthread(self):
         """Initialize `libsystem_pthread.dylib`."""
         main_thread = self.emu.create_buffer(256)
 
@@ -396,6 +411,9 @@ class IosOs(BaseOs):
             "___pthread_supported_features"
         )
         self.emu.write_u32(pthread_supported_features.address, 0x50)
+
+        mach_task_self = self.emu.find_symbol("_mach_task_self_")
+        self.emu.write_u32(mach_task_self.address, self.MACH_PORT_TASK_SELF)
 
     def _init_lib_xpc(self):
         """Initialize `libxpc.dylib`."""
@@ -516,13 +534,13 @@ class IosOs(BaseOs):
     def _after_module_loaded(self, module_name: str):
         """Perform initialization after module loaded."""
         if module_name == "libsystem_kernel.dylib":
-            self._init_lib_system_kernel()
+            self._init_system_kernel()
         elif module_name == "libsystem_c.dylib":
-            self._init_program_vars()
+            self._init_system_c()
         elif module_name == "libdyld.dylib":
             self._init_dyld_vars()
         elif module_name == "libsystem_pthread.dylib":
-            self._init_lib_system_pthread()
+            self._init_system_pthread()
         elif module_name == "libobjc.A.dylib":
             self._init_objc_vars()
 
