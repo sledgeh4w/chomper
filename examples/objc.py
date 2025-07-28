@@ -2,7 +2,7 @@ import os
 
 from chomper import Chomper
 from chomper.const import ARCH_ARM64, OS_IOS
-from chomper.objc import ObjC, pyobj2nsobj, pyobj2cfobj
+from chomper.objc import ObjcRuntime
 
 base_path = os.path.abspath(os.path.dirname(__file__))
 
@@ -15,14 +15,14 @@ def main():
     )
 
     # Objective-C interface
-    objc = ObjC(emu)
+    objc = ObjcRuntime(emu)
 
     # Call class methods
     ns_str = objc.msg_send("NSString", "stringWithUTF8String:", "chomper")
     print("NSString: %s" % ns_str)
 
     # Call instance methods
-    raw_str = objc.msg_send(ns_str, "cString")
+    raw_str = objc.msg_send(ns_str, "UTF8String")
     print("cString: %s" % emu.read_string(raw_str))
 
     # Automatically release Objective-C objects
@@ -30,11 +30,11 @@ def main():
         objc.msg_send("NSDate", "date")
 
     # Utility for creating basic NS objects
-    ns_data = pyobj2nsobj(emu, b"chomper")
+    ns_data = objc.create_ns_data(b"chomper")
     print("NSData: %s" % ns_data)
 
     # Utility for creating basic CF objects
-    cf_dict = pyobj2cfobj(emu, {"name": "Chomper"})
+    cf_dict = objc.create_cf_dictionary({"name": "Chomper"})
     print("CFDictionary: %s" % cf_dict)
 
 

@@ -10,7 +10,7 @@ from chomper.loader import MachoLoader, Module
 from chomper.os.base import BaseOs, SyscallError
 from chomper.utils import log_call, struct2bytes, to_unsigned
 
-from .fixup import SystemModuleFixup
+from .fixup import SystemModuleFixer
 from .hooks import get_hooks
 from .structs import Dirent, Stat64, Statfs64, Timespec
 from .syscall import get_syscall_handlers
@@ -510,8 +510,6 @@ class IosOs(BaseOs):
 
     def resolve_modules(self, module_names: List[str]):
         """Load system modules if don't loaded."""
-        fixup = SystemModuleFixup(self.emu)
-
         for module_name in module_names:
             if self.emu.find_module(module_name):
                 continue
@@ -523,26 +521,25 @@ class IosOs(BaseOs):
             )
 
             # Fixup must be executed before initializing Objective-C.
-            fixup.install(module)
+            fixer = SystemModuleFixer(self.emu, module)
+            fixer.fixup_all()
 
-            self._after_module_loaded(module_name)
+            # Initialize system modules
+            if module_name == "libsystem_kernel.dylib":
+                self._init_system_kernel()
+            elif module_name == "libsystem_c.dylib":
+                self._init_system_c()
+            elif module_name == "libdyld.dylib":
+                self._init_dyld_vars()
+            elif module_name == "libsystem_pthread.dylib":
+                self._init_system_pthread()
+            elif module_name == "libobjc.A.dylib":
+                self._init_objc_vars()
 
+            # Initialize Objective-C
             self.init_objc(module)
 
             module.binary = None
-
-    def _after_module_loaded(self, module_name: str):
-        """Perform initialization after module loaded."""
-        if module_name == "libsystem_kernel.dylib":
-            self._init_system_kernel()
-        elif module_name == "libsystem_c.dylib":
-            self._init_system_c()
-        elif module_name == "libdyld.dylib":
-            self._init_dyld_vars()
-        elif module_name == "libsystem_pthread.dylib":
-            self._init_system_pthread()
-        elif module_name == "libobjc.A.dylib":
-            self._init_objc_vars()
 
     def _enable_objc(self):
         """Enable Objective-C support."""

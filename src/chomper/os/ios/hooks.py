@@ -5,7 +5,7 @@ from typing import Callable, Dict, Optional
 from unicorn import Uc, UcError
 
 from chomper.exceptions import EmulatorCrashed, SymbolMissing, ObjCUnrecognizedSelector
-from chomper.objc import ObjC, pyobj2cfobj
+from chomper.objc import ObjcRuntime
 from chomper.typing import HookContext
 
 hooks: Dict[str, Callable] = {}
@@ -264,13 +264,13 @@ def hook_dispatch_barrier_async(
 @register_hook("_MGCopyAnswer")
 def hook_mg_copy_answer(uc: Uc, address: int, size: int, user_data: HookContext):
     emu = user_data["emu"]
-    objc = ObjC(emu)
+    objc = ObjcRuntime(emu)
 
-    str_ptr = objc.msg_send(emu.get_arg(0), "cStringUsingEncoding:", 4)
+    str_ptr = objc.msg_send(emu.get_arg(0), "UTF8String")
     key = emu.read_string(str_ptr)
 
     if key in emu.ios_os.device_info:
-        return pyobj2cfobj(emu, emu.ios_os.device_info[key])
+        return objc.create_cf_string(emu.ios_os.device_info[key])
 
     return 0
 
@@ -280,13 +280,13 @@ def hook_cf_preferences_copy_app_value_with_container_and_configuration(
     uc: Uc, address: int, size: int, user_data: HookContext
 ):
     emu = user_data["emu"]
-    objc = ObjC(emu)
+    objc = ObjcRuntime(emu)
 
-    str_ptr = objc.msg_send(emu.get_arg(0), "cStringUsingEncoding:", 4)
+    str_ptr = objc.msg_send(emu.get_arg(0), "UTF8String")
     key = emu.read_string(str_ptr)
 
     if key in emu.ios_os.preferences:
-        return pyobj2cfobj(emu, emu.ios_os.preferences[key])
+        return objc.create_cf_string(emu.ios_os.preferences[key])
 
     return 0
 
@@ -324,8 +324,9 @@ def hook_cf_x_preferences_copy_current_application_state_with_deadlock_avoidance
     uc: Uc, address: int, size: int, user_data: HookContext
 ):
     emu = user_data["emu"]
+    objc = ObjcRuntime(emu)
 
-    return pyobj2cfobj(emu, emu.ios_os.preferences)
+    return objc.create_cf_dictionary(emu.ios_os.preferences)
 
 
 @register_hook("_SecItemAdd")
@@ -348,7 +349,7 @@ def hook_sec_item_copy_matching(
     uc: Uc, address: int, size: int, user_data: HookContext
 ):
     emu = user_data["emu"]
-    objc = ObjC(emu)
+    objc = ObjcRuntime(emu)
 
     a1 = emu.get_arg(0)
     a2 = emu.get_arg(1)
@@ -378,11 +379,11 @@ def hook_sec_item_copy_matching(
     )
 
     if sec_match_limit == sec_match_limit_all:
-        result = pyobj2cfobj(emu, [])
+        result = objc.create_cf_array([])
     elif sec_return_attributes == cf_boolean_true:
-        result = pyobj2cfobj(emu, {})
+        result = objc.create_cf_dictionary({})
     elif sec_return_data == cf_boolean_true:
-        # result = pyobj2cfobj(emu, b"")
+        # result = objc.create_cf_data(b"")
         result = 0
     else:
         result = 0
