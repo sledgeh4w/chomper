@@ -19,7 +19,7 @@ INST_ARG_PATTERNS = [
 
 
 class BaseInstruction(ABC):
-    """Extend instructions not supported by Unicorn."""
+    """Extend instructions which are not supported by Unicorn."""
 
     SUPPORTS: Sequence[str]
 
@@ -78,7 +78,7 @@ class BaseInstruction(ABC):
 class AutomicInstruction(BaseInstruction):
     """Extend atomic instructions.
 
-    The iOS system libraries will use atomic instructions from ARM v8.1.
+    Atomic instructions from ARMv8.1 are used by iOS system libraries.
     """
 
     SUPPORTS = ("ldxr", "ldadd", "ldset", "ldclr", "swp", "cas")
@@ -122,8 +122,7 @@ class AutomicInstruction(BaseInstruction):
 class PACInstruction(BaseInstruction):
     """Extend PAC instructions.
 
-    The iOS system libraries for the arm64e architecture will use PAC
-    instructions.
+    PAC instructions are utilized by iOS system libraries for the arm64e architecture.
     """
 
     SUPPORTS = ("braa", "blraaz", "retab", "paciza")

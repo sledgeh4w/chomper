@@ -1,12 +1,16 @@
 from __future__ import annotations
 
 import ctypes
-from typing import Callable, Optional, TypedDict, Union, TYPE_CHECKING
+from typing import Callable, Literal, Optional, TypedDict, Union, TYPE_CHECKING
 
 from unicorn import Uc
 
 if TYPE_CHECKING:
     from chomper.core import Chomper
+
+
+EndianType = Literal["little", "big"]
+PrecisionType = Literal["single", "double"]
 
 
 class HookContext(TypedDict):

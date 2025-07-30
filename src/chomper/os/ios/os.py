@@ -8,15 +8,14 @@ from chomper.const import STACK_ADDRESS, STACK_SIZE, TLS_ADDRESS
 from chomper.exceptions import EmulatorCrashed, SystemOperationFailed
 from chomper.loader import MachoLoader, Module
 from chomper.os.base import BaseOs, SyscallError
-from chomper.utils import log_call, struct2bytes, to_unsigned
+from chomper.utils import log_call, struct_to_bytes, to_unsigned
 
-from .fixup import SystemModuleFixup
+from .fixup import SystemModuleFixer
 from .hooks import get_hooks
 from .structs import Dirent, Stat64, Statfs64, Timespec
 from .syscall import get_syscall_handlers
 
-# Environment variables
-ENVIRON_VARS = r"""SHELL=/bin/sh
+ENVIRON_VARIABLES = r"""SHELL=/bin/sh
 PWD=/var/root
 LOGNAME=root
 HOME=/var/root
@@ -99,11 +98,11 @@ SYMBOLIC_LINKS = {
 }
 
 # Default bundle values until an executable with Info.plist is loaded
-DEFAULT_BUNDLE_UUID = "43E5FB44-22FC-4DC2-9D9E-E2702A988A2E"
-DEFAULT_BUNDLE_IDENTIFIER = "com.sledgeh4w.chomper"
-DEFAULT_BUNDLE_EXECUTABLE = "Chomper"
+BUNDLE_UUID = "43E5FB44-22FC-4DC2-9D9E-E2702A988A2E"
+BUNDLE_IDENTIFIER = "com.sledgeh4w.chomper"
+BUNDLE_EXECUTABLE = "Chomper"
 
-DEFAULT_PREFERENCES = {
+PREFERENCES = {
     "AppleLanguages": [
         "zh-Hans",
         "en",
@@ -111,7 +110,7 @@ DEFAULT_PREFERENCES = {
     "AppleLocale": "zh-Hans",
 }
 
-DEFAULT_DEVICE_INFO = {
+DEVICE_INFO = {
     "UserAssignedDeviceName": "iPhone",
     "DeviceName": "iPhone13,1",
     "ProductVersion": "14.2.1",
@@ -143,15 +142,15 @@ class IosOs(BaseOs):
 
         self.program_path = (
             f"/private/var/containers/Bundle/Application"
-            f"/{DEFAULT_BUNDLE_UUID}"
-            f"/{DEFAULT_BUNDLE_IDENTIFIER}"
-            f"/{DEFAULT_BUNDLE_EXECUTABLE}"
+            f"/{BUNDLE_UUID}"
+            f"/{BUNDLE_IDENTIFIER}"
+            f"/{BUNDLE_EXECUTABLE}"
         )
 
         self.executable_path = ""
 
-        self.preferences = DEFAULT_PREFERENCES.copy()
-        self.device_info = DEFAULT_DEVICE_INFO.copy()
+        self.preferences = PREFERENCES.copy()
+        self.device_info = DEVICE_INFO.copy()
 
     def get_errno(self) -> int:
         """Get the value of `errno`."""
@@ -206,7 +205,7 @@ class IosOs(BaseOs):
             st_flags=flags,
         )
 
-        return struct2bytes(st)
+        return struct_to_bytes(st)
 
     @staticmethod
     def _construct_dev_stat64() -> bytes:
@@ -232,7 +231,7 @@ class IosOs(BaseOs):
             st_flags=0,
         )
 
-        return struct2bytes(st)
+        return struct_to_bytes(st)
 
     @staticmethod
     def _construct_statfs64() -> bytes:
@@ -254,7 +253,7 @@ class IosOs(BaseOs):
             f_mntonname=b"/",
             f_mntfromname=b"/dev/disk0s1s1",
         )
-        return struct2bytes(st)
+        return struct_to_bytes(st)
 
     @staticmethod
     def _construct_dirent(entry: os.DirEntry) -> bytes:
@@ -267,7 +266,7 @@ class IosOs(BaseOs):
             d_type=(4 if entry.is_dir() else 0),
             d_name=entry.name.encode("utf-8"),
         )
-        return struct2bytes(st)
+        return struct_to_bytes(st)
 
     @log_call
     def getdirentries(self, fd: int, offset: int) -> Optional[bytes]:
@@ -340,15 +339,13 @@ class IosOs(BaseOs):
         self.emu.write_pointer(nx_argv_pointer.address, self.emu.create_string(""))
 
         environ = self.emu.create_buffer(8)
-        self.emu.write_pointer(environ, self._construct_environ(ENVIRON_VARS))
+        self.emu.write_pointer(environ, self._construct_environ(ENVIRON_VARIABLES))
 
         environ_pointer = self.emu.find_symbol("_environ_pointer")
         self.emu.write_pointer(environ_pointer.address, environ)
 
         progname = self.emu.create_buffer(8)
-        self.emu.write_pointer(
-            progname, self.emu.create_string(DEFAULT_BUNDLE_EXECUTABLE)
-        )
+        self.emu.write_pointer(progname, self.emu.create_string(BUNDLE_EXECUTABLE))
 
         progname_pointer = self.emu.find_symbol("___progname_pointer")
         self.emu.write_pointer(progname_pointer.address, progname)
@@ -389,7 +386,7 @@ class IosOs(BaseOs):
         self.emu.call_symbol("_mach_init_doit")
 
     def _init_system_c(self):
-        """Initialize `libsystem_pthread.dylib`."""
+        """Initialize `libsystem_c.dylib`."""
         self._init_program_vars()
 
         # ___xlocale_init
@@ -422,9 +419,8 @@ class IosOs(BaseOs):
         except EmulatorCrashed:
             pass
 
-    def _init_objc_vars(self):
-        """Initialize global variables in `libobjc.A.dylib
-        while calling `__objc_init`."""
+    def _init_lib_objc(self):
+        """Initialize `libobjc.A.dylib`."""
         prototypes = self.emu.find_symbol("__ZL10prototypes")
         self.emu.write_u64(prototypes.address, 0)
 
@@ -443,9 +439,8 @@ class IosOs(BaseOs):
         self.emu.call_symbol("__objc_init")
 
     def init_objc(self, module: Module):
-        """Initialize Objective-C for the module.
-
-        Calling `map_images` and `load_images` of `libobjc.A.dylib`.
+        """Initialize Objective-C for the module by calling `map_images`
+        and `load_images`.
         """
         if not module.binary or module.image_base is None:
             return
@@ -509,9 +504,7 @@ class IosOs(BaseOs):
         raise FileNotFoundError("Module '%s' not found" % module_name)
 
     def resolve_modules(self, module_names: List[str]):
-        """Load system modules if don't loaded."""
-        fixup = SystemModuleFixup(self.emu)
-
+        """Load and initialize system modules if they haven't been loaded."""
         for module_name in module_names:
             if self.emu.find_module(module_name):
                 continue
@@ -523,29 +516,28 @@ class IosOs(BaseOs):
             )
 
             # Fixup must be executed before initializing Objective-C.
-            fixup.install(module)
+            fixer = SystemModuleFixer(self.emu, module)
+            fixer.fixup_all()
 
-            self._after_module_loaded(module_name)
+            # Initialize system modules
+            if module_name == "libsystem_kernel.dylib":
+                self._init_system_kernel()
+            elif module_name == "libsystem_c.dylib":
+                self._init_system_c()
+            elif module_name == "libdyld.dylib":
+                self._init_dyld_vars()
+            elif module_name == "libsystem_pthread.dylib":
+                self._init_system_pthread()
+            elif module_name == "libobjc.A.dylib":
+                self._init_lib_objc()
 
+            # Initialize Objective-C
             self.init_objc(module)
 
             module.binary = None
 
-    def _after_module_loaded(self, module_name: str):
-        """Perform initialization after module loaded."""
-        if module_name == "libsystem_kernel.dylib":
-            self._init_system_kernel()
-        elif module_name == "libsystem_c.dylib":
-            self._init_system_c()
-        elif module_name == "libdyld.dylib":
-            self._init_dyld_vars()
-        elif module_name == "libsystem_pthread.dylib":
-            self._init_system_pthread()
-        elif module_name == "libobjc.A.dylib":
-            self._init_objc_vars()
-
     def _enable_objc(self):
-        """Enable Objective-C support."""
+        """Load dependent modules to enable Objective-C support."""
         self.resolve_modules(OBJC_DEPENDENCIES)
 
         self._init_lib_xpc()
@@ -565,19 +557,16 @@ class IosOs(BaseOs):
         self.emu.write_pointer(amkrtemp_sentinel.address, self.emu.create_string(""))
 
     def _enable_ui_kit(self):
-        """Enable UIKit support.
-
-        Mainly used to load `UIDevice` class, which is used to get device info.
-        """
+        """Load dependent modules to enable UIKit support. Which mainly used
+        to export `UIDevice` class."""
         self.resolve_modules(UI_KIT_DEPENDENCIES)
 
     def _setup_symbolic_links(self):
-        """Setup symbolic links."""
         for src, dst in SYMBOLIC_LINKS.items():
             self.set_symbolic_link(src, dst)
 
     def _setup_bundle_dir(self):
-        """Setup bundle directory."""
+        """Set bundle directory as current working directory."""
         bundle_path = os.path.dirname(self.program_path)
         container_path = os.path.dirname(bundle_path)
 
@@ -590,17 +579,21 @@ class IosOs(BaseOs):
             "containers",
             "Bundle",
             "Application",
-            DEFAULT_BUNDLE_UUID,
+            BUNDLE_UUID,
         )
-        local_bundle_path = os.path.join(
-            local_container_path, DEFAULT_BUNDLE_IDENTIFIER
-        )
+        local_bundle_path = os.path.join(local_container_path, BUNDLE_IDENTIFIER)
 
         self.forward_path(container_path, local_container_path)
         self.forward_path(bundle_path, local_bundle_path)
 
     def set_main_executable(self, executable_path: str):
-        """Set main executable path."""
+        """Set program path and name to global variables while forwarding
+        the file access to executable.
+
+        When an `Info.plist` file is located in the same directory as
+        the executable, the runtime automatically extracts its `CFBundleIdentifier`
+        and `CFBundleExecutable` values.
+        """
         self.executable_path = executable_path
 
         bundle_path = os.path.dirname(self.program_path)
@@ -647,7 +640,7 @@ class IosOs(BaseOs):
         )
 
     def fix_method_signature_rom_table(self):
-        """Fix `MethodSignatureROMTable` of `CoreFoundation`."""
+        """Relocate references in `MethodSignatureROMTable`."""
         table = self.emu.find_symbol("_MethodSignatureROMTable")
 
         table_size = 7892
@@ -687,9 +680,8 @@ class IosOs(BaseOs):
             self.emu.free(mode_p)
 
     def _setup_standard_io(self):
-        """Setup standard IO: `stdin`, `stdout`, `stderr`.
-
-        Convert stdio file descriptors into FILE objects and set to target symbols.
+        """Convert standard I/O file descriptors to FILE objects and assign them
+        to target symbols.
         """
         stdin_p = self.emu.find_symbol("___stdinp")
         stdout_p = self.emu.find_symbol("___stdoutp")
@@ -705,7 +697,7 @@ class IosOs(BaseOs):
         stderr_fp = self._create_fp(self.stderr, "w", unbuffered=True)
         self.emu.write_pointer(stderr_p.address, stderr_fp)
 
-    def load_module_internal(self, path: str) -> Optional[int]:
+    def load_module_private(self, path: str) -> Optional[int]:
         """Provide full module loading capabilities to `dlopen` and `_sl_dlopen_audited`.
 
         Presently supports system module loading only.
@@ -738,9 +730,9 @@ class IosOs(BaseOs):
         return None
 
     def set_dispatch_queue(self, queue: int):
-        """Set current async dispatch queue.
+        """Store current async dispatch queue in TLS.
 
-        Some async callback functions invoke `dispatch_assert_queue$V2`
+        Certain async callback functions invoke `dispatch_assert_queue$V2`
         or `dispatch_assert_queue_not$V2` to perform assertion checks on
         the current dispatch queue.
         """
@@ -748,7 +740,6 @@ class IosOs(BaseOs):
         self.emu.write_u64(TLS_ADDRESS + 0xA8, 0)
 
     def initialize(self):
-        """Initialize environment."""
         self._setup_hooks()
         self._setup_syscall_handlers()
         self._setup_tls()

@@ -190,7 +190,7 @@ class BaseOs(ABC):
         return full_path
 
     def forward_path(self, src_path: str, dst_path: str):
-        """Forward all access to `src_path` to `dst_path`."""
+        """Forward all access from `src_path` to `dst_path`."""
         self._path_map[src_path] = dst_path
 
     def set_symbolic_link(self, src_path: str, dst_path: str):
@@ -890,7 +890,7 @@ class BaseOs(ABC):
         return buffer
 
     def _setup_devices(self):
-        """Setup device files."""
+        """Setup virtual device files."""
         self.mount_device("/dev/null", NullDevice)
         self.mount_device("/dev/random", RandomDevice)
         self.mount_device("/dev/urandom", UrandomDevice)

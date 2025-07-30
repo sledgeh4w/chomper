@@ -6,7 +6,7 @@ import pytest
 
 from chomper import Chomper
 from chomper.const import ARCH_ARM, ARCH_ARM64, OS_ANDROID, OS_IOS
-from chomper.objc import ObjC
+from chomper.objc import ObjcRuntime
 
 base_path = os.path.abspath(os.path.dirname(__file__))
 
@@ -124,4 +124,4 @@ def emu_ios():
 
 @pytest.fixture(scope="module")
 def objc(emu_ios):
-    yield ObjC(emu_ios)
+    yield ObjcRuntime(emu_ios)

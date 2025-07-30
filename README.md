@@ -73,7 +73,7 @@ Working with Objective-C.
 ```python
 from chomper import Chomper
 from chomper.const import ARCH_ARM64, OS_IOS
-from chomper.objc import ObjC
+from chomper.objc import ObjcRuntime
 
 emu = Chomper(
     arch=ARCH_ARM64,
@@ -81,20 +81,23 @@ emu = Chomper(
     rootfs_path="rootfs/ios",
 )
 
-objc = ObjC(emu)
+objc = ObjcRuntime(emu)
 
 emu.load_module("examples/binaries/ios/cn.com.scal.sichuanair/zsch")
 
 # Use this context manager to ensure that Objective-C objects can be automatically released
 with objc.autorelease_pool():
+    # Find class
+    zsch_rsa_class = objc.find_class("ZSCHRSA")
+
     # Construct NSString object
-    a1 = objc.msg_send("NSString", "stringWithUTF8String:", "test")
+    a1 = objc.create_ns_string("test")
 
     # Call Objective-C method
-    req_sign = objc.msg_send("ZSCHRSA", "getReqSign:", a1)
+    req_sign = zsch_rsa_class.call_method("getReqSign:", a1)
 
     # Convert NSString object to C string
-    result_ptr = objc.msg_send(req_sign, "cStringUsingEncoding:", 4)
+    result_ptr = req_sign.call_method("UTF8String")
     result = emu.read_string(result_ptr)
 ```
 
@@ -126,4 +129,4 @@ result = emu.read_bytes(a3, result_size)
 ```
 
 ## Examples
-There are some security algorithm emulation codes in [examples](https://github.com/sledgeh4w/chomper/tree/main/examples).
+There are some security algorithm emulation codes in [algorithms](https://github.com/sledgeh4w/chomper/tree/main/examples/algorithms).
