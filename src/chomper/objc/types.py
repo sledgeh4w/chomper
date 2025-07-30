@@ -18,12 +18,18 @@ class ObjcType:
         self._runtime = runtime
         self._emu = self._runtime.emu
 
+        if not isinstance(value, int):
+            raise ValueError(f"Invalid value for ObjcType: {value}")
+
         self._value = value
 
     @property
     def value(self) -> int:
         """Raw value."""
         return self._value
+
+    def __int__(self):
+        return int(self.value)
 
     def __eq__(self, other):
         if isinstance(other, ObjcType):
@@ -72,7 +78,7 @@ class ObjcObject(ObjcType):
         super().__init__(runtime, value)
 
         # if not self.value:
-        #     raise ValueError(f"Invalid value for ObjC object: {hex(self.value)}")
+        #     raise ValueError(f"Invalid value for ObjcObject: {hex(self.value)}")
 
     @cached_property
     def class_(self) -> ObjcClass:
@@ -154,7 +160,7 @@ class ObjcObject(ObjcType):
         sel: Union[int, str],
         *args: Union[int, str, ObjcType],
         va_list: Optional[Sequence[Union[int, str, ObjcType]]] = None,
-    ) -> int:
+    ) -> Union[int, ObjcObject]:
         return self._runtime.msg_send(self._value, sel, *args, va_list=va_list)
 
 
@@ -165,7 +171,7 @@ class ObjcClass(ObjcType):
         super().__init__(runtime, value)
 
         if not self.value:
-            raise ValueError(f"Invalid value for ObjC class: {hex(self.value)}")
+            raise ValueError(f"Invalid value for ObjcClass: {hex(self.value)}")
 
     @cached_property
     def name(self) -> str:
@@ -234,7 +240,7 @@ class ObjcClass(ObjcType):
         sel: Union[int, str],
         *args: Union[int, str, ObjcType],
         va_list: Optional[Sequence[Union[int, str, ObjcType]]] = None,
-    ) -> int:
+    ) -> Union[int, ObjcObject]:
         return self._runtime.msg_send(self.value, sel, *args, va_list=va_list)
 
 
@@ -245,7 +251,7 @@ class ObjcMethod(ObjcType):
         super().__init__(runtime, value)
 
         if not self.value:
-            raise ValueError(f"Invalid value for ObjC method: {hex(self.value)}")
+            raise ValueError(f"Invalid value for ObjcMethod: {hex(self.value)}")
 
     @cached_property
     def name(self) -> str:
@@ -305,7 +311,7 @@ class ObjcIvar(ObjcType):
         super().__init__(runtime, value)
 
         if not self.value:
-            raise ValueError(f"Invalid value for ObjC ivar: {hex(self.value)}")
+            raise ValueError(f"Invalid value for ObjcIvar: {hex(self.value)}")
 
     @cached_property
     def offset(self) -> int:
@@ -329,7 +335,7 @@ class ObjcProperty(ObjcType):
         super().__init__(runtime, value)
 
         if not self.value:
-            raise ValueError(f"Invalid value for ObjC property: {hex(self.value)}")
+            raise ValueError(f"Invalid value for ObjcProperty: {hex(self.value)}")
 
     @cached_property
     def name(self) -> str:

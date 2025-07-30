@@ -18,7 +18,7 @@ def pyobj2nsobj(emu: Chomper, obj: NSObjConvertible) -> int:
         TypeError: If object type is not supported.
     """
     objc = ObjcRuntime(emu)
-    return objc._create_ns_object(obj)
+    return objc._create_ns_object(obj)  # type: ignore
 
 
 # Deprecated

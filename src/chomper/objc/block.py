@@ -4,7 +4,7 @@ import ctypes
 from typing import Optional, Sequence, Union, TYPE_CHECKING
 
 from chomper.typing import HookFuncCallable
-from chomper.utils import struct2bytes
+from chomper.utils import struct_to_bytes
 
 if TYPE_CHECKING:
     from chomper.core import Chomper
@@ -89,9 +89,7 @@ class ObjcBlock:
     def _wrap_callback(
         self, callback: HookFuncCallable, user_data: Optional[dict] = None
     ) -> int:
-        """Wrap callback function as a raw address.
-
-        Create a temporary address and forward the call to the specified function
+        """Create a temporary address and forward the call to the specified function
         through an interceptor.
         """
         user_data = {
@@ -116,7 +114,7 @@ class ObjcBlock:
         )
 
         desc = self.emu.create_buffer(ctypes.sizeof(st))
-        self.emu.write_bytes(desc, struct2bytes(st))
+        self.emu.write_bytes(desc, struct_to_bytes(st))
 
         return desc
 
@@ -133,7 +131,7 @@ class ObjcBlock:
         )
 
         layout = self.emu.create_buffer(self._size)
-        self.emu.write_bytes(layout, struct2bytes(st))
+        self.emu.write_bytes(layout, struct_to_bytes(st))
 
         for index, var in enumerate(variables):
             self.emu.write_u64(layout + 0x20 + index * 0x8, var)

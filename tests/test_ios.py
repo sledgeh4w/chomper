@@ -1,6 +1,4 @@
-from chomper.objc import pyobj2nsobj
-
-from .utils import multi_alloc_mem
+from .utils import alloc_variables
 
 
 def test_ns_number(emu_ios, objc):
@@ -26,11 +24,11 @@ def test_ns_mutable_string(emu_ios, objc):
 
         string = objc.msg_send("NSMutableString", "string")
 
-        objc.msg_send(string, "setString:", pyobj2nsobj(emu_ios, sample_str))
+        objc.msg_send(string, "setString:", objc.create_ns_string(sample_str))
         raw_string = objc.msg_send(string, "UTF8String")
         assert emu_ios.read_string(raw_string) == sample_str
 
-        objc.msg_send(string, "appendString:", pyobj2nsobj(emu_ios, sample_str))
+        objc.msg_send(string, "appendString:", objc.create_ns_string(sample_str))
         raw_string = objc.msg_send(string, "UTF8String")
         assert emu_ios.read_string(raw_string) == sample_str * 2
 
@@ -40,7 +38,7 @@ def test_ns_array(emu_ios, objc):
         sample_str = "chomper"
 
         array = objc.msg_send(
-            "NSArray", "arrayWithObjects:", pyobj2nsobj(emu_ios, sample_str)
+            "NSArray", "arrayWithObjects:", objc.create_ns_string(sample_str)
         )
         assert array
 
@@ -59,7 +57,7 @@ def test_ns_mutable_array(emu_ios, objc):
         array = objc.msg_send("NSMutableArray", "array")
         assert array
 
-        objc.msg_send(array, "addObject:", pyobj2nsobj(emu_ios, sample_str))
+        objc.msg_send(array, "addObject:", objc.create_ns_string(sample_str))
 
         first_object = objc.msg_send(array, "objectAtIndex:", 0)
         raw_string = objc.msg_send(first_object, "UTF8String")
@@ -71,8 +69,8 @@ def test_ns_dictionary(emu_ios, objc):
         sample_key = "name"
         sample_value = "chomper"
 
-        key = pyobj2nsobj(emu_ios, sample_key)
-        value = pyobj2nsobj(emu_ios, sample_value)
+        key = objc.create_ns_string(sample_key)
+        value = objc.create_ns_string(sample_value)
 
         dictionary = objc.msg_send(
             "NSDictionary", "dictionaryWithObjectsAndKeys:", value, va_list=(key,)
@@ -95,8 +93,8 @@ def test_ns_mutable_dictionary(emu_ios, objc):
         dictionary = objc.msg_send("NSMutableDictionary", "dictionary")
         assert dictionary
 
-        key = pyobj2nsobj(emu_ios, sample_key)
-        value = pyobj2nsobj(emu_ios, sample_value)
+        key = objc.create_ns_string(sample_key)
+        value = objc.create_ns_string(sample_value)
 
         objc.msg_send(dictionary, "setObject:forKey:", value, key)
 
@@ -178,14 +176,14 @@ def test_ns_user_defaults(emu_ios, objc):
         user_defaults = objc.msg_send("NSUserDefaults", "standardUserDefaults")
         assert user_defaults
 
-        key = pyobj2nsobj(emu_ios, "AppleLocale")
+        key = objc.create_ns_string("AppleLocale")
 
         apple_locale = objc.msg_send(user_defaults, "stringForKey:", key)
         raw_string = objc.msg_send(apple_locale, "UTF8String")
         assert emu_ios.read_string(raw_string)
 
-        test_key = pyobj2nsobj(emu_ios, "TestKey")
-        test_value = pyobj2nsobj(emu_ios, "TestVey")
+        test_key = objc.create_ns_string("TestKey")
+        test_value = objc.create_ns_string("TestVey")
 
         objc.msg_send(user_defaults, "setObject:forKey:", test_key, test_value)
 
@@ -202,7 +200,7 @@ def test_ns_date_formatter(emu_ios, objc):
         date_formatter = objc.msg_send(date_formatter, "init")
         assert date_formatter
 
-        format_str = pyobj2nsobj(emu_ios, "yyyy-MM-dd HH:mm:ss")
+        format_str = objc.create_ns_string("yyyy-MM-dd HH:mm:ss")
         objc.msg_send(date_formatter, "setDateFormat:", format_str)
 
         current_date = objc.msg_send("NSDate", "date")
@@ -225,7 +223,7 @@ def test_ns_time_zone(emu_ios, objc):
         assert emu_ios.read_string(raw_string)
 
         time_zone_shanghai = objc.msg_send(
-            "NSTimeZone", "timeZoneWithName:", pyobj2nsobj(emu_ios, "Asia/Shanghai")
+            "NSTimeZone", "timeZoneWithName:", objc.create_ns_string("Asia/Shanghai")
         )
         assert time_zone_shanghai
 
@@ -272,8 +270,8 @@ def test_ns_write_to_file_atomically(emu_ios, objc):
 
 def test_ns_file_manager(emu_ios, objc):
     with objc.autorelease_pool():
-        system_version_path = pyobj2nsobj(
-            emu_ios, "/System/Library/CoreServices/SystemVersion.plist"
+        system_version_path = objc.create_ns_string(
+            "/System/Library/CoreServices/SystemVersion.plist"
         )
 
         file_manager = objc.msg_send("NSFileManager", "defaultManager")
@@ -287,7 +285,7 @@ def test_ns_file_manager(emu_ios, objc):
         )
         assert attributes
 
-        path = pyobj2nsobj(emu_ios, "/System/Library")
+        path = objc.create_ns_string("/System/Library")
         directory_contents = objc.msg_send(
             file_manager, "directoryContentsAtPath:", path
         )
@@ -319,8 +317,8 @@ def test_ui_device(emu_ios, objc):
 
 def test_ns_log(emu_ios, objc):
     with objc.autorelease_pool():
-        msg = pyobj2nsobj(emu_ios, "Test NSLog\n")
-        emu_ios.call_symbol("_NSLog", msg)
+        msg = objc.create_ns_string("Test NSLog\n")
+        emu_ios.call_symbol("_NSLog", msg.value)
 
 
 def test_cf_network(emu_ios, objc):
@@ -339,7 +337,7 @@ def test_sc_network_reachability(emu_ios, objc):
     with objc.autorelease_pool():
         name = "apple.com"
 
-        with multi_alloc_mem(emu_ios, name, 8) as (name_ptr, flags):
+        with alloc_variables(emu_ios, name, 8) as (name_ptr, flags):
             reachability = emu_ios.call_symbol(
                 "_SCNetworkReachabilityCreateWithName", 0, name_ptr
             )

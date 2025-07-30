@@ -3,6 +3,7 @@ from __future__ import annotations
 from contextlib import contextmanager
 from typing import List, Optional, Sequence, Union, TYPE_CHECKING
 
+from chomper.exceptions import EmulatorCrashed
 from chomper.typing import NSObjConvertible, CFObjConvertible
 
 from .types import ObjcType, ObjcClass, ObjcObject
@@ -53,7 +54,7 @@ class ObjcRuntime:
         sel: Union[int, str],
         *args: Union[int, str, ObjcType],
         va_list: Optional[Sequence[Union[int, str, ObjcType]]] = None,
-    ) -> int:
+    ) -> Union[int, ObjcObject]:
         """Send message to Objective-C runtime.
 
         Args:
@@ -62,14 +63,53 @@ class ObjcRuntime:
             sel: The selector. If is str, consider it as the selector name.
             args: Parameters of the method to be called. If a str is passed in,
                 it will be converted to a pointer to a C string.
-            va_list: Variable number of arguments.
+            va_list: Variable argument list.
+
+        Returns:
+            The result of this call. Its type depends on the return type of
+            the method. If the return type is an object, the result is wrapped
+            in an `ObjcObject`. In other cases, it directly returns the primitive
+            integer value.
         """
+        is_class_method = False
+        is_return_obj = False
+        is_return_void = False
+
         if isinstance(receiver, str):
             receiver = self.find_class(receiver).value
+            is_class_method = True
         elif isinstance(receiver, ObjcType):
+            if isinstance(receiver, ObjcClass):
+                is_class_method = True
+            elif isinstance(receiver, ObjcObject) and receiver.is_class:
+                is_class_method = True
+
             receiver = receiver.value
 
-        sel = self.selector(sel) if isinstance(sel, str) else sel
+        if isinstance(sel, str):
+            sel_name = sel
+            sel = self.selector(sel_name)
+        else:
+            sel_name = self.emu.read_string(sel)
+
+        try:
+            if is_class_method:
+                objc_class = ObjcClass(self, receiver)
+                method = objc_class.get_class_method(sel_name)
+            else:
+                objc_class = ObjcObject(self, receiver).class_
+                method = objc_class.get_instance_method(sel_name)
+
+            return_type = method.return_type
+
+            if return_type.startswith("@") and return_type != "@?":
+                is_return_obj = True
+            elif return_type == "v":
+                is_return_void = True
+        except (ValueError, EmulatorCrashed):
+            # Failed to recognize the return type of the method,
+            # typically because the selector is invalid.
+            pass
 
         buf_list = []
 
@@ -89,9 +129,20 @@ class ObjcRuntime:
                     new.append(arg)
 
         try:
-            return self.emu.call_symbol(
-                "_objc_msgSend", receiver, sel, *new_args, va_list=new_va_list
+            retval = self.emu.call_symbol(
+                "_objc_msgSend",
+                receiver,
+                sel,
+                *new_args,
+                va_list=new_va_list,
             )
+
+            if is_return_obj:
+                return ObjcObject(self, retval)
+            elif is_return_void:
+                return 0
+
+            return retval
         finally:
             for buf in buf_list:
                 self.emu.free(buf)
@@ -116,7 +167,7 @@ class ObjcRuntime:
         finally:
             self.emu.call_symbol("_objc_autoreleasePoolPop", context)
 
-    def _create_ns_object(self, value: NSObjConvertible) -> int:
+    def _create_ns_object(self, value: NSObjConvertible) -> ObjcObject:
         """Create a NS object based on Python types.
 
         Raises:
@@ -126,6 +177,7 @@ class ObjcRuntime:
 
         if isinstance(value, dict):
             ns_obj = self.msg_send("NSMutableDictionary", "dictionary")
+            assert ns_obj
 
             for key, value in value.items():
                 ns_key = self._create_ns_object(key)
@@ -134,6 +186,7 @@ class ObjcRuntime:
                 self.msg_send(ns_obj, "setObject:forKey:", ns_value, ns_key)
         elif isinstance(value, list):
             ns_obj = self.msg_send("NSMutableArray", "array")
+            assert ns_obj
 
             for item in value:
                 ns_item = self._create_ns_object(item)
@@ -159,27 +212,23 @@ class ObjcRuntime:
         for buf in buf_list:
             self.emu.free(buf)
 
+        assert isinstance(ns_obj, ObjcObject)
         return ns_obj
 
     def create_ns_number(self, value: int) -> ObjcObject:
-        obj = self._create_ns_object(value)
-        return ObjcObject(self, obj)
+        return self._create_ns_object(value)
 
     def create_ns_string(self, value: str) -> ObjcObject:
-        obj = self._create_ns_object(value)
-        return ObjcObject(self, obj)
+        return self._create_ns_object(value)
 
     def create_ns_data(self, value: bytes) -> ObjcObject:
-        obj = self._create_ns_object(value)
-        return ObjcObject(self, obj)
+        return self._create_ns_object(value)
 
     def create_ns_array(self, value: list) -> ObjcObject:
-        obj = self._create_ns_object(value)
-        return ObjcObject(self, obj)
+        return self._create_ns_object(value)
 
     def create_ns_dictionary(self, value: dict) -> ObjcObject:
-        obj = self._create_ns_object(value)
-        return ObjcObject(self, obj)
+        return self._create_ns_object(value)
 
     def _create_cf_object(self, value: CFObjConvertible) -> int:
         """Create an CF object based on Python types.

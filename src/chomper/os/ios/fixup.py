@@ -93,7 +93,7 @@ class SystemModuleFixer:
             self.add_refs_to_relocation(symbol.value)
 
     def relocate_block_invokes(self):
-        """Relocate invoke address in block struct."""
+        """Relocate invoke addresses in block structs."""
         for binding in self.module_binary.bindings:
             if binding.symbol.name == "__NSConcreteGlobalBlock":
                 address = self.module_base + binding.address
@@ -183,7 +183,7 @@ class SystemModuleFixer:
                 self.fixup_protocol_struct(symbol.value)
 
     def fixup_class_method_list(self, address: int):
-        """Fixup the method list struct."""
+        """Fixup the method list struct of Objective-C."""
         struct_addr = self.relocate_reference(address)
         if not struct_addr:
             return
@@ -213,7 +213,7 @@ class SystemModuleFixer:
                 self.relocate_reference(sel_offset_ptr + sel_offset)
 
     def fixup_class_variable_list(self, address: int):
-        """Fixup the variable list struct."""
+        """Fixup the variable list struct of Objective-C."""
         struct_addr = self.relocate_reference(address)
         if not struct_addr:
             return
@@ -231,7 +231,7 @@ class SystemModuleFixer:
             self.relocate_reference(variable_offset + 16)
 
     def fixup_class_protocol_list(self, address: int):
-        """Fixup the protocol list struct."""
+        """Fixup the protocol list struct of Objective-C."""
         struct_addr = self.relocate_reference(address)
         if not struct_addr:
             return
@@ -245,7 +245,7 @@ class SystemModuleFixer:
             self.relocate_reference(protocol_address + 8)
 
     def fixup_class_struct(self, address: int):
-        """Fixup the class struct."""
+        """Fixup the class struct of Objective-C."""
         address += self.module_base
 
         data_addr = self.emu.read_pointer(address + 32)
@@ -267,7 +267,7 @@ class SystemModuleFixer:
         self.fixup_class_variable_list(instance_variables_addr)
 
     def fixup_protocol_struct(self, address: int):
-        """Fixup the protocol struct."""
+        """Fixup the protocol struct of Objective-C."""
         address += self.module_base
 
         name_addr = self.emu.read_pointer(address + 8)
@@ -278,7 +278,7 @@ class SystemModuleFixer:
         self.fixup_class_protocol_list(protocols_addr)
 
     def fixup_category_struct(self, address: int):
-        """Fixup the category struct."""
+        """Fixup the category struct of Objective-C."""
         address += self.module_base
 
         instance_methods_addr = address + 16

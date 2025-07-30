@@ -192,7 +192,7 @@ def hook_dlopen(uc: Uc, address: int, size: int, user_data: HookContext):
 
     path = emu.read_string(emu.get_arg(0))
 
-    module_base = emu.ios_os.load_module_internal(path)
+    module_base = emu.ios_os.load_module_private(path)
     if module_base is None:
         raise EmulatorCrashed(f"doesn't support dlopen: '{path}'")
 
@@ -208,7 +208,7 @@ def hook_sl_dlopen_audited(uc: Uc, address: int, size: int, user_data: HookConte
 
     path = emu.read_string(emu.read_pointer(emu.get_arg(0)))
 
-    module_base = emu.ios_os.load_module_internal(path)
+    module_base = emu.ios_os.load_module_private(path)
     if module_base is None:
         raise EmulatorCrashed(f"doesn't support _sl_dlopen_audited: '{path}'")
 
@@ -267,6 +267,8 @@ def hook_mg_copy_answer(uc: Uc, address: int, size: int, user_data: HookContext)
     objc = ObjcRuntime(emu)
 
     str_ptr = objc.msg_send(emu.get_arg(0), "UTF8String")
+    assert isinstance(str_ptr, int)
+
     key = emu.read_string(str_ptr)
 
     if key in emu.ios_os.device_info:
@@ -283,6 +285,8 @@ def hook_cf_preferences_copy_app_value_with_container_and_configuration(
     objc = ObjcRuntime(emu)
 
     str_ptr = objc.msg_send(emu.get_arg(0), "UTF8String")
+    assert isinstance(str_ptr, int)
+
     key = emu.read_string(str_ptr)
 
     if key in emu.ios_os.preferences:

@@ -1,11 +1,14 @@
 import ctypes
 import inspect
 import os
+import struct
 from ctypes import addressof, create_string_buffer, sizeof, memmove, Structure
 from functools import wraps
-from typing import Any, Callable, Optional, Type, TypeVar
+from typing import Any, Callable, Optional, Type, TypeVar, Union
 
+from .const import LITTLE_ENDIAN, BIG_ENDIAN, SINGLE_PRECISION, DOUBLE_PRECISION
 from .log import get_logger
+from .typing import EndianType, PrecisionType
 
 
 StructureT = TypeVar("StructureT", bound=ctypes.Structure)
@@ -38,14 +41,64 @@ def to_unsigned(value: int, size: int = 8) -> int:
     return value
 
 
-def struct2bytes(st: Structure) -> bytes:
+def bytes_to_float(data: bytes, endian: EndianType = LITTLE_ENDIAN) -> float:
+    """Convert bytes to float/double."""
+    size = len(data)
+
+    if size == 4:
+        c_type = "f"
+    elif size == 8:
+        c_type = "d"
+    else:
+        raise ValueError("Wrong data length")
+
+    if endian == LITTLE_ENDIAN:
+        char = "<"
+    elif endian == BIG_ENDIAN:
+        char = ">"
+    else:
+        raise ValueError("Wrong endian")
+
+    fmt = f"{char}{c_type}"
+    return struct.unpack(fmt, data)[0]
+
+
+def float_to_bytes(
+    value: Union[float, int],
+    endian: EndianType = LITTLE_ENDIAN,
+    precision: PrecisionType = SINGLE_PRECISION,
+) -> bytes:
+    """Convert float/double to bytes."""
+    if endian == LITTLE_ENDIAN:
+        char = "<"
+    elif endian == BIG_ENDIAN:
+        char = ">"
+    else:
+        raise ValueError("Wrong endian")
+
+    if precision == SINGLE_PRECISION:
+        c_type = "f"
+    elif precision == DOUBLE_PRECISION:
+        c_type = "d"
+    else:
+        raise ValueError("Wrong precision")
+
+    fmt = f"{char}{c_type}"
+
+    try:
+        return struct.pack(fmt, value)
+    except struct.error as e:
+        raise ValueError(f"Convert failed: {str(e)}")
+
+
+def struct_to_bytes(st: Structure) -> bytes:
     """Convert struct to bytes."""
     buffer = create_string_buffer(sizeof(st))
     memmove(buffer, addressof(st), sizeof(st))
     return buffer.raw
 
 
-def bytes2struct(data: bytes, struct_class: Type[StructureT]) -> StructureT:
+def bytes_to_struct(data: bytes, struct_class: Type[StructureT]) -> StructureT:
     """Create struct from bytes."""
     instance = struct_class()
     size = ctypes.sizeof(struct_class)

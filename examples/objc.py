@@ -17,23 +17,24 @@ def main():
     # Objective-C interface
     objc = ObjcRuntime(emu)
 
+    # Find class
+    ns_string_class = objc.find_class("NSString")
+
     # Call class methods
-    ns_str = objc.msg_send("NSString", "stringWithUTF8String:", "chomper")
+    ns_str = ns_string_class.call_method("stringWithUTF8String:", "chomper")
     print("NSString: %s" % ns_str)
 
     # Call instance methods
-    raw_str = objc.msg_send(ns_str, "UTF8String")
-    print("cString: %s" % emu.read_string(raw_str))
+    raw_str = ns_str.call_method("UTF8String")
+    print("UTF8String: %s" % emu.read_string(raw_str))
 
     # Automatically release Objective-C objects
     with objc.autorelease_pool():
         objc.msg_send("NSDate", "date")
 
-    # Utility for creating basic NS objects
+    # Utility for creating basic NS/CF objects
     ns_data = objc.create_ns_data(b"chomper")
     print("NSData: %s" % ns_data)
-
-    # Utility for creating basic CF objects
     cf_dict = objc.create_cf_dictionary({"name": "Chomper"})
     print("CFDictionary: %s" % cf_dict)
 

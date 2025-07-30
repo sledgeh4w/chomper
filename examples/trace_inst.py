@@ -28,8 +28,6 @@ def main():
         arch=ARCH_ARM64,
         os_type=OS_IOS,
         rootfs_path=os.path.join(base_path, "../rootfs/ios"),
-        # Trace all modules
-        trace_inst=True,
         # Specify custom callback
         trace_inst_callback=trace_inst_callback,
     )
@@ -41,6 +39,10 @@ def main():
 
     # Trace target module
     emu.load_module(module_file, trace_inst=True)
+
+    # Add trace to a loaded module
+    libobjc = emu.find_module("libobjc.A.dylib")
+    emu.add_inst_trace(libobjc)
 
 
 if __name__ == '__main__':
