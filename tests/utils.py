@@ -2,23 +2,23 @@ from contextlib import contextmanager
 
 
 @contextmanager
-def multi_alloc_mem(emu, *args):
-    mem_ptrs = []
+def alloc_variables(emu, *args):
+    buf_list = []
 
     for arg in args:
         if isinstance(arg, int):
-            mem_ptr = emu.create_buffer(arg)
+            buf = emu.create_buffer(arg)
         elif isinstance(arg, str):
-            mem_ptr = emu.create_string(arg)
+            buf = emu.create_string(arg)
         elif isinstance(arg, bytes):
-            mem_ptr = emu.create_buffer(len(arg))
-            emu.write_bytes(mem_ptr, arg)
+            buf = emu.create_buffer(len(arg))
+            emu.write_bytes(buf, arg)
         else:
             raise ValueError("Unsupported value type")
-        mem_ptrs.append(mem_ptr)
+        buf_list.append(buf)
 
     try:
-        yield mem_ptrs
+        yield buf_list
     finally:
-        for mem_ptr in mem_ptrs:
-            emu.free(mem_ptr)
+        for buf in buf_list:
+            emu.free(buf)

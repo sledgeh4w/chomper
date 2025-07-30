@@ -9,7 +9,7 @@ from chomper.const import TLS_ADDRESS
 from chomper.exceptions import SystemOperationFailed
 from chomper.loader import ELFLoader
 from chomper.os.base import BaseOs, SyscallError
-from chomper.utils import log_call, struct2bytes, to_unsigned
+from chomper.utils import log_call, struct_to_bytes, to_unsigned
 
 from .hooks import get_hooks
 from .structs import Dirent, Stat64, Timespec
@@ -17,7 +17,7 @@ from .syscall import get_syscall_handlers
 
 
 # Environment variables
-ENVIRON_VARS = """"""
+ENVIRON_VARIABLES = """"""
 
 
 class AndroidOs(BaseOs):
@@ -77,11 +77,11 @@ class AndroidOs(BaseOs):
             st_ctim=ctim,
         )
 
-        return struct2bytes(st)
+        return struct_to_bytes(st)
 
     @staticmethod
     def _construct_dev_stat64() -> bytes:
-        """ "Construct stat64 struct for device file."""
+        """Construct stat64 struct for device file."""
         atim = Timespec.from_time_ns(0)
         mtim = Timespec.from_time_ns(0)
         ctim = Timespec.from_time_ns(0)
@@ -102,7 +102,7 @@ class AndroidOs(BaseOs):
             st_ctim=ctim,
         )
 
-        return struct2bytes(st)
+        return struct_to_bytes(st)
 
     @staticmethod
     def _construct_statfs64() -> bytes:
@@ -119,7 +119,7 @@ class AndroidOs(BaseOs):
             d_type=(4 if entry.is_dir() else 0),
             d_name=entry.name.encode("utf-8"),
         )
-        return struct2bytes(st)
+        return struct_to_bytes(st)
 
     @log_call
     def getdents(self, fd: int) -> Optional[bytes]:
@@ -150,7 +150,7 @@ class AndroidOs(BaseOs):
     def clock_gettime(self) -> bytes:
         time_ns = time.time_ns()
         st = Timespec.from_time_ns(time_ns)
-        return struct2bytes(st)
+        return struct_to_bytes(st)
 
     @log_call
     def clock_getres(self) -> bytes:
@@ -158,7 +158,7 @@ class AndroidOs(BaseOs):
             tv_sec=0,
             tv_nsec=1,
         )
-        return struct2bytes(st)
+        return struct_to_bytes(st)
 
     def _setup_hooks(self):
         """Initialize the hooks."""
@@ -221,7 +221,9 @@ class AndroidOs(BaseOs):
             self.emu.free(mode_p)
 
     def _setup_standard_io(self):
-        """Setup standard IO: `stdin`, `stdout`, `stderr`."""
+        """Convert standard I/O file descriptors to FILE objects and assign them
+        to target symbols.
+        """
         stdin_p = self.emu.find_symbol("stdin")
         stdout_p = self.emu.find_symbol("stdout")
         stderr_p = self.emu.find_symbol("stderr")
@@ -237,15 +239,14 @@ class AndroidOs(BaseOs):
         self.emu.write_pointer(stderr_p.address, stderr_fp)
 
     def _setup_environ(self):
-        """Setup environment variables."""
+        """Initialize global variable `environ`."""
         environ = self.emu.create_buffer(8)
-        self.emu.write_pointer(environ, self._construct_environ(ENVIRON_VARS))
+        self.emu.write_pointer(environ, self._construct_environ(ENVIRON_VARIABLES))
 
         environ_pointer = self.emu.find_symbol("environ")
         self.emu.write_pointer(environ_pointer.address, environ)
 
     def initialize(self):
-        """Initialize environment."""
         self._setup_hooks()
         self._setup_syscall_handlers()
         self._setup_devices()

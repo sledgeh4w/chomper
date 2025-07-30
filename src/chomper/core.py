@@ -26,8 +26,8 @@ from .instruction import EXTEND_INSTRUCTIONS
 from .memory import MemoryManager
 from .log import get_logger
 from .os import AndroidOs, android_get_syscall_name, IosOs, ios_get_syscall_name
-from .typing import HookContext, HookFuncCallable, HookMemCallable
-from .utils import aligned, to_signed
+from .typing import EndianType, HookContext, HookFuncCallable, HookMemCallable
+from .utils import aligned, to_signed, bytes_to_float, float_to_bytes
 
 try:
     from capstone import CS_ARCH_AARCH64
@@ -62,7 +62,7 @@ class Chomper:
         mode: int = const.MODE_ARM,
         os_type: int = const.OS_ANDROID,
         logger: Optional[logging.Logger] = None,
-        endian: const.EndianType = const.LITTLE_ENDIAN,
+        endian: EndianType = const.LITTLE_ENDIAN,
         rootfs_path: Optional[str] = None,
         enable_vfp: bool = True,
         enable_objc: bool = True,
@@ -582,6 +582,9 @@ class Chomper:
             user_data={"emu": self},
         )
 
+        # Ensure trace effect
+        self.uc.ctl_flush_tb()  # type: ignore
+
     def exec_init_array(self, init_array: List[int]):
         """Execute initialization functions."""
         for init_func in init_array:
@@ -762,6 +765,16 @@ class Chomper:
         """Read an unsigned int64 from the address."""
         return self.read_int(address, 8, False)
 
+    def read_float(self, address: int) -> float:
+        """Read a float from the address."""
+        data = self.read_bytes(address, 4)
+        return bytes_to_float(data, self.endian)
+
+    def read_double(self, address: int) -> float:
+        """Read a double from the address."""
+        data = self.read_bytes(address, 8)
+        return bytes_to_float(data, self.endian)
+
     def read_bytes(self, address: int, size: int) -> bytes:
         """Read bytes from the address."""
         return bytes(self.uc.mem_read(address, size))
@@ -849,6 +862,16 @@ class Chomper:
     def write_u64(self, address: int, value: int):
         """Write an unsigned int64 into the address."""
         self.write_int(address, value, 8, False)
+
+    def write_float(self, address: int, value: float):
+        """Write a float into the address."""
+        data = float_to_bytes(value, self.endian, const.SINGLE_PRECISION)
+        self.write_bytes(address, data)
+
+    def write_double(self, address: int, value: float):
+        """Write a double into the address."""
+        data = float_to_bytes(value, self.endian, const.DOUBLE_PRECISION)
+        self.write_bytes(address, data)
 
     def write_bytes(self, address: int, data: bytes):
         """Write bytes into the address."""

@@ -12,7 +12,7 @@ from unicorn import arm64_const
 from chomper.exceptions import SystemOperationFailed, ProgramTerminated
 from chomper.os.base import SyscallError
 from chomper.typing import SyscallHandleCallable
-from chomper.utils import struct2bytes, bytes2struct, to_signed
+from chomper.utils import struct_to_bytes, bytes_to_struct, to_signed
 
 from . import const
 from .structs import Rusage, MachMsgHeaderT
@@ -374,7 +374,7 @@ def handle_sys_getrusage(emu: Chomper):
     r = emu.get_arg(1)
 
     rusage = Rusage()
-    emu.write_bytes(r, struct2bytes(rusage))
+    emu.write_bytes(r, struct_to_bytes(rusage))
 
     return 0
 
@@ -695,7 +695,7 @@ def handle_sys_sysctl(emu: Chomper):
         return -1
 
     if isinstance(result, ctypes.Structure):
-        emu.write_bytes(oldp, struct2bytes(result))
+        emu.write_bytes(oldp, struct_to_bytes(result))
     elif isinstance(result, str):
         emu.write_string(oldp, result)
     elif isinstance(result, int):
@@ -753,7 +753,7 @@ def handle_sys_sysctlbyname(emu: Chomper):
         return -1
 
     if isinstance(result, ctypes.Structure):
-        emu.write_bytes(oldp, struct2bytes(result))
+        emu.write_bytes(oldp, struct_to_bytes(result))
     elif isinstance(result, str):
         emu.write_string(oldp, result)
     elif isinstance(result, int):
@@ -1285,7 +1285,7 @@ def handle_host_self_trap(emu: Chomper):
 def handle_mach_msg_trap(emu: Chomper):
     msg_ptr = emu.get_arg(0)
     msg_raw = emu.read_bytes(msg_ptr, ctypes.sizeof(MachMsgHeaderT))
-    msg = bytes2struct(msg_raw, MachMsgHeaderT)
+    msg = bytes_to_struct(msg_raw, MachMsgHeaderT)
 
     msg_id = msg.msgh_id
     remote_port = msg.msgh_remote_port
