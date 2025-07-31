@@ -5,7 +5,7 @@ from typing import Callable, Dict, Optional
 from unicorn import Uc, UcError
 
 from chomper.exceptions import EmulatorCrashed, SymbolMissing, ObjCUnrecognizedSelector
-from chomper.objc import ObjcRuntime
+from chomper.objc import ObjcRuntime, ObjcObject
 from chomper.typing import HookContext
 
 hooks: Dict[str, Callable] = {}
@@ -363,18 +363,21 @@ def hook_sec_item_copy_matching(
         "objectForKey:",
         emu.read_pointer(emu.find_symbol("_kSecReturnData").address),
     )
+    assert isinstance(sec_return_data, ObjcObject)
 
     sec_return_attributes = objc.msg_send(
         a1,
         "objectForKey:",
         emu.read_pointer(emu.find_symbol("_kSecReturnAttributes").address),
     )
+    assert isinstance(sec_return_attributes, ObjcObject)
 
     sec_match_limit = objc.msg_send(
         a1,
         "objectForKey:",
         emu.read_pointer(emu.find_symbol("_kSecMatchLimit").address),
     )
+    assert isinstance(sec_match_limit, ObjcObject)
 
     cf_boolean_true = emu.read_pointer(emu.find_symbol("_kCFBooleanTrue").address)
 
@@ -382,11 +385,11 @@ def hook_sec_item_copy_matching(
         emu.find_symbol("_kSecMatchLimitAll").address
     )
 
-    if sec_match_limit == sec_match_limit_all:
+    if sec_match_limit.value == sec_match_limit_all:
         result = objc.create_cf_array([])
-    elif sec_return_attributes == cf_boolean_true:
+    elif sec_return_attributes.value == cf_boolean_true:
         result = objc.create_cf_dictionary({})
-    elif sec_return_data == cf_boolean_true:
+    elif sec_return_data.value == cf_boolean_true:
         # result = objc.create_cf_data(b"")
         result = 0
     else:
