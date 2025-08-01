@@ -22,7 +22,6 @@ from . import const
 from .arch import arm_arch, arm64_arch
 from .exceptions import EmulatorCrashed, SymbolMissing
 from .loader import Module, Symbol
-from .instruction import EXTEND_INSTRUCTIONS
 from .memory import MemoryManager
 from .log import get_logger
 from .os import AndroidOs, android_get_syscall_name, IosOs, ios_get_syscall_name
@@ -145,7 +144,15 @@ class Chomper:
         arch = UC_ARCH_ARM if arch == const.ARCH_ARM else UC_ARCH_ARM64
         mode = UC_MODE_THUMB if mode == const.MODE_THUMB else UC_MODE_ARM
 
-        return Uc(arch, mode)
+        uc = Uc(arch, mode)
+
+        if arch == const.ARCH_ARM64:
+            # This CPU mode supports additional instruction sets, which is particularly
+            # useful for iOS emulation. For example, it includes atomic instructions
+            # from ARMv8.1 and PAC instructions from ARMv8.3.
+            uc.ctl_set_cpu_model(arm64_const.UC_CPU_ARM64_MAX)
+
+        return uc
 
     @staticmethod
     def _create_cs(arch: int, mode: int) -> Cs:
@@ -521,25 +528,10 @@ class Chomper:
         self.uc.hook_add(UC_HOOK_INTR, self._interrupt_callback)
 
     def _interrupt_callback(self, uc: Uc, intno: int, user_data: dict):
-        """Handle interrupt from emulators.
-
-        There are currently two types of interrupts that need to be actively handled,
-        system calls and some unsupported instructions.
-        """
+        """Handle interrupts from emulators, such as 'svc'."""
         if intno == 2:
             self._dispatch_syscall()
             return
-        elif intno in (1, 4):
-            # Handle cpu exceptions
-            address = self.uc.reg_read(self.arch.reg_pc)
-            code = uc.mem_read(address, 4)
-
-            for extend_inst in EXTEND_INSTRUCTIONS:
-                try:
-                    extend_inst(self, code).execute()
-                    return
-                except ValueError:
-                    pass
 
         self.crash(f"Unhandled interruption {intno}")
 
