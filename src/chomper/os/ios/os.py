@@ -394,6 +394,8 @@ class IosOs(BaseOs):
         if self.emu.read_s64(locale_key.address) == -1:
             self.emu.write_s64(locale_key.address, 10)
 
+        self.emu.call_symbol("___atexit_init")
+
     def _init_system_pthread(self):
         """Initialize `libsystem_pthread.dylib`."""
         main_thread = self.emu.create_buffer(256)
