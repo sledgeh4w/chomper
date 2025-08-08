@@ -305,6 +305,10 @@ def hook_cf_bundle_create_info_dict_from_main_executable(
     info_path = os.path.join(executable_dir, "Info.plist")
 
     if not os.path.exists(info_path):
+        # Ensure `_mainBundleLock` is released
+        main_bundle_lock = emu.find_symbol("__mainBundleLock")
+        emu.call_symbol("_pthread_mutex_unlock", main_bundle_lock.address)
+
         raise FileNotFoundError(
             "File 'Info.plist' not found, please ensure that 'Info.plist' "
             "and executable file are in the same directory."
