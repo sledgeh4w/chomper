@@ -323,8 +323,11 @@ def test_ns_log(emu_ios, objc):
 
 def test_cf_network(emu_ios, objc):
     with objc.autorelease_pool():
-        system_proxy_settings = emu_ios.call_symbol("_CFNetworkCopySystemProxySettings")
-        assert system_proxy_settings
+        result = emu_ios.call_symbol("_CFNetworkCopySystemProxySettings")
+        assert result
+
+        result = emu_ios.call_symbol("__CFNetworkCopyPreferredLanguageCode")
+        assert result
 
 
 def test_cf_run_loop(emu_ios, objc):
@@ -347,3 +350,15 @@ def test_sc_network_reachability(emu_ios, objc):
                 "_SCNetworkReachabilityGetFlags", reachability, flags
             )
             assert result
+
+
+def test_dispatch_semaphore(emu_ios):
+    semaphore = emu_ios.call_symbol("_dispatch_semaphore_create", 0)
+
+    result = emu_ios.call_symbol("_dispatch_semaphore_signal", semaphore)
+    assert result == 0
+
+    result = emu_ios.call_symbol("_dispatch_semaphore_wait", semaphore, -1)
+    assert result == 0
+
+    emu_ios.call_symbol("_dispatch_release", semaphore)

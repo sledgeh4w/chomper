@@ -2,6 +2,8 @@ import ctypes
 import os
 import plistlib
 import sys
+import time
+import uuid
 from typing import List, Optional
 
 from chomper.const import STACK_ADDRESS, STACK_SIZE, TLS_ADDRESS
@@ -131,9 +133,10 @@ class IosOs(BaseOs):
     IPPROTO_ICMP = 1
 
     MACH_PORT_NULL = 0
-    MACH_PORT_TASK_SELF = 1
-    MACH_PORT_TIMER = 2
-    MACH_PORT_NOTIFICATION_CENTER = 3
+    MACH_PORT_HOST_SELF = 1
+    MACH_PORT_TASK_SELF = 2
+    MACH_PORT_TIMER = 3
+    MACH_PORT_NOTIFICATION_CENTER = 4
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -151,6 +154,10 @@ class IosOs(BaseOs):
 
         self.preferences = PREFERENCES.copy()
         self.device_info = DEVICE_INFO.copy()
+
+        # Semaphore
+        self._semaphore_map = {}
+        self._semaphore_queue = {}
 
     def get_errno(self) -> int:
         """Get the value of `errno`."""
@@ -296,7 +303,10 @@ class IosOs(BaseOs):
         """Initialize thread local storage (TLS)."""
         errno_ptr = self.emu.create_buffer(0x8)
 
+        self.emu.write_pointer(TLS_ADDRESS - 0xE0, TLS_ADDRESS - 0xE0)
+
         self.emu.write_u64(TLS_ADDRESS - 0x8, self.tid)
+
         self.emu.write_pointer(TLS_ADDRESS + 0x8, errno_ptr)
         self.emu.write_u32(TLS_ADDRESS + 0x18, 5)
 
@@ -405,6 +415,11 @@ class IosOs(BaseOs):
 
         main_thread_ptr = self.emu.find_symbol("__main_thread_ptr")
         self.emu.write_pointer(main_thread_ptr.address, main_thread)
+
+        self.emu.write_pointer(main_thread, main_thread)
+
+        pthread_ptr_munge_token = self.emu.find_symbol("__pthread_ptr_munge_token")
+        self.emu.write_pointer(pthread_ptr_munge_token.address, 0)
 
         pthread_supported_features = self.emu.find_symbol(
             "___pthread_supported_features"
@@ -740,6 +755,48 @@ class IosOs(BaseOs):
         """
         self.emu.write_u64(TLS_ADDRESS + 0xA0, queue)
         self.emu.write_u64(TLS_ADDRESS + 0xA8, 0)
+
+    def semaphore_create(self, value: int) -> int:
+        sem = 1
+        while sem < 10000:
+            if sem not in self._semaphore_map:
+                break
+            sem += 1
+        else:
+            return 0
+
+        self._semaphore_map[sem] = value
+        return sem
+
+    def semaphore_wait(self, semaphore: int, timeout: int = -1) -> int:
+        start_time = time.time()
+        value = self._semaphore_map[semaphore]
+
+        # Blocked
+        if value <= 0:
+            rand_id = uuid.uuid4()
+
+            if semaphore not in self._semaphore_queue:
+                self._semaphore_queue[semaphore] = []
+            self._semaphore_queue[semaphore].append(rand_id)
+
+            while True:
+                if 0 < timeout < time.time() - start_time:
+                    return -1
+
+                if rand_id not in self._semaphore_queue[semaphore]:
+                    return 0
+
+                time.sleep(0.1)
+
+        self._semaphore_map[semaphore] -= 1
+        return 0
+
+    def semaphore_signal(self, semaphore: int):
+        if self._semaphore_queue.get(semaphore):
+            self._semaphore_queue[semaphore].pop(0)
+        else:
+            self._semaphore_map[semaphore] += 1
 
     def initialize(self):
         self._setup_hooks()
