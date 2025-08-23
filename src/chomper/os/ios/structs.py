@@ -155,3 +155,25 @@ class MachMsgHeaderT(ctypes.Structure):
         ("msgh_voucher_port", ctypes.c_uint32),
         ("msgh_id", ctypes.c_int32),
     ]
+
+
+class NDRRecordT(ctypes.Structure):
+    _fields_ = [
+        ("mig_vers", ctypes.c_uint8),
+        ("if_vers", ctypes.c_uint8),
+        ("reserved1", ctypes.c_uint8),
+        ("mig_encoding", ctypes.c_uint8),
+        # ("int_rep", ctypes.c_uint8),
+        # ("char_rep", ctypes.c_uint8),
+        # ("float_rep", ctypes.c_uint8),
+        # ("reserved2", ctypes.c_uint8),
+    ]
+
+
+class ReplayFmtT(ctypes.Structure):
+    _pack_ = 4
+    _fields_ = [
+        ("hdr", MachMsgHeaderT),
+        ("ndr", NDRRecordT),
+        ("kr", ctypes.c_uint32),
+    ]
