@@ -9,6 +9,9 @@ from chomper.utils import aligned
 from .base import BaseLoader, Module, Symbol, Binding
 
 
+_ARMV81_SYMBOL_POSTFIX = "$VARIANT$armv81"
+
+
 class MachoLoader(BaseLoader):
     """The Mach-O file loader."""
 
@@ -63,7 +66,7 @@ class MachoLoader(BaseLoader):
         if symbol_name == "____chkstk_darwin":
             return symbol_name.replace("_", "", 1)
 
-        return symbol_name.replace("$VARIANT$armv81", "")
+        return symbol_name.replace(_ARMV81_SYMBOL_POSTFIX, "")
 
     def _load_symbols(
         self,
@@ -125,9 +128,11 @@ class MachoLoader(BaseLoader):
         """Get the relocation address of a symbol."""
         reloc_addr = None
 
-        if symbol_map.get(f"{symbol_name}$VARIANT$armv81"):
+        if symbol_map.get(f"{symbol_name}{_ARMV81_SYMBOL_POSTFIX}"):
             if not self.emu.hooks.get(symbol_name):
-                reloc_addr = symbol_map[f"{symbol_name}$VARIANT$armv81"].address
+                reloc_addr = symbol_map[
+                    f"{symbol_name}{_ARMV81_SYMBOL_POSTFIX}"
+                ].address
         elif symbol_name == "___chkstk_darwin":
             if symbol_map.get(f"_{symbol_name}"):
                 reloc_addr = symbol_map[f"_{symbol_name}"].address
@@ -253,6 +258,20 @@ class MachoLoader(BaseLoader):
 
         return [addr for addr in values if addr]
 
+    @staticmethod
+    def _process_symbol_aliases(symbols: List[Symbol]) -> List[Symbol]:
+        """Reset symbol addresses based on actual aliases."""
+        symbol_map = {symbol.name: symbol for symbol in symbols}
+
+        for name, symbol in symbol_map.items():
+            if name.endswith(_ARMV81_SYMBOL_POSTFIX):
+                export_name = name.replace(_ARMV81_SYMBOL_POSTFIX, "")
+                if export_name not in symbol_map:
+                    continue
+                symbol_map[export_name].address = symbol.address
+
+        return list(symbol_map.values())
+
     def load(
         self,
         module_base: int,
@@ -273,6 +292,8 @@ class MachoLoader(BaseLoader):
 
         size = self._map_segments(binary, module_base)
         symbols = self._load_symbols(binary, module_base)
+
+        symbols = self._process_symbol_aliases(symbols)
 
         self.add_symbol_hooks(symbols, trace_symbol_calls)
 

@@ -15,7 +15,7 @@ from chomper.typing import SyscallHandleCallable
 from chomper.utils import struct_to_bytes, bytes_to_struct, to_signed
 
 from . import const
-from .structs import Rusage, MachMsgHeaderT
+from .structs import Rusage, MachMsgHeaderT, NDRRecordT, ReplayFmtT
 from .sysctl import sysctl, sysctlbyname
 
 if TYPE_CHECKING:
@@ -893,6 +893,13 @@ def handle_sys_fsstat64(emu: Chomper):
 def handle_sys_bsdthread_create(emu: Chomper):
     emu.logger.warning("Emulator ignored a thread create reqeust.")
     emu.log_backtrace()
+
+    # start_routine = emu.get_arg(0)
+    # arg = emu.get_arg(1)
+    #
+    # emu.set_arg(0, arg)
+    # emu.call_address(start_routine)
+
     return 0
 
 
@@ -919,6 +926,11 @@ def handle_sys_workq_kernreturn(emu: Chomper):
 
 @register_syscall_handler(const.SYS_KEVENT_QOS, "SYS_kevent_qos")
 def handle_sys_kevent_qos(emu: Chomper):
+    return 0
+
+
+@register_syscall_handler(const.SYS_KEVENT_ID, "SYS_kevent_id")
+def handle_sys_kevent_id(emu: Chomper):
     return 0
 
 
@@ -1278,7 +1290,7 @@ def handle_task_self_trap(emu: Chomper):
 
 @register_syscall_handler(const.HOST_SELF_TRAP, "HOST_SELF_TRAP")
 def handle_host_self_trap(emu: Chomper):
-    return 2563
+    return emu.ios_os.MACH_PORT_HOST_SELF
 
 
 @register_syscall_handler(const.MACH_MSG_TRAP, "MACH_MSG_TRAP")
@@ -1290,14 +1302,64 @@ def handle_mach_msg_trap(emu: Chomper):
     msg_id = msg.msgh_id
     remote_port = msg.msgh_remote_port
 
-    emu.logger.info("Recv mach msg: msg_id=%s, remote_port=%s", msg_id, remote_port)
+    option = emu.get_arg(1)
 
-    if remote_port == emu.ios_os.MACH_PORT_TASK_SELF:
-        return 6
+    emu.logger.info(
+        "Recv mach msg: msg_id=%s, remote_port=%s, option=0x%x",
+        msg_id,
+        remote_port,
+        option,
+    )
+
+    if remote_port == emu.ios_os.MACH_PORT_HOST_SELF:
+        if msg_id == 412:  # host_get_special_port
+            return 6
+    elif remote_port == emu.ios_os.MACH_PORT_TASK_SELF:
+        if msg_id == 3418:  # semaphore_create
+            if option & const.MACH_RCV_MSG:
+                # policy = emu.read_s32(msg_ptr + 0x20)
+                value = emu.read_s32(msg_ptr + 0x24)
+
+                semaphore = emu.ios_os.semaphore_create(value)
+
+                msg.msgh_bits |= const.MACH_MSGH_BITS_COMPLEX
+                msg.msgh_size = 40
+                msg.msgh_remote_port = 0
+                msg.msgh_id = 3518
+
+                ndr = NDRRecordT(
+                    mig_vers=1,
+                )
+
+                replay = ReplayFmtT(
+                    hdr=msg,
+                    ndr=ndr,
+                    kr=semaphore,
+                )
+
+                padding = b"\x00" * 6 + b"\x11"
+                emu.write_bytes(msg_ptr, struct_to_bytes(replay) + padding)
+            return 0
+        elif msg_id == 8000:  # task_restartable_ranges_register
+            return 6
     elif remote_port == emu.ios_os.MACH_PORT_NOTIFICATION_CENTER:
         return 0
 
     return 6
+
+
+@register_syscall_handler(const.SEMAPHORE_SIGNAL_TRAP, "SEMAPHORE_SIGNAL_TRAP")
+def handle_semaphore_signal_trap(emu: Chomper):
+    semaphore = emu.get_arg(0)
+    return emu.ios_os.semaphore_signal(semaphore)
+
+
+@register_syscall_handler(const.SEMAPHORE_WAIT_TRAP, "SEMAPHORE_WAIT_TRAP")
+def handle_semaphore_wait_trap(emu: Chomper):
+    semaphore = emu.get_arg(0)
+
+    emu.logger.info("Waiting semaphore...")
+    return emu.ios_os.semaphore_wait(semaphore)
 
 
 @register_syscall_handler(
