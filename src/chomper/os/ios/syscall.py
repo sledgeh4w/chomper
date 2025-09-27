@@ -1311,7 +1311,10 @@ def handle_mach_msg_trap(emu: Chomper):
         option,
     )
 
-    if remote_port == emu.ios_os.MACH_PORT_HOST_SELF:
+    if remote_port == emu.ios_os.MACH_PORT_NULL:
+        if msg_id == 0:
+            return 6  # __CFRunLoopServiceMachPort
+    elif remote_port == emu.ios_os.MACH_PORT_HOST_SELF:
         if msg_id == 412:  # host_get_special_port
             return 6
     elif remote_port == emu.ios_os.MACH_PORT_TASK_SELF:

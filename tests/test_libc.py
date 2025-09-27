@@ -325,7 +325,7 @@ def test_getmntinfo(request, emu_name):
 def test_read(request, emu_name):
     emu = request.getfixturevalue(emu_name)
 
-    filepath = "/var/tmp/test_read"
+    filepath = "/private/var/tmp/test_read"
     s = "chomper"
 
     real_path = f"{emu.os.rootfs_path}/{filepath[1:]}"
@@ -349,7 +349,7 @@ def test_read(request, emu_name):
 def test_write(request, emu_name):
     emu = request.getfixturevalue(emu_name)
 
-    filepath = "/var/tmp/test_write"
+    filepath = "/private/var/tmp/test_write"
     s = "chomper"
 
     real_path = f"{emu.os.rootfs_path}/{filepath[1:]}"
@@ -408,7 +408,7 @@ def test_readdir(request, emu_name):
 def test_mkdir(request, emu_name):
     emu = request.getfixturevalue(emu_name)
 
-    dir_path = "/var/tmp/test_mkdir"
+    dir_path = "/private/var/tmp/test_mkdir"
     real_path = os.path.join(emu.os.rootfs_path, dir_path[1:])
 
     with alloc_variables(emu, dir_path) as (path,):
@@ -423,7 +423,7 @@ def test_mkdir(request, emu_name):
 def test_access(request, emu_name):
     emu = request.getfixturevalue(emu_name)
 
-    dir_path = "/var/tmp"
+    dir_path = "/private/var/tmp"
 
     with alloc_variables(emu, dir_path) as (path,):
         result = call_symbol(emu, "access", path, 0x4)
