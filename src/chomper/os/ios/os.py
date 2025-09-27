@@ -92,6 +92,9 @@ UI_KIT_DEPENDENCIES = [
 
 # Define symbolic links in the file system
 SYMBOLIC_LINKS = {
+    "/etc": "/private/etc",
+    "/tmp": "/private/tmp",
+    "/var": "/private/var",
     "/usr/share/zoneinfo": "/var/db/timezone/zoneinfo",
     "/var/db/timezone/icutz": "/var/db/timezone/tz/2024a.1.0/icutz/",
     "/var/db/timezone/localtime": "/var/db/timezone/zoneinfo/Asia/Shanghai",
