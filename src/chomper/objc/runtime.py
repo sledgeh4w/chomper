@@ -6,7 +6,7 @@ from typing import List, Optional, Sequence, Union, TYPE_CHECKING
 from chomper.exceptions import EmulatorCrashed
 from chomper.typing import NSObjConvertible, CFObjConvertible
 
-from .types import ObjcType, ObjcClass, ObjcObject
+from .types import ObjcType, ObjcClass, ObjcObject, ObjcProtocol
 
 
 if TYPE_CHECKING:
@@ -45,6 +45,26 @@ class ObjcRuntime:
                 raise ValueError(f"ObjC class '{name}' not found")
 
             return ObjcClass(self, class_value)
+        finally:
+            self.emu.free(name_buf)
+
+    def find_protocol(self, name: str) -> ObjcProtocol:
+        """Find protocol by name.
+
+        Args:
+            name: Target protocol name.
+
+        Raises:
+            ValueError: If protocol not found.
+        """
+        name_buf = self.emu.create_string(name)
+
+        try:
+            protocol_value = self.emu.call_symbol("_objc_getProtocol", name_buf)
+            if not protocol_value:
+                raise ValueError(f"ObjC protocol '{name}' not found")
+
+            return ObjcProtocol(self, protocol_value)
         finally:
             self.emu.free(name_buf)
 

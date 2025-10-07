@@ -98,6 +98,16 @@ def hook_malloc_default_zone(uc: Uc, address: int, size: int, user_data: HookCon
     return 0
 
 
+@register_hook("_malloc_create_zone")
+def hook_malloc_create_zone(uc: Uc, address: int, size: int, user_data: HookContext):
+    return 0
+
+
+@register_hook("_malloc_set_zone_name")
+def hook_malloc_set_zone_name(uc: Uc, address: int, size: int, user_data: HookContext):
+    return 0
+
+
 @register_hook("_malloc_zone_malloc")
 def hook_malloc_zone_malloc(uc: Uc, address: int, size: int, user_data: HookContext):
     emu = user_data["emu"]
@@ -405,21 +415,22 @@ def hook_sec_item_copy_matching(
     return 0
 
 
-@register_hook("_bootstrap_look_up2")
-def hook_bootstrap_look_up2(uc: Uc, address: int, size: int, user_data: HookContext):
+@register_hook("_bootstrap_look_up3")
+def hook_bootstrap_look_up3(uc: Uc, address: int, size: int, user_data: HookContext):
     emu = user_data["emu"]
 
     mach_service_map = {
         "com.apple.system.notification_center": (
             emu.ios_os.MACH_PORT_NOTIFICATION_CENTER
         ),
+        "com.apple.CARenderServer": emu.ios_os.MACH_PORT_CA_RENDER_SERVER,
     }
 
     service_name = emu.read_string(emu.get_arg(1))
     service_port = emu.get_arg(2)
 
     emu.logger.info(
-        "'bootstrap_look_up2' is called to look up '%s' service", service_name
+        "'bootstrap_look_up3' is called to look up '%s' service", service_name
     )
 
     if service_name in mach_service_map:
@@ -438,6 +449,7 @@ def hook_ns_object_does_not_recognize_selector_for_class(
     selector = emu.read_string(emu.get_arg(2))
 
     class_name = emu.read_string(emu.call_symbol("_class_getName", receiver))
+    emu.log_backtrace()
     raise ObjCUnrecognizedSelector(
         f"Unrecognized selector '{selector}' of class '{class_name}'"
     )
