@@ -41,11 +41,12 @@ class ObjcType:
         get_func: str,
         name: str,
         objc_type_class: Type[ObjcTypeT],
+        *args,
     ) -> ObjcTypeT:
         name_buf = self._emu.create_string(name)
 
         try:
-            ivar_value = self._emu.call_symbol(get_func, self.value, name_buf)
+            ivar_value = self._emu.call_symbol(get_func, self.value, name_buf, *args)
             return objc_type_class(self._runtime, ivar_value)
         finally:
             self._emu.free(name_buf)
@@ -346,3 +347,32 @@ class ObjcProperty(ObjcType):
     def attributes(self) -> str:
         reval = self._emu.call_symbol("_property_getAttributes", self.value)
         return self._emu.read_string(reval)
+
+
+class ObjcProtocol(ObjcType):
+    """Wrap protocol in Objective-C."""
+
+    def __init__(self, runtime: ObjcRuntime, value: int):
+        super().__init__(runtime, value)
+
+        if not self.value:
+            raise ValueError(f"Invalid value for ObjcProtocol: {hex(self.value)}")
+
+    @cached_property
+    def name(self) -> str:
+        reval = self._emu.call_symbol("_protocol_getName", self.value)
+        return self._emu.read_string(reval)
+
+    def get_property(
+        self,
+        name: str,
+        is_required_property: bool,
+        is_instance_property: bool,
+    ) -> ObjcProperty:
+        return self._get_by_name(
+            "_protocol_getProperty",
+            name,
+            ObjcProperty,
+            int(is_required_property),
+            int(is_instance_property),
+        )

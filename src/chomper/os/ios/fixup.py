@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from typing import Dict, Set, TYPE_CHECKING
+from typing import Dict, Optional, Set, TYPE_CHECKING
+
+from unicorn import UcError
 
 from chomper.loader import Module
 
@@ -29,8 +31,13 @@ class SystemModuleFixer:
 
         self._refs_to_relocations: Set[int] = set()
 
-    def relocate_reference(self, address: int) -> int:
+    def relocate_reference(
+        self, address: int, module_base: Optional[int] = None
+    ) -> int:
         """Relocate reference at the address."""
+        if module_base is None:
+            module_base = self.module_base
+
         if address in self._relocation_cache:
             return self._relocation_cache[address]
 
@@ -38,7 +45,7 @@ class SystemModuleFixer:
         if not reference:
             return 0
 
-        reference += self.module_base
+        reference += module_base
         self.emu.write_pointer(address, reference)
         self._relocation_cache[address] = reference
 
@@ -257,14 +264,44 @@ class SystemModuleFixer:
         if name_addr:
             self.add_refs_to_relocation(name_addr)
 
-        instance_methods_addr = data_addr + 32
-        self.fixup_class_method_list(instance_methods_addr)
+        instance_methods_ptr = data_addr + 32
+        self.fixup_class_method_list(instance_methods_ptr)
 
-        protocols_addr = data_addr + 40
-        self.fixup_class_protocol_list(protocols_addr)
+        protocols_ptr = data_addr + 40
+        self.fixup_class_protocol_list(protocols_ptr)
 
-        instance_variables_addr = data_addr + 48
-        self.fixup_class_variable_list(instance_variables_addr)
+        instance_variables_ptr = data_addr + 48
+        self.fixup_class_variable_list(instance_variables_ptr)
+
+    def fixup_protocol_method_types(
+        self, method_types_ptr: int, instance_methods_ptr: int
+    ):
+        """Fixup the method types list of Objective-C."""
+        instance_methods_addr = self.emu.read_pointer(instance_methods_ptr)
+        if not instance_methods_addr:
+            return
+
+        method_count = self.emu.read_u32(instance_methods_addr + 4)
+        method_types_addr = self.relocate_reference(method_types_ptr)
+
+        for index in range(method_count):
+            method_type_offset = method_types_addr + index * 8
+            method_type_addr = self.emu.read_pointer(method_type_offset)
+
+            for module in self.emu.modules:
+                if not module.shared_segments:
+                    continue
+
+                for segment in module.shared_segments:
+                    if (
+                        segment.virtual_address
+                        <= method_type_addr
+                        < segment.virtual_address + segment.virtual_size
+                    ):
+                        module_base = module.base - (module.image_base or 0)
+                        self.relocate_reference(
+                            method_type_offset, module_base=module_base
+                        )
 
     def fixup_protocol_struct(self, address: int):
         """Fixup the protocol struct of Objective-C."""
@@ -274,21 +311,41 @@ class SystemModuleFixer:
         if name_addr:
             self.add_refs_to_relocation(name_addr)
 
-        protocols_addr = address + 16
-        self.fixup_class_protocol_list(protocols_addr)
+        protocols_ptr = address + 16
+        self.fixup_class_protocol_list(protocols_ptr)
+
+        instance_methods_ptr = address + 24
+        self.fixup_class_method_list(instance_methods_ptr)
+
+        method_types_ptr = address + 72
+        self.fixup_protocol_method_types(method_types_ptr, instance_methods_ptr)
 
     def fixup_category_struct(self, address: int):
         """Fixup the category struct of Objective-C."""
         address += self.module_base
 
-        instance_methods_addr = address + 16
-        self.fixup_class_method_list(instance_methods_addr)
+        name_ptr = address
+        name_addr = self.relocate_reference(name_ptr)
+        name = self.emu.read_string(name_addr)
 
-        class_methods_addr = address + 24
-        self.fixup_class_method_list(class_methods_addr)
+        class_ptr = address + 8
+        class_addr = self.emu.read_pointer(class_ptr)
 
-        protocols_addr = address + 32
-        self.fixup_class_protocol_list(protocols_addr)
+        # Validate target class and set to nil if invalid to prevent map_images crashes.
+        try:
+            self.emu.read_pointer(class_addr)
+        except UcError:
+            self.emu.logger.warning("Category %s missing target class", name)
+            self.emu.write_pointer(class_ptr, 0)
+
+        instance_methods_ptr = address + 16
+        self.fixup_class_method_list(instance_methods_ptr)
+
+        class_methods_ptr = address + 24
+        self.fixup_class_method_list(class_methods_ptr)
+
+        protocols_ptr = address + 32
+        self.fixup_class_protocol_list(protocols_ptr)
 
     def fixup_cstring_section(self):
         """Fixup the `__cstring` section."""

@@ -7,6 +7,7 @@ import time
 from functools import wraps
 from typing import Dict, Optional, TYPE_CHECKING
 
+import plistlib
 from unicorn import arm64_const
 
 from chomper.exceptions import SystemOperationFailed, ProgramTerminated
@@ -1259,6 +1260,20 @@ def handle_kernelrpc_mach_port_allocate_trap(emu: Chomper):
 
 
 @register_syscall_handler(
+    const.KERNELRPC_MACH_PORT_DEALLOCATE_TRAP, "KERNELRPC_MACH_PORT_DEALLOCATE_TRAP"
+)
+def handle_kernelrpc_mach_port_deallocate_trap(emu: Chomper):
+    return 0
+
+
+@register_syscall_handler(
+    const.KERNELRPC_MACH_PORT_MOD_REFS_TRAP, "KERNELRPC_MACH_PORT_MOD_REFS_TRAP"
+)
+def handle_kernelrpc_mach_port_mod_refs_trap(emu: Chomper):
+    return 0
+
+
+@register_syscall_handler(
     const.KERNELRPC_MACH_PORT_INSERT_MEMBER_TRAP,
     "KERNELRPC_MACH_PORT_INSERT_MEMBER_TRAP",
 )
@@ -1347,6 +1362,42 @@ def handle_mach_msg_trap(emu: Chomper):
             return 6
     elif remote_port == emu.ios_os.MACH_PORT_NOTIFICATION_CENTER:
         return 0
+    elif remote_port == emu.ios_os.MACH_PORT_CA_RENDER_SERVER:
+        if msg_id == 40231:  # _CASGetDisplays
+            displays_prop = [
+                {
+                    "kCADisplayId": 1,
+                    "kCADisplayName": "LCD",
+                    "kCADisplayDeviceName": "primary",
+                }
+            ]
+            displays_data = plistlib.dumps(displays_prop, fmt=plistlib.FMT_BINARY)
+
+            displays_buf = emu.create_buffer(len(displays_data))
+            emu.write_bytes(displays_buf, displays_data)
+
+            msg.msgh_bits |= const.MACH_MSGH_BITS_COMPLEX
+            msg.msgh_size = 56
+            msg.msgh_remote_port = 0
+            msg.msgh_id = 40331
+
+            ndr = NDRRecordT(
+                mig_vers=1,
+            )
+
+            replay = ReplayFmtT(
+                hdr=msg,
+                ndr=ndr,
+                kr=displays_buf,
+            )
+
+            emu.write_bytes(msg_ptr, struct_to_bytes(replay))
+
+            emu.write_u8(msg_ptr + 39, 1)
+            emu.write_u32(msg_ptr + 40, len(displays_data))
+            emu.write_u32(msg_ptr + 52, len(displays_data))
+
+            return 0
 
     return 6
 

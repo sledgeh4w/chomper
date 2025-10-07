@@ -140,6 +140,7 @@ class IosOs(BaseOs):
     MACH_PORT_TASK_SELF = 2
     MACH_PORT_TIMER = 3
     MACH_PORT_NOTIFICATION_CENTER = 4
+    MACH_PORT_CA_RENDER_SERVER = 5
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -435,6 +436,9 @@ class IosOs(BaseOs):
     def _init_lib_xpc(self):
         """Initialize `libxpc.dylib`."""
         try:
+            bootstrap_port = self.emu.find_symbol("_bootstrap_port")
+            self.emu.write_u32(bootstrap_port.address, self.MACH_PORT_HOST_SELF)
+
             self.emu.call_symbol("__libxpc_initializer")
         except EmulatorCrashed:
             pass

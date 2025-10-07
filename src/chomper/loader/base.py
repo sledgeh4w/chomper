@@ -27,11 +27,21 @@ class Binding:
 
 
 @dataclass
+class Segment:
+    name: str
+
+    file_offset: int
+    file_size: int
+
+    virtual_address: int
+    virtual_size: int
+
+
+@dataclass
 class Module:
     base: int
     size: int
     name: str
-
     symbols: List[Symbol]
 
     image_base: Optional[int] = None
@@ -39,6 +49,8 @@ class Module:
     init_array: Optional[List[int]] = None
 
     lazy_bindings: Optional[List[Binding]] = None
+
+    shared_segments: Optional[List[Segment]] = None
 
     binary: Optional[lief.MachO.Binary] = None
 
