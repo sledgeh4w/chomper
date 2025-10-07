@@ -209,6 +209,9 @@ class SystemModuleFixer:
                 # Fixup method SEL
                 self.relocate_reference(method_ptr)
 
+                # Fixup method typeEncoding
+                self.relocate_reference(method_ptr + 8)
+
                 # Fixup method IMPL
                 self.relocate_reference(method_ptr + 16)
         else:
