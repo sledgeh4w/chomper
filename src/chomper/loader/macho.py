@@ -6,7 +6,7 @@ from lief.MachO import ARM64_RELOCATION, RelocationFixup
 
 from chomper.utils import aligned
 
-from .base import BaseLoader, Module, Symbol, Binding
+from .base import BaseLoader, Module, Symbol, Binding, Segment
 
 
 _ARMV81_SYMBOL_POSTFIX = "$VARIANT$armv81"
@@ -300,6 +300,21 @@ class MachoLoader(BaseLoader):
         lazy_bindings = self._process_relocation(binary, module_base, symbols)
         init_array = self._get_init_array(binary, module_base)
 
+        shared_segment_names = ("__OBJC_RO",)
+
+        shared_segments = []
+        for segment in binary.segments:
+            if segment.name not in shared_segment_names:
+                continue
+            shared_segment = Segment(
+                name=str(segment.name),
+                file_offset=segment.file_offset,
+                file_size=segment.file_size,
+                virtual_address=segment.virtual_address,
+                virtual_size=segment.virtual_size,
+            )
+            shared_segments.append(shared_segment)
+
         return Module(
             base=module_base + image_base,
             size=size - image_base,
@@ -308,5 +323,6 @@ class MachoLoader(BaseLoader):
             init_array=init_array,
             image_base=image_base,
             lazy_bindings=lazy_bindings,
+            shared_segments=shared_segments,
             binary=binary,
         )

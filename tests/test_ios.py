@@ -303,6 +303,15 @@ def test_ui_device(emu_ios, objc):
         objc.msg_send(device, "setBatteryMonitoringEnabled:", 1)
 
 
+def test_ca_display(emu_ios, objc):
+    with objc.autorelease_pool():
+        displays = objc.msg_send("CADisplay", "displays")
+        assert displays
+
+        count = objc.msg_send(displays, "count")
+        assert count > 0
+
+
 # def test_ct_telephony_network_info(emu_ios, objc):
 #     with objc.autorelease_pool():
 #         network_info = objc.msg_send("CTTelephonyNetworkInfo", "new")
