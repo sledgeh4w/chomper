@@ -1,3 +1,14 @@
+## v0.3.6
+
+Released: 2025-10-08
+
+- Add `return_callback` parameter to `add_hook` for handling hook function returns.
+- Fix `pthread_mutex_lock` failures when a mutex's type is set to `PTHREAD_MUTEX_ERRORCHECK`.
+- Optimize performance of module loading and fixup.
+- Refactor the Objective-C API.
+- Add support for dispatch semaphore.
+- Fix the issue where `+[CADisplay displays]` returns empty.
+
 ## v0.3.5
 
 Released: 2025-06-08
@@ -5,7 +16,7 @@ Released: 2025-06-08
 - Compatible with rebasing in the `LC_DYLD_CHAINED_FIXUPS` command.
 - Fix zero-size memory allocation in `os_alloc_once`.
 - Implement dynamic loading of system modules at runtime for `dlopen`.
-- Add support for standard IO (`stdin`, `stdout`, `stderr`).
+- Add support for standard IO: `stdin`, `stdout`, `stderr`.
 - Add `Block` class for easier Objective-C block construction.
 - Add `add_mem_hook` method for exporting unicorn memory hook functionality.
 - Support emulation of device files such as `/dev/null` and `/dev/urandom`.
