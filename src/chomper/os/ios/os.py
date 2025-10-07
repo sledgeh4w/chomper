@@ -139,8 +139,9 @@ class IosOs(BaseOs):
     MACH_PORT_HOST_SELF = 1
     MACH_PORT_TASK_SELF = 2
     MACH_PORT_TIMER = 3
-    MACH_PORT_NOTIFICATION_CENTER = 4
-    MACH_PORT_CA_RENDER_SERVER = 5
+    MACH_PORT_THREAD_SPECIAL_REPLY = 4
+    MACH_PORT_NOTIFICATION_CENTER = 5
+    MACH_PORT_CA_RENDER_SERVER = 6
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)

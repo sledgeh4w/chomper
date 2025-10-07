@@ -1293,6 +1293,13 @@ def handle_kernelrpc_mach_port_construct_trap(emu: Chomper):
     return 0
 
 
+@register_syscall_handler(
+    const.KERNELRPC_MACH_PORT_DESTRUCT_TRAP, "KERNELRPC_MACH_PORT_DESTRUCT_TRAP"
+)
+def handle_kernelrpc_mach_port_destruct_trap(emu: Chomper):
+    return 0
+
+
 @register_syscall_handler(const.MACH_REPLY_PORT_TRAP, "MACH_REPLY_PORT_TRAP")
 def handle_mach_reply_port_trap(emu: Chomper):
     return 0
@@ -1417,10 +1424,17 @@ def handle_semaphore_wait_trap(emu: Chomper):
 
 
 @register_syscall_handler(
+    const.KERNELRPC_MACH_PORT_GUARD_TRAP, "KERNELRPC_MACH_PORT_GUARD_TRAP"
+)
+def handle_kernelrpc_mach_port_guard_trap(emu: Chomper):
+    return 0
+
+
+@register_syscall_handler(
     const.THREAD_GET_SPECIAL_REPLY_PORT, "THREAD_GET_SPECIAL_REPLY_PORT"
 )
 def handle_thread_get_special_reply_port(emu: Chomper):
-    return 0
+    return emu.ios_os.MACH_PORT_THREAD_SPECIAL_REPLY
 
 
 @register_syscall_handler(
@@ -1442,6 +1456,14 @@ def handle_kernelrpc_mach_port_type_trap(emu: Chomper):
 
     emu.write_u32(ptype, value)
 
+    return 0
+
+
+@register_syscall_handler(
+    const.KERNELRPC_MACH_PORT_REQUEST_NOTIFICATION_TRAP,
+    "KERNELRPC_MACH_PORT_REQUEST_NOTIFICATION_TRAP",
+)
+def handle_kernelrpc_mach_port_request_notification_trap(emu: Chomper):
     return 0
 
 

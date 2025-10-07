@@ -306,6 +306,7 @@ class MachoLoader(BaseLoader):
         for segment in binary.segments:
             if segment.name not in shared_segment_names:
                 continue
+
             shared_segment = Segment(
                 name=str(segment.name),
                 file_offset=segment.file_offset,

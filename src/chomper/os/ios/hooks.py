@@ -271,6 +271,11 @@ def hook_dispatch_barrier_async(
     return 0
 
 
+@register_hook("__xpc_look_up_endpoint")
+def hook_xpc_look_up_endpoint(uc: Uc, address: int, size: int, user_data: HookContext):
+    return 0
+
+
 @register_hook("_MGCopyAnswer")
 def hook_mg_copy_answer(uc: Uc, address: int, size: int, user_data: HookContext):
     emu = user_data["emu"]
@@ -449,7 +454,6 @@ def hook_ns_object_does_not_recognize_selector_for_class(
     selector = emu.read_string(emu.get_arg(2))
 
     class_name = emu.read_string(emu.call_symbol("_class_getName", receiver))
-    emu.log_backtrace()
     raise ObjCUnrecognizedSelector(
         f"Unrecognized selector '{selector}' of class '{class_name}'"
     )
