@@ -1,37 +1,32 @@
-import logging
 import os
 
 from chomper import Chomper
 from chomper.const import ARCH_ARM64, OS_IOS
 from chomper.objc import ObjcRuntime
 
-from utils import get_base_path, download_sample_file
+binary_path = "examples/binaries/ios/com.zhihu.ios/osee2unifiedRelease"
 
-log_format = "%(levelname)s: %(message)s"
-logging.basicConfig(
-    format=log_format,
-    level=logging.INFO,
-)
-
-logger = logging.getLogger()
+base_path = os.path.abspath(os.path.dirname(__file__))
+rootfs_path = os.path.join(base_path, "../../rootfs/ios")
+module_path = os.path.join(base_path, "../..", binary_path)
 
 
 def main():
-    base_path = get_base_path()
-    binary_path = "examples/binaries/ios/com.zhihu.ios/osee2unifiedRelease"
-
-    # Download sample file
-    download_sample_file(binary_path)
+    if not os.path.exists(module_path):
+        print(
+            "Binary doesn't exist, please download "
+            "from 'https://sourceforge.net/projects/chomper-emu/files/'"
+        )
+        return
 
     emu = Chomper(
         arch=ARCH_ARM64,
         os_type=OS_IOS,
-        rootfs_path=os.path.join(base_path, "../../rootfs/ios"),
-        enable_ui_kit=True,
+        rootfs_path=rootfs_path,
     )
     objc = ObjcRuntime(emu)
 
-    emu.load_module(module_file=os.path.join(base_path, "../..", binary_path))
+    emu.load_module(module_path)
 
     ns_url_request_class = objc.find_class("NSURLRequest")
 
@@ -60,7 +55,7 @@ def main():
         )
         result_str = emu.read_string(objc.msg_send(result, "cStringUsingEncoding:", 4))
 
-        logger.info("x-zse-96: %s", result_str)
+        emu.logger.info("x-zse-96: %s", result_str)
 
         # +[ZHRUIDHelper decryptWithJson:decryptKey:iv:]
         data = objc.create_ns_string("0mGSqs8Wu8UdhQQnQiPsmaW/+rjJ0F21dou7hNNHqjk=")
@@ -70,7 +65,7 @@ def main():
         result = zh_ruid_helper_class.call_method("decryptWithJson:decryptKey:iv:", data, key, iv)
         result_str = emu.read_string(objc.msg_send(result, "UTF8String"))
 
-        logger.info("+[ZHRUIDHelper decryptWithJson:decryptKey:iv:] result: %s", result_str)
+        emu.logger.info("+[ZHRUIDHelper decryptWithJson:decryptKey:iv:] result: %s", result_str)
 
         # +[ZHWhiteBoxEncryptTool encryptDataBase64String:]
         data = objc.create_ns_data(b"test")
@@ -78,7 +73,7 @@ def main():
         result = zh_white_box_encrypt_tool_class.call_method("encryptDataBase64String:", data)
         result_str = emu.read_string(objc.msg_send(result, "UTF8String"))
 
-        logger.info("+[ZHWhiteBoxEncryptTool encryptDataBase64String:] result: %s", result_str)
+        emu.logger.info("+[ZHWhiteBoxEncryptTool encryptDataBase64String:] result: %s", result_str)
 
 
 if __name__ == "__main__":

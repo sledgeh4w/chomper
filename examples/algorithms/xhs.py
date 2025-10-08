@@ -4,7 +4,7 @@ from chomper import Chomper
 from chomper.const import ARCH_ARM64, OS_IOS
 from chomper.objc import ObjcRuntime
 
-binary_path = "examples/binaries/ios/com.csair.MBP/CSMBP-AppStore-Package"
+binary_path = "examples/binaries/ios/com.xingin.discover/8.74/discover"
 
 base_path = os.path.abspath(os.path.dirname(__file__))
 rootfs_path = os.path.join(base_path, "../../rootfs/ios")
@@ -28,22 +28,24 @@ def main():
 
     emu.load_module(module_path)
 
-    ali_tiger_tally_class = objc.find_class("AliTigerTally")
+    ti_options_class = objc.find_class("TIOptions")
+    ti_tiny_class = objc.find_class("TITiny")
 
     with objc.autorelease_pool():
         # Initialize
-        ali_tiger_tally_instance = ali_tiger_tally_class.call_method("sharedInstance")
+        options = ti_options_class.call_method("sharedInstance")
+        options.call_method("setAppID:", objc.create_ns_string("ECFAAF02"))
 
-        app_key = objc.create_ns_string("xPEj7uv0KuziQnXUyPIBNUjnDvvHuW09VOYFuLYBcY-jV6fgqmfy5B1y75_iSuRM5U2zNq7MRoR9N1F-UthTEgv-QBWk68gr95BrAySzWuDzt08FrkeBZWQCGyZ0iAybalYLOJEF7nkKBtmDGLewcw==")
-        objc.msg_send(ali_tiger_tally_instance, "initialize:", app_key)
+        ti_tiny_class.call_method("initializeWithOptions:", options)
 
         # Sign
-        data = objc.create_ns_data(b'{"biClassId":["2","3","4"]}')
+        method = objc.create_ns_string("GET")
+        url = objc.create_ns_string("https://edith.xiaohongshu.com/api/sns/v1/system_service/config")
+        payload = 0
 
-        wtoken = objc.msg_send(ali_tiger_tally_instance, "vmpSign:", data)
-        wtoken_str = emu.read_string(objc.msg_send(wtoken, "UTF8String"))
-
-        emu.logger.info("wtoken: %s", wtoken_str)
+        result = ti_tiny_class.call_method("signWithMethod:url:payload:", method, url, payload)
+        result_str = emu.read_string(result.call_method("description").call_method("UTF8String"))
+        emu.logger.info("Sign result: %s", result_str)
 
 
 if __name__ == "__main__":
