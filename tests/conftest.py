@@ -19,7 +19,7 @@ android_binaries_path = os.path.join(base_path, "../examples/binaries/android")
 ios_binaries_path = os.path.join(base_path, "../examples/binaries/ios")
 
 
-def download_sample_file(binary_path: str) -> str:
+def download_binary_file(binary_path: str) -> str:
     filepath = os.path.join(base_path, "..", binary_path)
 
     path = Path(filepath).resolve()
@@ -59,8 +59,8 @@ def libz_arm(emu_arm):
 @pytest.fixture(scope="module")
 def libdusanwa_v4856_arm(emu_arm):
     """From com.shizhuang.duapp v4.85.6"""
-    module_path = download_sample_file(
-        binary_path="examples/binaries/android/com.shizhuang.duapp/libdusanwa.so"
+    module_path = download_binary_file(
+        "examples/binaries/android/com.shizhuang.duapp/libdusanwa.so"
     )
 
     yield emu_arm.load_module(
@@ -93,8 +93,8 @@ def libz_arm64(emu_arm64):
 @pytest.fixture(scope="module")
 def libszstone_v4945_arm64(emu_arm64):
     """From com.shizhuang.duapp v4.94.5"""
-    module_path = download_sample_file(
-        binary_path="examples/binaries/android/com.shizhuang.duapp/libszstone.so"
+    module_path = download_binary_file(
+        "examples/binaries/android/com.shizhuang.duapp/libszstone.so"
     )
 
     yield emu_arm64.load_module(
@@ -106,8 +106,8 @@ def libszstone_v4945_arm64(emu_arm64):
 @pytest.fixture(scope="module")
 def libtiny_v73021_arm64(emu_arm64):
     """From com.xingin.xhs v7.30.2.1"""
-    module_path = download_sample_file(
-        binary_path="examples/binaries/android/com.xingin.xhs/libtiny.so"
+    module_path = download_binary_file(
+        "examples/binaries/android/com.xingin.xhs/libtiny.so"
     )
 
     yield emu_arm64.load_module(module_path)

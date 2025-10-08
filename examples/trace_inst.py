@@ -6,6 +6,7 @@ from chomper import Chomper
 from chomper.const import ARCH_ARM64, OS_IOS
 
 base_path = os.path.abspath(os.path.dirname(__file__))
+rootfs_path = os.path.join(base_path, "../../rootfs/ios")
 
 
 def trace_inst_callback(uc, address, size, user_data):
@@ -16,7 +17,7 @@ def trace_inst_callback(uc, address, size, user_data):
         f"Trace at {emu.debug_symbol(address)}: {inst[-2]} {inst[-1]}"
     )
 
-    # Display all register status
+    # Print all register status
     regs = []
     for i in range(31):
         regs.append(f"x{i}: {hex(emu.uc.reg_read(getattr(arm64_const, f'UC_ARM64_REG_X{i}')))}")
@@ -27,7 +28,7 @@ def main():
     emu = Chomper(
         arch=ARCH_ARM64,
         os_type=OS_IOS,
-        rootfs_path=os.path.join(base_path, "../rootfs/ios"),
+        rootfs_path=rootfs_path,
         # Specify custom callback
         trace_inst_callback=trace_inst_callback,
     )
