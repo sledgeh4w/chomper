@@ -2,9 +2,6 @@ import os
 
 import pytest
 
-from . import conftest
-from .utils import alloc_variables
-
 from chomper import Chomper
 from chomper.const import ARCH_ARM64
 from chomper.exceptions import (
@@ -13,6 +10,9 @@ from chomper.exceptions import (
     ObjCUnrecognizedSelector,
     ProgramTerminated,
 )
+
+from . import conftest
+from .utils import alloc_variables
 
 
 def test_unhandled_system_call_exception():
@@ -27,8 +27,8 @@ def test_unhandled_system_call_exception():
 
 def test_missing_symbol_required_exception():
     with pytest.raises(EmulatorCrashed, match=r"Missing symbol.*"):
-        module_path = conftest.download_sample_file(
-            binary_path="examples/binaries/android/com.shizhuang.duapp/libszstone.so"
+        module_path = conftest.download_binary_file(
+            "examples/binaries/android/com.shizhuang.duapp/libszstone.so"
         )
 
         sample_bytes = b"chomper"
