@@ -1,37 +1,32 @@
-import logging
 import os
 
 from chomper import Chomper
 from chomper.const import ARCH_ARM64, OS_IOS
 from chomper.objc import ObjcRuntime
 
-from utils import get_base_path, download_sample_file
+binary_path = "examples/binaries/ios/com.siwuai.duapp/5.61.4/DUApp"
 
-log_format = "%(levelname)s: %(message)s"
-logging.basicConfig(
-    format=log_format,
-    level=logging.INFO,
-)
-
-logger = logging.getLogger()
+base_path = os.path.abspath(os.path.dirname(__file__))
+rootfs_path = os.path.join(base_path, "../../rootfs/ios")
+module_path = os.path.join(base_path, "../..", binary_path)
 
 
 def main():
-    base_path = get_base_path()
-    binary_path = "examples/binaries/ios/com.siwuai.duapp/5.61.4/DUApp"
-
-    # Download sample file
-    download_sample_file(binary_path)
+    if not os.path.exists(module_path):
+        print(
+            "Binary doesn't exist, please download "
+            "from 'https://sourceforge.net/projects/chomper-emu/files/'"
+        )
+        return
 
     emu = Chomper(
         arch=ARCH_ARM64,
         os_type=OS_IOS,
-        rootfs_path=os.path.join(base_path, "../../rootfs/ios"),
-        enable_ui_kit=True,
+        rootfs_path=rootfs_path,
     )
     objc = ObjcRuntime(emu)
 
-    emu.load_module(os.path.join(base_path, "../..", binary_path))
+    emu.load_module(module_path)
 
     du_sanwa_sdk_class = objc.find_class("DuSanwaSDK")
 
@@ -47,7 +42,7 @@ def main():
         decrypt_result = du_sanwa_sdk_class.call_method("duSecDouDecodeWithHeader:origionData:path:", headers, data, path)
         decrypt_result_str = emu.read_string(objc.msg_send(decrypt_result, "bytes"))
 
-        logger.info("Decrypt result: %s", decrypt_result_str)
+        emu.logger.info("Decrypt result: %s", decrypt_result_str)
 
 
 if __name__ == "__main__":

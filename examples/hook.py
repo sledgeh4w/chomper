@@ -5,6 +5,7 @@ from chomper.const import ARCH_ARM64, OS_IOS, HOOK_MEM_READ, HOOK_MEM_WRITE
 from chomper.objc import ObjcRuntime
 
 base_path = os.path.abspath(os.path.dirname(__file__))
+rootfs_path = os.path.join(base_path, "../../rootfs/ios")
 
 
 def hook_access(uc, address, size, user_data):
@@ -47,7 +48,7 @@ def main():
     emu = Chomper(
         arch=ARCH_ARM64,
         os_type=OS_IOS,
-        rootfs_path=os.path.join(base_path, "../rootfs/ios"),
+        rootfs_path=rootfs_path,
     )
     objc = ObjcRuntime(emu)
 
@@ -66,19 +67,15 @@ def main():
         hook_ui_device_current_device,
     )
 
-    # Hook Memory Read/Write
-    # emu.add_mem_hook(HOOK_MEM_READ, on_mem_read)
-    # emu.add_mem_hook(HOOK_MEM_WRITE, on_mem_write)
-
     # Hook and intercept
     emu.add_interceptor(
         ui_device_class.get_instance_method("identifierForVendor").implementation,
         hook_ui_device_identifier_for_vendor,
     )
 
-    ui_device = objc.msg_send("UIDevice", "currentDevice")
-    vendor_identifier = objc.msg_send(ui_device, "identifierForVendor")
-    print(vendor_identifier)
+    # Hook memory read/write
+    emu.add_mem_hook(HOOK_MEM_READ, on_mem_read)
+    emu.add_mem_hook(HOOK_MEM_WRITE, on_mem_write)
 
 
 if __name__ == '__main__':
