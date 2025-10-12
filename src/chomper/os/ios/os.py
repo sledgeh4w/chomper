@@ -10,6 +10,7 @@ from chomper.const import STACK_ADDRESS, STACK_SIZE, TLS_ADDRESS
 from chomper.exceptions import EmulatorCrashed, SystemOperationFailed
 from chomper.loader import MachoLoader, Module
 from chomper.os.base import BaseOs, SyscallError
+from chomper.os.resource import ResourceManager
 from chomper.utils import log_call, struct_to_bytes, to_unsigned
 
 from .fixup import SystemModuleFixer
@@ -136,12 +137,20 @@ class IosOs(BaseOs):
     IPPROTO_ICMP = 1
 
     MACH_PORT_NULL = 0
-    MACH_PORT_HOST_SELF = 1
-    MACH_PORT_TASK_SELF = 2
-    MACH_PORT_TIMER = 3
-    MACH_PORT_THREAD_SPECIAL_REPLY = 4
-    MACH_PORT_NOTIFICATION_CENTER = 5
-    MACH_PORT_CA_RENDER_SERVER = 6
+    MACH_PORT_HOST = 1
+    MACH_PORT_TASK = 2
+    MACH_PORT_THREAD = 3
+    MACH_PORT_BOOTSTRAP = 4
+    MACH_PORT_REPLY = 5
+
+    MACH_PORT_TIMER = 256
+
+    MACH_PORT_NOTIFICATION_CENTER = 4096
+    MACH_PORT_CA_RENDER_SERVER = 4097
+    MACH_PORT_ADVERTISING_IDENTIFIERS = 4098
+
+    MACH_PORT_START_VALUE = 65536
+    MACH_PORT_MAX_NUM = 10000
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -163,6 +172,20 @@ class IosOs(BaseOs):
         # Semaphore
         self._semaphore_map = {}
         self._semaphore_queue = {}
+
+        # Mach port
+        self._mach_port_res = ResourceManager(
+            start_value=self.MACH_PORT_START_VALUE,
+            max_num=self.MACH_PORT_MAX_NUM,
+        )
+
+        self._mach_services = {
+            "com.apple.system.notification_center": self.MACH_PORT_NOTIFICATION_CENTER,
+            "com.apple.CARenderServer": self.MACH_PORT_CA_RENDER_SERVER,
+            "com.apple.lsd.advertisingidentifiers": (
+                self.MACH_PORT_ADVERTISING_IDENTIFIERS
+            ),
+        }
 
     def get_errno(self) -> int:
         """Get the value of `errno`."""
@@ -282,10 +305,10 @@ class IosOs(BaseOs):
 
     @log_call
     def getdirentries(self, fd: int, offset: int) -> Optional[bytes]:
-        if fd not in self._dir_fds:
+        if not self._is_dir_fd(fd):
             raise SystemOperationFailed(f"Not a directory: {fd}", SyscallError.ENOTDIR)
 
-        path = self._dir_fds[fd]
+        path = self.get_dir_path(fd)
         real_path = self._get_real_path(path)
 
         dir_entries = list(os.scandir(real_path))
@@ -432,13 +455,13 @@ class IosOs(BaseOs):
         self.emu.write_u32(pthread_supported_features.address, 0x50)
 
         mach_task_self = self.emu.find_symbol("_mach_task_self_")
-        self.emu.write_u32(mach_task_self.address, self.MACH_PORT_TASK_SELF)
+        self.emu.write_u32(mach_task_self.address, self.MACH_PORT_TASK)
 
     def _init_lib_xpc(self):
         """Initialize `libxpc.dylib`."""
         try:
             bootstrap_port = self.emu.find_symbol("_bootstrap_port")
-            self.emu.write_u32(bootstrap_port.address, self.MACH_PORT_HOST_SELF)
+            self.emu.write_u32(bootstrap_port.address, self.MACH_PORT_BOOTSTRAP)
 
             self.emu.call_symbol("__libxpc_initializer")
         except EmulatorCrashed:
@@ -805,6 +828,28 @@ class IosOs(BaseOs):
             self._semaphore_queue[semaphore].pop(0)
         else:
             self._semaphore_map[semaphore] += 1
+
+    def _new_mach_port(self) -> int:
+        """Create a new mach port."""
+        mach_port = self._mach_port_res.new()
+        return mach_port if mach_port else 0
+
+    def mach_port_construct(self) -> int:
+        return self._new_mach_port()
+
+    def mach_port_destruct(self, mach_port: int):
+        self._mach_port_res.free(mach_port)
+
+    def bootstrap_look_up(self, name: str) -> int:
+        """Find registered mach service.
+
+        Returns:
+            The port of this mach service.
+        """
+        if name in self._mach_services:
+            return self._mach_services[name]
+
+        return 0
 
     def initialize(self):
         self._setup_hooks()

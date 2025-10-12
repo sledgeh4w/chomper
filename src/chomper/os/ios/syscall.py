@@ -16,7 +16,13 @@ from chomper.typing import SyscallHandleCallable
 from chomper.utils import struct_to_bytes, bytes_to_struct, to_signed
 
 from . import const
-from .structs import Rusage, MachMsgHeaderT, NDRRecordT, ReplayFmtT
+from .structs import (
+    Rusage,
+    MachMsgHeaderT,
+    MachMsgBodyT,
+    MachMsgPortDescriptorT,
+    MachMsgOolDescriptorT,
+)
 from .sysctl import sysctl, sysctlbyname
 
 if TYPE_CHECKING:
@@ -1256,6 +1262,11 @@ def handle_kernelrpc_mach_vm_map_trap(emu: Chomper):
     const.KERNELRPC_MACH_PORT_ALLOCATE_TRAP, "KERNELRPC_MACH_PORT_ALLOCATE_TRAP"
 )
 def handle_kernelrpc_mach_port_allocate_trap(emu: Chomper):
+    name = emu.get_arg(2)
+
+    port = emu.ios_os.mach_port_construct()
+    emu.write_u32(name, port)
+
     return 0
 
 
@@ -1263,6 +1274,10 @@ def handle_kernelrpc_mach_port_allocate_trap(emu: Chomper):
     const.KERNELRPC_MACH_PORT_DEALLOCATE_TRAP, "KERNELRPC_MACH_PORT_DEALLOCATE_TRAP"
 )
 def handle_kernelrpc_mach_port_deallocate_trap(emu: Chomper):
+    name = emu.get_arg(1)
+
+    emu.ios_os.mach_port_destruct(name)
+
     return 0
 
 
@@ -1287,8 +1302,8 @@ def handle_kernelrpc_mach_port_insert_member_trap(emu: Chomper):
 def handle_kernelrpc_mach_port_construct_trap(emu: Chomper):
     name = emu.get_arg(3)
 
-    # mach_port_name
-    emu.write_u32(name, 1)
+    port = emu.ios_os.mach_port_construct()
+    emu.write_u32(name, port)
 
     return 0
 
@@ -1297,22 +1312,31 @@ def handle_kernelrpc_mach_port_construct_trap(emu: Chomper):
     const.KERNELRPC_MACH_PORT_DESTRUCT_TRAP, "KERNELRPC_MACH_PORT_DESTRUCT_TRAP"
 )
 def handle_kernelrpc_mach_port_destruct_trap(emu: Chomper):
+    name = emu.get_arg(1)
+
+    emu.ios_os.mach_port_destruct(name)
+
     return 0
 
 
 @register_syscall_handler(const.MACH_REPLY_PORT_TRAP, "MACH_REPLY_PORT_TRAP")
 def handle_mach_reply_port_trap(emu: Chomper):
-    return 0
+    return emu.ios_os.MACH_PORT_REPLY
+
+
+@register_syscall_handler(const.THREAD_SELF_TRAP, "THREAD_SELF_TRAP")
+def handle_thread_self_trap(emu: Chomper):
+    return emu.ios_os.MACH_PORT_THREAD
 
 
 @register_syscall_handler(const.TASK_SELF_TRAP, "TASK_SELF_TRAP")
 def handle_task_self_trap(emu: Chomper):
-    return emu.ios_os.MACH_PORT_TASK_SELF
+    return emu.ios_os.MACH_PORT_TASK
 
 
 @register_syscall_handler(const.HOST_SELF_TRAP, "HOST_SELF_TRAP")
 def handle_host_self_trap(emu: Chomper):
-    return emu.ios_os.MACH_PORT_HOST_SELF
+    return emu.ios_os.MACH_PORT_HOST
 
 
 @register_syscall_handler(const.MACH_MSG_TRAP, "MACH_MSG_TRAP")
@@ -1336,34 +1360,78 @@ def handle_mach_msg_trap(emu: Chomper):
     if remote_port == emu.ios_os.MACH_PORT_NULL:
         if msg_id == 0:
             return 6  # __CFRunLoopServiceMachPort
-    elif remote_port == emu.ios_os.MACH_PORT_HOST_SELF:
+    elif remote_port == emu.ios_os.MACH_PORT_HOST:
         if msg_id == 412:  # host_get_special_port
             return 6
-    elif remote_port == emu.ios_os.MACH_PORT_TASK_SELF:
+    elif remote_port == emu.ios_os.MACH_PORT_TASK:
         if msg_id == 3418:  # semaphore_create
-            if option & const.MACH_RCV_MSG:
-                # policy = emu.read_s32(msg_ptr + 0x20)
-                value = emu.read_s32(msg_ptr + 0x24)
+            assert option & const.MACH_RCV_MSG
 
-                semaphore = emu.ios_os.semaphore_create(value)
+            # policy = emu.read_s32(msg_ptr + 0x20)
+            value = emu.read_s32(msg_ptr + 0x24)
 
-                msg.msgh_bits |= const.MACH_MSGH_BITS_COMPLEX
-                msg.msgh_size = 40
-                msg.msgh_remote_port = 0
-                msg.msgh_id = 3518
+            semaphore = emu.ios_os.semaphore_create(value)
 
-                ndr = NDRRecordT(
-                    mig_vers=1,
+            msg_header = MachMsgHeaderT(
+                msgh_bits=const.MACH_MSGH_BITS_COMPLEX,
+                msgh_size=40,
+                msgh_remote_port=0,
+                msgh_local_port=0,
+                msgh_voucher_port=0,
+                msgh_id=3518,
+            )
+
+            msg_body = MachMsgBodyT(
+                msgh_descriptor_count=1,
+            )
+
+            port_descriptor = MachMsgPortDescriptorT(
+                name=semaphore,
+                type=const.MACH_MSG_PORT_DESCRIPTOR,
+            )
+
+            emu.write_bytes(
+                msg_ptr,
+                struct_to_bytes(msg_header)
+                + struct_to_bytes(msg_body)
+                + struct_to_bytes(port_descriptor),
+            )
+
+            return 0
+        elif msg_id == 3405:  # task_info
+            flavor = emu.read_s32(msg_ptr + 0x20)
+            task_info_out_cnt = emu.read_s32(msg_ptr + 0x24)
+
+            emu.logger.info(f"flavor={flavor}, task_info_out_cnt={task_info_out_cnt}")
+
+            if flavor == const.TASK_AUDIT_TOKEN:
+                msg_header = MachMsgHeaderT(
+                    msgh_bits=0,
+                    msgh_size=72,
+                    msgh_remote_port=0,
+                    msgh_local_port=0,
+                    msgh_voucher_port=0,
+                    msgh_id=3505,
                 )
 
-                replay = ReplayFmtT(
-                    hdr=msg,
-                    ndr=ndr,
-                    kr=semaphore,
+                msg_body = MachMsgBodyT(
+                    msgh_descriptor_count=0,
                 )
 
-                padding = b"\x00" * 6 + b"\x11"
-                emu.write_bytes(msg_ptr, struct_to_bytes(replay) + padding)
+                unknown_padding = b"\x00" * 8
+                audit_token = [0, 0, 0, 0, 0, emu.ios_os.pid, 0, 1]
+
+                data = (
+                    unknown_padding
+                    + task_info_out_cnt.to_bytes(4, "little")
+                    + b"".join([v.to_bytes(4, "little") for v in audit_token])
+                )
+
+                emu.write_bytes(
+                    msg_ptr,
+                    struct_to_bytes(msg_header) + struct_to_bytes(msg_body) + data,
+                )
+
             return 0
         elif msg_id == 8000:  # task_restartable_ranges_register
             return 6
@@ -1383,25 +1451,35 @@ def handle_mach_msg_trap(emu: Chomper):
             displays_buf = emu.create_buffer(len(displays_data))
             emu.write_bytes(displays_buf, displays_data)
 
-            msg.msgh_bits |= const.MACH_MSGH_BITS_COMPLEX
-            msg.msgh_size = 56
-            msg.msgh_remote_port = 0
-            msg.msgh_id = 40331
-
-            ndr = NDRRecordT(
-                mig_vers=1,
+            msg_header = MachMsgHeaderT(
+                msgh_bits=const.MACH_MSGH_BITS_COMPLEX,
+                msgh_size=56,
+                msgh_remote_port=0,
+                msgh_local_port=0,
+                msgh_voucher_port=0,
+                msgh_id=40331,
             )
 
-            replay = ReplayFmtT(
-                hdr=msg,
-                ndr=ndr,
-                kr=displays_buf,
+            msg_body = MachMsgBodyT(
+                msgh_descriptor_count=1,
             )
 
-            emu.write_bytes(msg_ptr, struct_to_bytes(replay))
+            ool_descriptor = MachMsgOolDescriptorT(
+                address=displays_buf,
+                deallocate=0,
+                copy=0,
+                disposition=0,
+                type=const.MACH_MSG_OOL_DESCRIPTOR,
+                size=len(displays_data),
+            )
 
-            emu.write_u8(msg_ptr + 39, 1)
-            emu.write_u32(msg_ptr + 40, len(displays_data))
+            emu.write_bytes(
+                msg_ptr,
+                struct_to_bytes(msg_header)
+                + struct_to_bytes(msg_body)
+                + struct_to_bytes(ool_descriptor),
+            )
+
             emu.write_u32(msg_ptr + 52, len(displays_data))
 
             return 0
@@ -1434,7 +1512,7 @@ def handle_kernelrpc_mach_port_guard_trap(emu: Chomper):
     const.THREAD_GET_SPECIAL_REPLY_PORT, "THREAD_GET_SPECIAL_REPLY_PORT"
 )
 def handle_thread_get_special_reply_port(emu: Chomper):
-    return emu.ios_os.MACH_PORT_THREAD_SPECIAL_REPLY
+    return emu.ios_os.MACH_PORT_REPLY
 
 
 @register_syscall_handler(

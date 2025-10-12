@@ -123,10 +123,10 @@ class AndroidOs(BaseOs):
 
     @log_call
     def getdents(self, fd: int) -> Optional[bytes]:
-        if fd not in self._dir_fds:
+        if not self._is_dir_fd(fd):
             raise SystemOperationFailed(f"Not a directory: {fd}", SyscallError.ENOTDIR)
 
-        path = self._dir_fds[fd]
+        path = self.get_dir_path(fd)
         real_path = self._get_real_path(path)
 
         if fd in self._dir_read_offset:
