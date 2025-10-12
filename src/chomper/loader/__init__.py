@@ -1,3 +1,3 @@
-from .base import BaseLoader, Symbol, Binding, Module
+from .base import BaseLoader, Symbol, Binding, Segment, Module
 from .elf import ELFLoader
 from .macho import MachoLoader

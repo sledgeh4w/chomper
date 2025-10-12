@@ -22,8 +22,9 @@ from . import const
 from .arch import arm_arch, arm64_arch
 from .exceptions import EmulatorCrashed, SymbolMissing
 from .loader import Module, Symbol
-from .memory import MemoryManager
 from .log import get_logger
+from .memory import MemoryManager
+from .objc import ObjcType
 from .os import AndroidOs, android_get_syscall_name, IosOs, ios_get_syscall_name
 from .typing import EndianType, HookContext, HookFuncCallable, HookMemCallable
 from .utils import aligned, to_signed, bytes_to_float, float_to_bytes
@@ -462,6 +463,8 @@ class Chomper:
 
             if isinstance(retval, int):
                 emu.set_retval(retval)
+            elif isinstance(retval, ObjcType):
+                emu.set_retval(int(retval))
 
             if address == emu.uc.reg_read(emu.arch.reg_pc):
                 emu.uc.reg_write(emu.arch.reg_pc, emu.uc.reg_read(emu.arch.reg_lr))
@@ -588,7 +591,7 @@ class Chomper:
                     f"Execute initialization function {self.debug_symbol(init_func)}"
                 )
                 self.call_address(init_func)
-            except Exception as e:
+            except EmulatorCrashed as e:
                 self.logger.warning(
                     f"Execute {self.debug_symbol(init_func)} failed: {repr(e)}"
                 )

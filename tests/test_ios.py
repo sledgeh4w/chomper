@@ -1,3 +1,5 @@
+from chomper.os.ios import const
+
 from .utils import alloc_variables
 
 
@@ -302,6 +304,9 @@ def test_ui_device(emu_ios, objc):
 
         objc.msg_send(device, "setBatteryMonitoringEnabled:", 1)
 
+        # vendor_identifier = objc.msg_send(device, "identifierForVendor")
+        # assert vendor_identifier
+
 
 def test_ca_display(emu_ios, objc):
     with objc.autorelease_pool():
@@ -371,3 +376,29 @@ def test_dispatch_semaphore(emu_ios):
     assert result == 0
 
     emu_ios.call_symbol("_dispatch_release", semaphore)
+
+
+def test_mach_ports(emu_ios):
+    port = emu_ios.call_symbol("_mach_host_self")
+    assert port == emu_ios.ios_os.MACH_PORT_HOST
+
+    port = emu_ios.call_symbol("_mach_task_self")
+    assert port == emu_ios.ios_os.MACH_PORT_TASK
+
+    port = emu_ios.call_symbol("_mach_thread_self")
+    assert port == emu_ios.ios_os.MACH_PORT_THREAD
+
+    bootstrap_port = emu_ios.find_symbol("_bootstrap_port")
+    assert (
+        emu_ios.read_u32(bootstrap_port.address) == emu_ios.ios_os.MACH_PORT_BOOTSTRAP
+    )
+
+
+def test_xpc_connection(emu_ios):
+    service = emu_ios.call_symbol(
+        "_xpc_connection_create_mach_service",
+        emu_ios.create_string("com.apple.lsd.advertisingidentifiers"),
+        0,
+        const.XPC_CONNECTION_MACH_SERVICE_LISTENER,
+    )
+    assert service

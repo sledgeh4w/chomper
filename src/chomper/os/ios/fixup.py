@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-from typing import Dict, Optional, Set, TYPE_CHECKING
+from typing import Dict, List, Optional, Set, Tuple, Union, TYPE_CHECKING
 
+import lief
 from unicorn import UcError
 
-from chomper.loader import Module
+from chomper.loader import Module, Segment
 
 if TYPE_CHECKING:
     from chomper.core import Chomper
@@ -31,8 +32,39 @@ class SystemModuleFixer:
 
         self._refs_to_relocations: Set[int] = set()
 
+    @staticmethod
+    def is_address_in_segment(
+        address: int,
+        segment: Union[lief.MachO.SegmentCommand, Segment],
+    ) -> bool:
+        """Check whether the address is in the specified segment."""
+        return (
+            segment.virtual_address
+            <= address
+            < segment.virtual_address + segment.virtual_size
+        )
+
+    @staticmethod
+    def is_address_in_section(address: int, section: lief.MachO.Section) -> bool:
+        """Check whether the address is in the specified section."""
+        return (
+            section.virtual_address <= address < section.virtual_address + section.size
+        )
+
+    def get_sections(self, names: List[Tuple[str, str]]):
+        sections = []
+
+        for segment_name, section_name in names:
+            section = self.module_binary.get_section(segment_name, section_name)
+            if section:
+                sections.append(section)
+
+        return sections
+
     def relocate_reference(
-        self, address: int, module_base: Optional[int] = None
+        self,
+        address: int,
+        module_base: Optional[int] = None,
     ) -> int:
         """Relocate reference at the address."""
         if module_base is None:
@@ -73,22 +105,19 @@ class SystemModuleFixer:
 
     def check_address(self, address: int) -> bool:
         """Check if the address is in a data section."""
-        for segment_name in ("__DATA", "__DATA_DIRTY"):
-            segment = self.module_binary.get_segment(segment_name)
-            if not segment:
-                continue
+        sections = self.get_sections(
+            [
+                ("__DATA", "__data"),
+                ("__DATA", "__cstring"),
+                ("__DATA_DIRTY", "__data"),
+                ("__DATA_DIRTY", "__cstring"),
+            ]
+        )
 
-            for section_name in ("__data", "__cstring"):
-                section = segment.get_section(section_name)
-                if not section:
-                    continue
+        for section in sections:
+            if self.is_address_in_section(address, section):
+                return True
 
-                if (
-                    section.virtual_address
-                    <= address
-                    <= section.virtual_address + section.size
-                ):
-                    return True
         return False
 
     def relocate_symbols(self):
@@ -258,14 +287,40 @@ class SystemModuleFixer:
         """Fixup the class struct of Objective-C."""
         address += self.module_base
 
+        superclass_ptr = address + 8
+        superclass_addr = self.emu.read_pointer(superclass_ptr)
+
         data_addr = self.emu.read_pointer(address + 32)
         self.add_refs_to_relocation(data_addr)
 
         data_addr += self.module_base
 
-        name_addr = self.emu.read_pointer(data_addr + 24)
-        if name_addr:
-            self.add_refs_to_relocation(name_addr)
+        name_ptr = data_addr + 24
+        name_addr = self.relocate_reference(name_ptr)
+        name = self.emu.read_string(name_addr)
+
+        # Validate superclass and set to nil if invalid to prevent map_images crashes.
+        if superclass_addr:
+            sections = self.get_sections(
+                [
+                    ("__DATA", "__objc_data"),
+                    ("__DATA_DIRTY", "__objc_data"),
+                ]
+            )
+
+            is_valid = False
+
+            for section in sections:
+                if self.is_address_in_section(superclass_addr, section):
+                    is_valid = True
+                    break
+
+            if not is_valid:
+                try:
+                    self.emu.read_pointer(superclass_addr)
+                except UcError:
+                    self.emu.logger.warning("Class '%s' missing superclass", name)
+                    self.emu.write_pointer(superclass_ptr, 0)
 
         instance_methods_ptr = data_addr + 32
         self.fixup_class_method_list(instance_methods_ptr)
@@ -277,7 +332,9 @@ class SystemModuleFixer:
         self.fixup_class_variable_list(instance_variables_ptr)
 
     def fixup_protocol_method_types(
-        self, method_types_ptr: int, instance_methods_ptr: int
+        self,
+        method_types_ptr: int,
+        instance_methods_ptr: int,
     ):
         """Fixup the method types list of Objective-C."""
         instance_methods_addr = self.emu.read_pointer(instance_methods_ptr)
@@ -296,14 +353,11 @@ class SystemModuleFixer:
                     continue
 
                 for segment in module.shared_segments:
-                    if (
-                        segment.virtual_address
-                        <= method_type_addr
-                        < segment.virtual_address + segment.virtual_size
-                    ):
+                    if self.is_address_in_segment(method_type_addr, segment):
                         module_base = module.base - (module.image_base or 0)
                         self.relocate_reference(
-                            method_type_offset, module_base=module_base
+                            method_type_offset,
+                            module_base=module_base,
                         )
 
     def fixup_protocol_struct(self, address: int):
@@ -335,11 +389,13 @@ class SystemModuleFixer:
         class_addr = self.emu.read_pointer(class_ptr)
 
         # Validate target class and set to nil if invalid to prevent map_images crashes.
-        try:
-            self.emu.read_pointer(class_addr)
-        except UcError:
-            self.emu.logger.warning("Category %s missing target class", name)
-            self.emu.write_pointer(class_ptr, 0)
+        if class_addr:
+
+            try:
+                self.emu.read_pointer(class_addr)
+            except UcError:
+                self.emu.logger.warning("Category '%s' missing target class", name)
+                self.emu.write_pointer(class_ptr, 0)
 
         instance_methods_ptr = address + 16
         self.fixup_class_method_list(instance_methods_ptr)
@@ -351,7 +407,7 @@ class SystemModuleFixer:
         self.fixup_class_protocol_list(protocols_ptr)
 
     def fixup_cstring_section(self):
-        """Fixup the `__cstring` section."""
+        """Fixup references to the `__cstring` section."""
         section = self.module_binary.get_section("__cstring")
         if not section or not section.content:
             return
@@ -364,7 +420,7 @@ class SystemModuleFixer:
                 start = index + 1
 
     def fixup_cfstring_section(self):
-        """Fixup the `__cfstring` section."""
+        """Fixup `__cfstring` and `__cfstring_CFN` section."""
         section_map = {
             "__cfstring": 0x20,
             "__cfstring_CFN": 0x38,
@@ -387,24 +443,28 @@ class SystemModuleFixer:
                 offset += item_size
 
     def fixup_unicode_segment(self):
-        """Fixup references in the `__UNICODE` segment."""
-        section_names = ("__csbitmaps", "__data", "__properties")
-
-        for section_name in section_names:
-            section = self.module_binary.get_section("__UNICODE", section_name)
-            if section:
-                self.add_refs_to_relocation(section.virtual_address)
-
-    def fixup_data_const_segment(self):
-        """Fixup references in the `__DATA_CONST` segment."""
-        sections = (
-            self.module_binary.get_section("__DATA", "__data"),
-            self.module_binary.get_section("__DATA_CONST", "__const"),
-            self.module_binary.get_section("__DATA_DIRTY", "__data"),
-            self.module_binary.get_section("__TEXT", "__const"),
+        """Fixup references to the `__UNICODE` segment."""
+        sections = self.get_sections(
+            [
+                ("__UNICODE", "__csbitmaps"),
+                ("__UNICODE", "__data"),
+                ("__UNICODE", "__properties"),
+            ]
         )
 
-        sections = [t for t in sections if t]
+        for section in sections:
+            self.add_refs_to_relocation(section.virtual_address)
+
+    def fixup_data_const(self):
+        """Fixup references to const."""
+        sections = self.get_sections(
+            [
+                ("__DATA", "__data"),
+                ("__DATA_CONST", "__const"),
+                ("__DATA_DIRTY", "__data"),
+                ("__TEXT", "__const"),
+            ]
+        )
 
         text_section = self.module_binary.get_section("__TEXT", "__text")
 
@@ -416,11 +476,7 @@ class SystemModuleFixer:
                 address = int.from_bytes(section.content[offset : offset + 8], "little")
 
                 for data_section in sections:
-                    if (
-                        data_section.virtual_address
-                        < address
-                        < data_section.virtual_address + data_section.size
-                    ):
+                    if self.is_address_in_section(address, data_section):
                         self.add_refs_to_relocation(address)
 
                 if offset % 4 == 0 and text_begin < address < text_end:
@@ -445,7 +501,7 @@ class SystemModuleFixer:
         self.fixup_cfstring_section()
         self.fixup_stubs_section()
         self.fixup_unicode_segment()
-        self.fixup_data_const_segment()
+        self.fixup_data_const()
 
         # Do this at the end
         self.relocate_refs_to()

@@ -157,23 +157,58 @@ class MachMsgHeaderT(ctypes.Structure):
     ]
 
 
-class NDRRecordT(ctypes.Structure):
+class MachMsgBodyT(ctypes.Structure):
     _fields_ = [
-        ("mig_vers", ctypes.c_uint8),
-        ("if_vers", ctypes.c_uint8),
-        ("reserved1", ctypes.c_uint8),
-        ("mig_encoding", ctypes.c_uint8),
-        # ("int_rep", ctypes.c_uint8),
-        # ("char_rep", ctypes.c_uint8),
-        # ("float_rep", ctypes.c_uint8),
-        # ("reserved2", ctypes.c_uint8),
+        ("msgh_descriptor_count", ctypes.c_uint32),
     ]
 
 
-class ReplayFmtT(ctypes.Structure):
-    _pack_ = 4
+class MachMsgTypeDescriptorT(ctypes.Structure):
     _fields_ = [
-        ("hdr", MachMsgHeaderT),
-        ("ndr", NDRRecordT),
-        ("kr", ctypes.c_uint32),
+        ("pad1", ctypes.c_uint32),
+        ("pad1", ctypes.c_uint32),
+        ("pad1", ctypes.c_int, 24),
+        ("type", ctypes.c_uint8),
+    ]
+
+
+class MachMsgPortDescriptorT(ctypes.Structure):
+    _fields_ = [
+        ("name", ctypes.c_uint32),
+        ("pad1", ctypes.c_uint32),
+        ("pad2", ctypes.c_uint16),
+        ("disposition", ctypes.c_uint8),
+        ("type", ctypes.c_uint8),
+    ]
+
+
+class MachMsgOolDescriptorT(ctypes.Structure):
+    _fields_ = [
+        ("address", ctypes.c_uint64),
+        ("deallocate", ctypes.c_uint8),
+        ("copy", ctypes.c_uint8),
+        ("disposition", ctypes.c_uint8),
+        ("type", ctypes.c_uint8),
+        ("size", ctypes.c_uint32),
+    ]
+
+
+class MachMsgOolPortsDescriptorT(ctypes.Structure):
+    _fields_ = [
+        ("address", ctypes.c_uint64),
+        ("deallocate", ctypes.c_uint8),
+        ("copy", ctypes.c_uint8),
+        ("disposition", ctypes.c_uint8),
+        ("type", ctypes.c_uint8),
+        ("count", ctypes.c_uint32),
+    ]
+
+
+class MachMsgGuardedPortDescriptorT(ctypes.Structure):
+    _fields_ = [
+        ("context", ctypes.c_uint64),
+        ("flags", ctypes.c_uint16),
+        ("disposition", ctypes.c_uint8),
+        ("type", ctypes.c_uint8),
+        ("name", ctypes.c_uint32),
     ]
