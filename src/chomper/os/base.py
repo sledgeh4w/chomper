@@ -10,13 +10,14 @@ import time
 from abc import ABC, abstractmethod
 from enum import Enum
 from pathlib import Path
-from typing import Dict, List, Optional, Set, Tuple, Type, TYPE_CHECKING
+from typing import Dict, List, Optional, Tuple, Type, TYPE_CHECKING
 
 from chomper.exceptions import SystemOperationFailed
 from chomper.log import get_logger
 from chomper.utils import log_call, safe_join, to_signed
 
 from .device import DeviceFile, NullDevice, RandomDevice, UrandomDevice
+from .resource import ResourceManager
 
 if TYPE_CHECKING:
     from chomper.core import Chomper
@@ -48,17 +49,8 @@ class BaseOs(ABC):
 
     FEATURE_SOCKET_ENABLE = False
 
-    FILE_FD_START = 1
-    MAX_OPEN_FILE_NUM = 10000
-
-    DIR_FD_START = FILE_FD_START + MAX_OPEN_FILE_NUM
-    MAX_OPEN_DIR_NUM = 10000
-
-    DEV_FD_START = DIR_FD_START + MAX_OPEN_DIR_NUM
-    MAX_OPEN_DEV_NUM = 10000
-
-    SOCKET_FD_START = DEV_FD_START + MAX_OPEN_DEV_NUM
-    MAX_OPEN_SOCKET_NUM = 10000
+    FD_START_VALUE = 1
+    FD_MAX_NUM = 10000
 
     AT_FDCWD: Optional[int] = None
 
@@ -82,16 +74,6 @@ class BaseOs(ABC):
 
         self._symbolic_links: Dict[str, str] = {}
 
-        # Virtual file descriptors map to real file descriptors
-        self._fd_map: Dict[int, int] = {}
-
-        # Virtual directory file descriptors
-        self._dir_fds: Dict[int, str] = {}
-
-        # Record the relationship between fd and file path,
-        # used by fcntl with command F_GETPATH.
-        self._fd_path_map: Dict[int, str] = {}
-
         self.pid = random.randint(10000, 20000)
         self.uid = random.randint(10000, 20000)
 
@@ -99,17 +81,16 @@ class BaseOs(ABC):
 
         self._devices: Dict[str, Type[DeviceFile]] = {}
 
-        # Virtual device file descriptors
-        self._dev_fds: Dict[int, str] = {}
-        self._dev_map: Dict[int, DeviceFile] = {}
-
-        self._sock_fds: Set[int] = set()
-        self._sock_map: Dict[int, socket.socket] = {}
+        # File descriptors
+        self._fd_res = ResourceManager(
+            start_value=self.FD_START_VALUE,
+            max_num=self.FD_MAX_NUM,
+        )
 
         if sys.stdin.isatty():
             self.stdin = self._wrap_real_fd(sys.stdin.fileno())
         else:
-            self.stdin = None
+            self.stdin = 0
 
         self.stdout = self._wrap_real_fd(sys.stdout.fileno())
         self.stderr = self._wrap_real_fd(sys.stderr.fileno())
@@ -132,6 +113,7 @@ class BaseOs(ABC):
         self._working_dir = path
 
     def _resolve_link(self, path: str, src_list: Optional[List[str]] = None) -> str:
+        """Recursively resolve symbolic links in the path to their real paths."""
         if src_list is None:
             src_list = sorted(
                 self._symbolic_links.keys(),
@@ -197,46 +179,45 @@ class BaseOs(ABC):
         """Set a symbolic link to specified path."""
         self._symbolic_links[src_path] = dst_path
 
-    def _gen_fd(self, fd_type: FdType = FdType.FILE) -> int:
-        """Generate a virtual file descriptor."""
-        fd_types = {
-            FdType.FILE: (self.FILE_FD_START, self.MAX_OPEN_FILE_NUM),
-            FdType.DIR: (self.DIR_FD_START, self.MAX_OPEN_DIR_NUM),
-            FdType.DEV: (self.DEV_FD_START, self.MAX_OPEN_DEV_NUM),
-            FdType.SOCK: (self.SOCKET_FD_START, self.MAX_OPEN_SOCKET_NUM),
-        }
-
-        if fd_type not in fd_types:
+    def _new_fd(self, fd_type: FdType, path: str = "") -> int:
+        """Create a new file descriptor."""
+        if fd_type not in (value for value in FdType):
             return 0
 
-        start, offset = fd_types[fd_type]
+        fd = self._fd_res.new()
+        if not fd:
+            return 0
 
-        fd_set: Set[int] = set()
+        self._fd_res.set_prop(fd, "type", fd_type)
+        self._fd_res.set_prop(fd, "path", path)
 
-        fd_set.update(self._fd_map.keys())
-        fd_set.update(self._dir_fds.keys())
-        fd_set.update(self._dev_map.keys())
-        fd_set.update(self._sock_fds)
-
-        for index in range(0, offset):
-            fd = start + index
-            if fd not in fd_set:
-                return fd
-        return 0
+        return fd
 
     def _get_real_fd(self, fd: int) -> int:
-        return self._fd_map[fd]
+        real_fd = self._fd_res.get_prop(fd, "fd")
+        if not real_fd:
+            self._raise_bad_fd_exception(fd)
 
-    def _wrap_real_fd(self, fd: int):
-        file_fd = self._gen_fd(FdType.FILE)
-        self._fd_map[file_fd] = fd
+        assert isinstance(real_fd, int)
+
+        return real_fd
+
+    def _wrap_real_fd(self, fd: int) -> int:
+        file_fd = self._new_fd(FdType.FILE)
+        self._fd_res.set_prop(file_fd, "fd", fd)
         return file_fd
 
-    def get_dir_path(self, fd: int) -> Optional[str]:
-        if fd not in self._dir_fds:
-            return None
+    def _is_dir_fd(self, fd: int) -> bool:
+        return self._fd_res.get_prop(fd, "type") == FdType.DIR
 
-        return self._dir_fds[fd]
+    def get_dir_path(self, fd: int) -> str:
+        if not self._is_dir_fd(fd):
+            self._raise_bad_fd_exception(fd)
+
+        path = self._fd_res.get_prop(fd, "path")
+        assert isinstance(path, str)
+
+        return path
 
     @staticmethod
     def _construct_stat64(st: os.stat_result) -> bytes:
@@ -253,6 +234,9 @@ class BaseOs(ABC):
         """Construct statfs64 struct."""
         return NotImplemented
 
+    def _raise_bad_fd_exception(self, fd: int):
+        raise SystemOperationFailed(f"Bad file descriptor: {fd}", SyscallError.EBADF)
+
     def _check_fd(self, fd: int):
         """Check file descriptor.
 
@@ -262,10 +246,8 @@ class BaseOs(ABC):
         if fd in (self.stdin, self.stdout, self.stderr):
             return
 
-        if fd not in self._fd_path_map:
-            raise SystemOperationFailed(
-                f"Bad file descriptor: {fd}", SyscallError.EBADF
-            )
+        if not self._fd_res.validate(fd):
+            self._raise_bad_fd_exception(fd)
 
     @staticmethod
     def _prepare_flags(flags: int) -> int:
@@ -303,11 +285,9 @@ class BaseOs(ABC):
             return path
         elif self.AT_FDCWD is not None and dir_fd == to_signed(self.AT_FDCWD, size=4):
             return posixpath.join(self._working_dir, path)
-        elif dir_fd in self._dir_fds:
-            return posixpath.join(self._dir_fds[dir_fd], path)
-        raise SystemOperationFailed(
-            f"Bad file descriptor: {dir_fd}", SyscallError.EBADF
-        )
+        else:
+            dir_path = self.get_dir_path(dir_fd)
+            return posixpath.join(dir_path, path)
 
     def mount_device(self, path: str, dev_cls: Type[DeviceFile]):
         """Mount device file to virtual file system."""
@@ -330,24 +310,22 @@ class BaseOs(ABC):
     def _open(self, path: str, flags: int, mode: int) -> int:
         real_path = self._get_real_path(path)
         flags = self._prepare_flags(flags)
+        absolute_path = self._get_absolute_path(path)
 
         if os.path.isdir(real_path):
-            dir_fd = self._gen_fd(FdType.DIR)
-            self._dir_fds[dir_fd] = self._get_absolute_path(path)
+            dir_fd = self._new_fd(FdType.DIR, absolute_path)
             return dir_fd
 
         if path in self._devices:
-            dev_fd = self._gen_fd(FdType.DEV)
-            self._dev_fds[dev_fd] = self._get_absolute_path(path)
-            self._dev_map[dev_fd] = self._devices[path]()
-            self._fd_path_map[dev_fd] = self._get_absolute_path(path)
+            dev_fd = self._new_fd(FdType.DEV, absolute_path)
+            device = self._devices[path]()
+            self._fd_res.set_prop(dev_fd, "device", device)
             return dev_fd
 
         fd = os.open(real_path, flags, mode)
 
-        file_fd = self._gen_fd(FdType.FILE)
-        self._fd_map[file_fd] = fd
-        self._fd_path_map[file_fd] = self._get_absolute_path(path)
+        file_fd = self._new_fd(FdType.FILE, absolute_path)
+        self._fd_res.set_prop(file_fd, "fd", fd)
 
         return file_fd
 
@@ -399,8 +377,20 @@ class BaseOs(ABC):
     def _chown(self, path: str, uid: int, gid: int):
         pass
 
+    def _get_fd_device(self, fd: int) -> DeviceFile:
+        device = self._fd_res.get_prop(fd, "device")
+        if not device:
+            self._raise_bad_fd_exception(fd)
+
+        assert isinstance(device, DeviceFile)
+
+        return device
+
+    def _is_dev_fd(self, fd: int) -> bool:
+        return self._fd_res.get_prop(fd, "type") == FdType.DEV
+
     def _device_read(self, fd: int, size: int) -> bytes:
-        device = self._dev_map[fd]
+        device = self._get_fd_device(fd)
         if not device.readable():
             raise SystemOperationFailed("Not support read", SyscallError.EBADF)
 
@@ -411,7 +401,7 @@ class BaseOs(ABC):
         return result
 
     def _device_write(self, fd: int, data: bytes) -> int:
-        device = self._dev_map[fd]
+        device = self._get_fd_device(fd)
         if not device.writable():
             raise SystemOperationFailed("Not support write", SyscallError.EBADF)
 
@@ -422,7 +412,7 @@ class BaseOs(ABC):
         return result
 
     def _device_seek(self, fd: int, offset: int, whence: int) -> int:
-        device = self._dev_map[fd]
+        device = self._get_fd_device(fd)
         if not device.seekable():
             raise SystemOperationFailed("Not support seek", SyscallError.EBADF)
 
@@ -432,7 +422,7 @@ class BaseOs(ABC):
     def read(self, fd: int, size: int) -> bytes:
         self._check_fd(fd)
 
-        if fd in self._dev_fds:
+        if self._is_dev_fd(fd):
             return self._device_read(fd, size)
 
         real_fd = self._get_real_fd(fd)
@@ -444,7 +434,7 @@ class BaseOs(ABC):
 
         data = self.emu.read_bytes(buf, size)
 
-        if fd in self._dev_fds:
+        if self._is_dev_fd(fd):
             return self._device_write(fd, data)
 
         real_fd = self._get_real_fd(fd)
@@ -461,28 +451,17 @@ class BaseOs(ABC):
 
     @log_call
     def close(self, fd: int) -> int:
-        if fd in self._dir_fds:
-            del self._dir_fds[fd]
-            return 0
-        elif fd in self._dev_fds:
-            del self._dev_fds[fd]
-            del self._dev_map[fd]
-            del self._fd_path_map[fd]
-            return 0
-        elif fd in self._sock_fds:
-            if fd in self._sock_map:
-                self._sock_map[fd].close()
-                del self._sock_map[fd]
-            self._sock_fds.remove(fd)
-            return 0
-
         self._check_fd(fd)
-        real_fd = self._get_real_fd(fd)
 
-        del self._fd_map[fd]
-        del self._fd_path_map[fd]
+        sock = self._fd_res.get_prop(fd, "sock")
+        if sock:
+            sock.close()
 
-        os.close(real_fd)
+        real_fd = self._fd_res.get_prop(fd, "fd")
+        if real_fd:
+            os.close(real_fd)
+
+        self._fd_res.free(fd)
 
         return 0
 
@@ -549,7 +528,7 @@ class BaseOs(ABC):
     def lseek(self, fd: int, offset: int, whence: int) -> int:
         self._check_fd(fd)
 
-        if fd in self._dev_fds:
+        if self._fd_res.get_prop(fd, "type") == FdType.DEV:
             return self._device_seek(fd, offset, whence)
 
         real_fd = self._get_real_fd(fd)
@@ -562,13 +541,13 @@ class BaseOs(ABC):
 
     @log_call
     def fstat(self, fd: int) -> bytes:
-        if fd in self._dir_fds:
-            path = self._dir_fds[fd]
+        if self._is_dir_fd(fd):
+            path = self.get_dir_path(fd)
             return self.stat(path)
 
         self._check_fd(fd)
 
-        if fd in self._dev_fds:
+        if self._is_dev_fd(fd):
             return self._construct_dev_stat64()
 
         real_fd = self._get_real_fd(fd)
@@ -657,7 +636,7 @@ class BaseOs(ABC):
 
         data = self.emu.read_bytes(buf, size)
 
-        if fd in self._dev_fds:
+        if self._is_dev_fd(fd):
             return self._device_write(fd, data)
 
         real_fd = self._get_real_fd(fd)
@@ -690,10 +669,10 @@ class BaseOs(ABC):
 
     @log_call
     def fchdir(self, fd: int):
-        if fd not in self._dir_fds:
+        if self._is_dev_fd(fd):
             raise SystemOperationFailed(f"Not a directory: {fd}", SyscallError.ENOTDIR)
 
-        self._chdir(self._dir_fds[fd])
+        self._chdir(self.get_dir_path(fd))
 
     @log_call
     def chown(self, path: str, uid: int, gid: int):
@@ -743,9 +722,7 @@ class BaseOs(ABC):
 
         # Unix sockets
         if domain == self.AF_UNIX:
-            sock_fd = self._gen_fd(FdType.SOCK)
-            self._sock_fds.add(sock_fd)
-            return sock_fd
+            return self._new_fd(FdType.SOCK)
 
         if (
             domain not in domain_map
@@ -760,9 +737,8 @@ class BaseOs(ABC):
 
         sock = socket.socket(domain, sock_type, protocol)
 
-        sock_fd = self._gen_fd(FdType.SOCK)
-        self._sock_fds.add(sock_fd)
-        self._sock_map[sock_fd] = sock
+        sock_fd = self._new_fd(FdType.SOCK)
+        self._fd_res.set_prop(sock_fd, "sock", sock)
 
         return sock_fd
 
@@ -791,11 +767,8 @@ class BaseOs(ABC):
         if not self.FEATURE_SOCKET_ENABLE:
             return None
 
-        read_fd = self._gen_fd(FdType.SOCK)
-        self._sock_fds.add(read_fd)
-
-        write_fd = self._gen_fd(FdType.SOCK)
-        self._sock_fds.add(write_fd)
+        read_fd = self._new_fd(FdType.SOCK)
+        write_fd = self._new_fd(FdType.SOCK)
 
         return read_fd, write_fd
 
@@ -890,10 +863,15 @@ class BaseOs(ABC):
         return buffer
 
     def _setup_devices(self):
-        """Setup virtual device files."""
-        self.mount_device("/dev/null", NullDevice)
-        self.mount_device("/dev/random", RandomDevice)
-        self.mount_device("/dev/urandom", UrandomDevice)
+        """Mount virtual device files."""
+        device_map = {
+            "/dev/null": NullDevice,
+            "/dev/random": RandomDevice,
+            "/dev/urandom": UrandomDevice,
+        }
+
+        for path, dev_cls in device_map.items():
+            self.mount_device(path, dev_cls)
 
     def initialize(self):
         """Initialize environment."""
