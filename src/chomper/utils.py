@@ -41,6 +41,16 @@ def to_unsigned(value: int, size: int = 8) -> int:
     return value
 
 
+def int_to_bytes(
+    value: int,
+    length: int,
+    signed: bool = False,
+    endian: EndianType = LITTLE_ENDIAN,
+) -> bytes:
+    """Convert integer to bytes."""
+    return value.to_bytes(length, signed=signed, byteorder=endian)
+
+
 def bytes_to_float(data: bytes, endian: EndianType = LITTLE_ENDIAN) -> float:
     """Convert bytes to float/double."""
     size = len(data)
