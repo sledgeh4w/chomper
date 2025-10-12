@@ -12,7 +12,7 @@ from chomper.exceptions import (
 )
 
 from . import conftest
-from .utils import alloc_variables
+from .utils import alloc_vars
 
 
 def test_unhandled_system_call_exception():
@@ -36,7 +36,7 @@ def test_missing_symbol_required_exception():
         emu = Chomper(arch=ARCH_ARM64)
         libszstone = emu.load_module(module_path)
 
-        with alloc_variables(emu, sample_bytes, 1024) as (a1, a3):
+        with alloc_vars(emu, sample_bytes, 1024) as (a1, a3):
             emu.call_address(libszstone.base + 0x289A4, a1, len(sample_bytes), a3)
 
 

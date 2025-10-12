@@ -22,7 +22,6 @@ class Timespec(ctypes.Structure):
 
     @classmethod
     def from_time_ns(cls, time_ns: int) -> "Timespec":
-        """Create a Timespec structure from nanoseconds."""
         return cls(
             tv_sec=time_ns // (10**9),
             tv_nsec=time_ns % (10**9),
@@ -212,3 +211,17 @@ class MachMsgGuardedPortDescriptorT(ctypes.Structure):
         ("type", ctypes.c_uint8),
         ("name", ctypes.c_uint32),
     ]
+
+
+class MachTimespec(ctypes.Structure):
+    _fields_ = [
+        ("tv_sec", ctypes.c_uint32),
+        ("tv_nsec", ctypes.c_int32),
+    ]
+
+    @classmethod
+    def from_time_ns(cls, time_ns: int) -> "MachTimespec":
+        return cls(
+            tv_sec=time_ns // (10**9),
+            tv_nsec=time_ns % (10**9),
+        )

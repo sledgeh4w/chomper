@@ -1,6 +1,9 @@
-from chomper.os.ios import const
+from ctypes import sizeof
 
-from .utils import alloc_variables
+from chomper.os.ios import const
+from chomper.os.ios.structs import MachTimespec
+
+from .utils import alloc_vars
 
 
 def test_ns_number(emu_ios, objc):
@@ -354,7 +357,7 @@ def test_sc_network_reachability(emu_ios, objc):
     with objc.autorelease_pool():
         name = "apple.com"
 
-        with alloc_variables(emu_ios, name, 8) as (name_ptr, flags):
+        with alloc_vars(emu_ios, name, 8) as (name_ptr, flags):
             reachability = emu_ios.call_symbol(
                 "_SCNetworkReachabilityCreateWithName", 0, name_ptr
             )
@@ -376,6 +379,14 @@ def test_dispatch_semaphore(emu_ios):
     assert result == 0
 
     emu_ios.call_symbol("_dispatch_release", semaphore)
+
+
+def test_clock(emu_ios):
+    clock_port = emu_ios.ios_os.MACH_PORT_CLOCK
+
+    with alloc_vars(emu_ios, sizeof(MachTimespec)) as (cur_time_buf,):
+        result = emu_ios.call_symbol("_clock_get_time", clock_port, cur_time_buf)
+        assert result == 0
 
 
 def test_mach_ports(emu_ios):

@@ -31,6 +31,9 @@ class SyscallError(Enum):
     EEXIST = 5
     ENOTDIR = 6
 
+    # Used for nanosleep on iOS
+    EXT1 = 1000
+
 
 class FdType(Enum):
     FILE = 1

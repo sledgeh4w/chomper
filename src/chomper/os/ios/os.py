@@ -142,6 +142,7 @@ class IosOs(BaseOs):
     MACH_PORT_THREAD = 3
     MACH_PORT_BOOTSTRAP = 4
     MACH_PORT_REPLY = 5
+    MACH_PORT_CLOCK = 6
 
     MACH_PORT_TIMER = 256
 
@@ -198,7 +199,7 @@ class IosOs(BaseOs):
         self.emu.write_s32(errno.address, value)
 
         errno_ptr = self.emu.read_pointer(TLS_ADDRESS + 0x8)
-        self.emu.write_u32(errno_ptr, value)
+        self.emu.write_s32(errno_ptr, value)
 
     @staticmethod
     def _construct_stat64(st: os.stat_result) -> bytes:
@@ -433,6 +434,10 @@ class IosOs(BaseOs):
             self.emu.write_s64(locale_key.address, 10)
 
         self.emu.call_symbol("___atexit_init")
+
+        # _init_clock_port
+        clock_port = self.emu.find_symbol("_clock_port")
+        self.emu.write_u32(clock_port.address, self.MACH_PORT_CLOCK)
 
     def _init_system_pthread(self):
         """Initialize `libsystem_pthread.dylib`."""

@@ -1,12 +1,15 @@
 import os
 import time
+from ctypes import sizeof
 
 import pytest
 
 from chomper.const import OS_IOS
 from chomper.exceptions import SymbolMissing
+from chomper.os.ios.structs import Timespec
+from chomper.utils import struct_to_bytes
 
-from .utils import alloc_variables
+from .utils import alloc_vars
 
 emu_names = ["emu_arm", "emu_arm64", "emu_ios"]
 
@@ -47,7 +50,7 @@ def test_memcpy(request, emu_name):
 
     s = "chomper"
 
-    with alloc_variables(emu, 16, s) as (v1, v2):
+    with alloc_vars(emu, 16, s) as (v1, v2):
         call_symbol(emu, "memcpy", v1, v2, len(s) + 1)
         result = emu.read_string(v1)
         assert result == s
@@ -59,7 +62,7 @@ def test_memcmp(request, emu_name):
 
     s = "chomper"
 
-    with alloc_variables(emu, s, s, s[::-1]) as (v1, v2, v3):
+    with alloc_vars(emu, s, s, s[::-1]) as (v1, v2, v3):
         result = call_symbol(emu, "memcmp", v1, v2, len(s))
         assert result == 0
 
@@ -74,7 +77,7 @@ def test_memset(request, emu_name):
     s = "chomper"
     n = len(s)
 
-    with alloc_variables(emu, s) as (v1,):
+    with alloc_vars(emu, s) as (v1,):
         call_symbol(emu, "memset", v1, 0, n)
         result = emu.read_bytes(v1, n)
         assert result == b"\x00" * n
@@ -87,7 +90,7 @@ def test_strncpy(request, emu_name):
     s = "chomper"
     n = 5
 
-    with alloc_variables(emu, b"\x00" * 16, s) as (v1, v2):
+    with alloc_vars(emu, b"\x00" * 16, s) as (v1, v2):
         call_symbol(emu, "strncpy", v1, v2, n)
         result = emu.read_string(v1)
         assert result == s[:n]
@@ -99,7 +102,7 @@ def test_strncmp(request, emu_name):
 
     s = "chomper"
 
-    with alloc_variables(emu, s, s[:-1] + " ") as (v1, v2):
+    with alloc_vars(emu, s, s[:-1] + " ") as (v1, v2):
         result = call_symbol(emu, "strncmp", v1, v2, len(s) - 1)
         assert result == 0
 
@@ -114,7 +117,7 @@ def test_strncat(request, emu_name):
     s = "chomper"
     n = 5
 
-    with alloc_variables(emu, 32, s) as (v1, v2):
+    with alloc_vars(emu, 32, s) as (v1, v2):
         emu.write_string(v1, s)
 
         call_symbol(emu, "strncat", v1, v2, n)
@@ -128,7 +131,7 @@ def test_strcpy(request, emu_name):
 
     s = "chomper"
 
-    with alloc_variables(emu, 16, s) as (v1, v2):
+    with alloc_vars(emu, 16, s) as (v1, v2):
         call_symbol(emu, "strcpy", v1, v2)
         result = emu.read_string(v1)
         assert result == s
@@ -140,7 +143,7 @@ def test_strcmp(request, emu_name):
 
     s = "chomper"
 
-    with alloc_variables(emu, s, s, s[::-1] + " ") as (v1, v2, v3):
+    with alloc_vars(emu, s, s, s[::-1] + " ") as (v1, v2, v3):
         result = call_symbol(emu, "strcmp", v1, v2)
         assert result == 0
 
@@ -154,7 +157,7 @@ def test_strcat(request, emu_name):
 
     s = "chomper"
 
-    with alloc_variables(emu, 32, s) as (v1, v2):
+    with alloc_vars(emu, 32, s) as (v1, v2):
         emu.write_string(v1, s)
 
         call_symbol(emu, "strcat", v1, v2)
@@ -168,7 +171,7 @@ def test_strlen(request, emu_name):
 
     s = "chomper"
 
-    with alloc_variables(emu, s) as (v1,):
+    with alloc_vars(emu, s) as (v1,):
         result = call_symbol(emu, "strlen", v1)
         assert result == len(s)
 
@@ -180,7 +183,7 @@ def test_sprintf(request, emu_name):
     s = "chomper"
     fmt = "%d%s"
 
-    with alloc_variables(emu, 16, fmt, s) as (v1, v2, v4):
+    with alloc_vars(emu, 16, fmt, s) as (v1, v2, v4):
         v3 = len(s)
 
         if emu.os_type == OS_IOS:
@@ -200,7 +203,7 @@ def test_sscanf(request, emu_name):
     n = len(s)
     fmt = "%d%s"
 
-    with alloc_variables(emu, f"{n}{s}", fmt, 4, 64) as (v1, v2, v3, v4):
+    with alloc_vars(emu, f"{n}{s}", fmt, 4, 64) as (v1, v2, v3, v4):
         call_symbol(emu, "sscanf", v1, v2, va_list=(v3, v4))
 
         result = emu.read_u32(v3)
@@ -218,7 +221,7 @@ def test_printf(request, emu_name):
     n = len(s)
     fmt = "%d%s"
 
-    with alloc_variables(emu, fmt, s) as (v1, v3):
+    with alloc_vars(emu, fmt, s) as (v1, v3):
         call_symbol(emu, "printf", v1, n, v3)
 
 
@@ -236,7 +239,7 @@ def test_getcwd(request, emu_name):
 
     size = 1024
 
-    with alloc_variables(emu, size) as (buf,):
+    with alloc_vars(emu, size) as (buf,):
         result = call_symbol(emu, "getcwd", buf, size)
         result_str = emu.read_string(result)
 
@@ -270,7 +273,7 @@ def test_arc4random(request, emu_name):
 def test_localtime_r(request, emu_name):
     emu = request.getfixturevalue(emu_name)
 
-    with alloc_variables(emu, 8, 100) as (clock, result):
+    with alloc_vars(emu, 8, 100) as (clock, result):
         emu.write_u64(clock, int(time.time()))
 
         result = call_symbol(emu, "localtime_r", clock, result)
@@ -283,6 +286,19 @@ def test_clock(request, emu_name):
 
     result = call_symbol(emu, "clock")
     assert result >= 0
+
+
+@pytest.mark.parametrize("emu_name", ["emu_arm64", "emu_ios"])
+def test_nanosleep(request, emu_name):
+    emu = request.getfixturevalue(emu_name)
+
+    duration = Timespec.from_time_ns(0)
+
+    with alloc_vars(emu, sizeof(Timespec)) as (duration_buf,):
+        emu.write_bytes(duration_buf, struct_to_bytes(duration))
+
+        result = call_symbol(emu, "nanosleep", duration_buf, 0)
+        assert result == 0
 
 
 @pytest.mark.parametrize("emu_name", ["emu_arm64", "emu_ios"])
@@ -307,7 +323,7 @@ def test_gethostname(request, emu_name):
 
     name_len = 256
 
-    with alloc_variables(emu, name_len) as (name,):
+    with alloc_vars(emu, name_len) as (name,):
         result = call_symbol(emu, "gethostname", name, name_len)
         assert result == 0
 
@@ -316,7 +332,7 @@ def test_gethostname(request, emu_name):
 def test_getmntinfo(request, emu_name):
     emu = request.getfixturevalue(emu_name)
 
-    with alloc_variables(emu, 8) as (buf,):
+    with alloc_vars(emu, 8) as (buf,):
         result = call_symbol(emu, "getmntinfo", buf, 0)
         assert result == 0
 
@@ -333,7 +349,7 @@ def test_read(request, emu_name):
     with open(real_path, "w") as f:
         f.write(s)
 
-    with alloc_variables(emu, filepath, 100) as (path, buf):
+    with alloc_vars(emu, filepath, 100) as (path, buf):
         fd = call_symbol(emu, "open", path, 0)
         assert fd
 
@@ -354,7 +370,7 @@ def test_write(request, emu_name):
 
     real_path = f"{emu.os.rootfs_path}/{filepath[1:]}"
 
-    with alloc_variables(emu, filepath, s) as (path, buf):
+    with alloc_vars(emu, filepath, s) as (path, buf):
 
         if emu.os_type == OS_IOS:
             fd = call_symbol(emu, "open", path, 0x601, va_list=(0o666,))
@@ -386,7 +402,7 @@ def test_readdir(request, emu_name):
 
     filenames = os.listdir(real_path)
 
-    with alloc_variables(emu, dir_path) as (path,):
+    with alloc_vars(emu, dir_path) as (path,):
         dirp = call_symbol(emu, "opendir", path)
 
         while True:
@@ -411,7 +427,7 @@ def test_mkdir(request, emu_name):
     dir_path = "/private/var/tmp/test_mkdir"
     real_path = os.path.join(emu.os.rootfs_path, dir_path[1:])
 
-    with alloc_variables(emu, dir_path) as (path,):
+    with alloc_vars(emu, dir_path) as (path,):
         call_symbol(emu, "mkdir", path, 0o755)
 
     assert os.path.isdir(real_path)
@@ -425,7 +441,7 @@ def test_access(request, emu_name):
 
     dir_path = "/private/var/tmp"
 
-    with alloc_variables(emu, dir_path) as (path,):
+    with alloc_vars(emu, dir_path) as (path,):
         result = call_symbol(emu, "access", path, 0x4)
         assert result == 0
 
@@ -468,7 +484,7 @@ def test_getenv(request, emu_name):
 
     name = "HOME"
 
-    with alloc_variables(emu, name) as (v1,):
+    with alloc_vars(emu, name) as (v1,):
         call_symbol(emu, "getenv", v1)
 
 
@@ -482,7 +498,7 @@ def test_link(request, emu_name):
     link_dst = "libobjc.A.dylib.1"
     link_dst2 = "libobjc.A.dylib.2"
 
-    with alloc_variables(emu, work_dir, link_src, link_dst, link_dst2) as (
+    with alloc_vars(emu, work_dir, link_src, link_dst, link_dst2) as (
         work_dir_p,
         link_src_p,
         link_dst_p,
@@ -521,7 +537,7 @@ def test_getprogname(request, emu_name):
 def test_pthread_mutex(request, emu_name):
     emu = request.getfixturevalue(emu_name)
 
-    with alloc_variables(emu, 64, 64) as (mutex, lock_attr):
+    with alloc_vars(emu, 64, 64) as (mutex, lock_attr):
         result = call_symbol(emu, "pthread_mutexattr_init", lock_attr)
         assert result == 0
 

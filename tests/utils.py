@@ -2,7 +2,7 @@ from contextlib import contextmanager
 
 
 @contextmanager
-def alloc_variables(emu, *args):
+def alloc_vars(emu, *args):
     buf_list = []
 
     for arg in args:
