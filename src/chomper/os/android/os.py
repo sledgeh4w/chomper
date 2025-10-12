@@ -35,13 +35,11 @@ class AndroidOs(BaseOs):
 
     def get_errno(self) -> int:
         """Get the value of `errno`."""
-        errno_ptr = self.emu.read_pointer(TLS_ADDRESS + 0x10)
-        return self.emu.read_s32(errno_ptr)
+        return self.emu.read_s32(TLS_ADDRESS + 0x10)
 
     def set_errno(self, value: int):
         """Set the value of `errno`."""
-        errno_ptr = self.emu.read_pointer(TLS_ADDRESS + 0x10)
-        self.emu.write_s32(errno_ptr, value)
+        self.emu.write_s32(TLS_ADDRESS + 0x10, value)
 
     @staticmethod
     def _construct_stat64(st: os.stat_result) -> bytes:
