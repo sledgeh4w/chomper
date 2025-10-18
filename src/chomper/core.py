@@ -258,7 +258,7 @@ class Chomper:
                 if module.name == name_or_addr:
                     return module
             elif isinstance(name_or_addr, int):
-                if module.base <= name_or_addr < module.base + module.size:
+                if module.contains(name_or_addr):
                     return module
 
         return None
@@ -291,8 +291,8 @@ class Chomper:
         if module:
             offset = address - module.base
 
-            if module.image_base:
-                offset += module.image_base
+            if module.has_dyld_info:
+                offset += module.dyld_info.image_base
 
             return f"{module.name}!{hex(offset)}"
 

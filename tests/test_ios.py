@@ -137,9 +137,7 @@ def test_ns_data_with_large_size(emu_ios, objc):
 
 def test_ns_url(emu_ios, objc):
     with objc.autorelease_pool():
-        url_str = objc.msg_send(
-            "NSString", "stringWithUTF8String:", "https://github.com/sledgeh4w/chomper"
-        )
+        url_str = objc.create_ns_string("https://github.com/sledgeh4w/chomper")
 
         url = objc.msg_send("NSURL", "URLWithString:", url_str)
         assert url
@@ -264,10 +262,8 @@ def test_ns_method_signature(emu_ios, objc):
 
 def test_ns_write_to_file_atomically(emu_ios, objc):
     with objc.autorelease_pool():
-        string = objc.msg_send("NSString", "stringWithUTF8String:", "chomper")
-        filename = objc.msg_send(
-            "NSString", "stringWithUTF8String:", "test_ns_write_atomic"
-        )
+        string = objc.create_ns_string("chomper")
+        filename = objc.create_ns_string("test_ns_write_atomically")
 
         result = objc.msg_send(string, "writeToFile:atomically:", filename, 1)
         assert result
@@ -311,6 +307,12 @@ def test_ui_device(emu_ios, objc):
         # assert vendor_identifier
 
 
+def test_ui_screen(emu_ios, objc):
+    with objc.autorelease_pool():
+        screen = objc.msg_send("UIScreen", "mainScreen")
+        assert screen
+
+
 def test_ca_display(emu_ios, objc):
     with objc.autorelease_pool():
         displays = objc.msg_send("CADisplay", "displays")
@@ -334,7 +336,7 @@ def test_ca_display(emu_ios, objc):
 
 def test_ns_log(emu_ios, objc):
     with objc.autorelease_pool():
-        msg = objc.create_ns_string("Test NSLog\n")
+        msg = objc.create_ns_string("test")
         emu_ios.call_symbol("_NSLog", msg.value)
 
 
@@ -390,19 +392,38 @@ def test_clock(emu_ios):
 
 
 def test_mach_ports(emu_ios):
-    port = emu_ios.call_symbol("_mach_host_self")
-    assert port == emu_ios.ios_os.MACH_PORT_HOST
+    with alloc_vars(emu_ios, 4) as (port_buf,):
+        port = emu_ios.call_symbol("_mach_host_self")
+        assert port == emu_ios.ios_os.MACH_PORT_HOST
 
-    port = emu_ios.call_symbol("_mach_task_self")
-    assert port == emu_ios.ios_os.MACH_PORT_TASK
+        port = emu_ios.call_symbol("_mach_task_self")
+        assert port == emu_ios.ios_os.MACH_PORT_TASK
 
-    port = emu_ios.call_symbol("_mach_thread_self")
-    assert port == emu_ios.ios_os.MACH_PORT_THREAD
+        port = emu_ios.call_symbol("_mach_thread_self")
+        assert port == emu_ios.ios_os.MACH_PORT_THREAD
 
-    bootstrap_port = emu_ios.find_symbol("_bootstrap_port")
-    assert (
-        emu_ios.read_u32(bootstrap_port.address) == emu_ios.ios_os.MACH_PORT_BOOTSTRAP
-    )
+        bootstrap_port = emu_ios.find_symbol("_bootstrap_port")
+        assert (
+            emu_ios.read_u32(bootstrap_port.address)
+            == emu_ios.ios_os.MACH_PORT_BOOTSTRAP
+        )
+
+        result = emu_ios.call_symbol(
+            "_host_get_special_port",
+            emu_ios.ios_os.MACH_PORT_HOST,
+            0,
+            const.HOST_PORT,
+            port_buf,
+        )
+        assert result == 0 and emu_ios.read_u32(port_buf)
+
+        result = emu_ios.call_symbol(
+            "_task_get_special_port",
+            emu_ios.ios_os.MACH_PORT_TASK,
+            const.TASK_BOOTSTRAP_PORT,
+            port_buf,
+        )
+        assert result == 0 and emu_ios.read_u32(port_buf)
 
 
 def test_xpc_connection(emu_ios):

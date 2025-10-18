@@ -77,9 +77,14 @@ OBJC_DEPENDENCIES = [
 
 # Dependent libraries of UIKit
 UI_KIT_DEPENDENCIES = [
+    "libAccessibility.dylib",
+    "libbsm.0.dylib",
+    "CoreGraphics",
     "QuartzCore",
     "BaseBoard",
+    "BoardServices",
     "FrontBoardServices",
+    "RunningBoardServices",
     "PrototypeTools",
     "TextInput",
     "PhysicsKit",
@@ -117,6 +122,7 @@ PREFERENCES = {
 }
 
 DEVICE_INFO = {
+    "DeviceClassNumber": 1,
     "UserAssignedDeviceName": "iPhone",
     "DeviceName": "iPhone13,1",
     "ProductVersion": "14.2.1",
@@ -464,13 +470,7 @@ class IosOs(BaseOs):
 
     def _init_lib_xpc(self):
         """Initialize `libxpc.dylib`."""
-        try:
-            bootstrap_port = self.emu.find_symbol("_bootstrap_port")
-            self.emu.write_u32(bootstrap_port.address, self.MACH_PORT_BOOTSTRAP)
-
-            self.emu.call_symbol("__libxpc_initializer")
-        except EmulatorCrashed:
-            pass
+        self.emu.call_symbol("__libxpc_initializer")
 
     def _init_lib_objc(self):
         """Initialize `libobjc.A.dylib`."""
@@ -495,15 +495,10 @@ class IosOs(BaseOs):
         """Initialize Objective-C for the module by calling `map_images`
         and `load_images`.
         """
-        if not module.binary or module.image_base is None:
-            return
-
         if not self.emu.find_module("libobjc.A.dylib"):
             return
 
-        text_segment = module.binary.get_segment("__TEXT")
-
-        mach_header_ptr = module.base - module.image_base + text_segment.virtual_address
+        mach_header_ptr = module.dyld_info.image_header
         mach_header_ptrs = self.emu.create_buffer(self.emu.arch.addr_size)
 
         mh_execute_header_pointer = self.emu.find_symbol("__mh_execute_header_pointer")
@@ -586,8 +581,6 @@ class IosOs(BaseOs):
 
             # Initialize Objective-C
             self.init_objc(module)
-
-            module.binary = None
 
     def _enable_objc(self):
         """Load dependent modules to enable Objective-C support."""
@@ -699,7 +692,7 @@ class IosOs(BaseOs):
         table_size = 7892
 
         objc_module = self.emu.find_module("libobjc.A.dylib")
-        objc_offset = objc_module.base - objc_module.image_base
+        objc_offset = objc_module.base - objc_module.dyld_info.image_base
 
         for index in range(table_size):
             offset = table.address + index * 24 + 8
