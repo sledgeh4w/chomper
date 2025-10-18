@@ -164,9 +164,9 @@ class ELFLoader(BaseLoader):
             init_array = self._get_init_array(elffile, module_base)
 
             return Module(
+                path=module_file,
                 base=module_base,
                 size=size,
-                name=module_name,
                 symbols=symbols,
                 init_array=init_array,
             )

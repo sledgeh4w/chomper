@@ -80,9 +80,6 @@ class ObjcBlock:
         if self._indirect_invoke:
             self.emu.free(self._indirect_invoke)
 
-        if self._indirect_handle:
-            self.emu.del_hook(self._indirect_handle)
-
         self.emu.free(self._desc)
         self.emu.free(self._layout)
 

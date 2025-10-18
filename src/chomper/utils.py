@@ -1,14 +1,19 @@
+from __future__ import annotations
+
 import ctypes
 import inspect
 import os
 import struct
 from ctypes import addressof, create_string_buffer, sizeof, memmove, Structure
 from functools import wraps
-from typing import Any, Callable, Optional, Type, TypeVar, Union
+from typing import Any, Callable, Optional, Type, TypeVar, Union, TYPE_CHECKING
 
 from .const import LITTLE_ENDIAN, BIG_ENDIAN, SINGLE_PRECISION, DOUBLE_PRECISION
 from .log import get_logger
 from .typing import EndianType, PrecisionType
+
+if TYPE_CHECKING:
+    from .core import Chomper
 
 
 StructureT = TypeVar("StructureT", bound=ctypes.Structure)
@@ -118,6 +123,17 @@ def bytes_to_struct(data: bytes, struct_class: Type[StructureT]) -> StructureT:
 
     ctypes.memmove(ctypes.addressof(instance), data, size)
     return instance
+
+
+def read_struct(
+    emu: Chomper,
+    address: int,
+    struct_class: Type[StructureT],
+) -> StructureT:
+    """Read a struct from target address."""
+    size = ctypes.sizeof(struct_class)
+    data = emu.read_bytes(address, size)
+    return bytes_to_struct(data, struct_class)
 
 
 def log_call(f: Callable[..., Any]):

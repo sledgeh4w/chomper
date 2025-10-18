@@ -6,7 +6,7 @@ from lief.MachO import ARM64_RELOCATION, RelocationFixup
 
 from chomper.utils import aligned
 
-from .base import BaseLoader, Module, Symbol, Binding, Segment
+from .base import BaseLoader, Module, DyldInfo, Symbol, Binding, Segment
 
 
 _ARMV81_SYMBOL_POSTFIX = "$VARIANT$armv81"
@@ -80,43 +80,47 @@ class MachoLoader(BaseLoader):
         lazy_binding_set = set()
 
         for symbol in binary.symbols:
-            if symbol.value:
-                symbol_name = str(symbol.name)
-                symbol_address = module_base + symbol.value
+            if not symbol.value:
+                continue
 
-                binding_name = self._get_binding_name(symbol_name)
+            symbol_name = str(symbol.name)
+            symbol_address = module_base + symbol.value
 
-                # Lazy bind
-                if lazy_bindings.get(binding_name):
-                    # Avoid duplicate bind for special case like xx$VARIANT$armv81
-                    if binding_name in lazy_binding_set and binding_name == symbol_name:
-                        continue
+            binding_name = self._get_binding_name(symbol_name)
 
-                    for module, binding in lazy_bindings[binding_name]:
-                        reloc_addr = symbol_address
+            # Lazy bind
+            if lazy_bindings.get(binding_name):
+                # Avoid duplicate bind for special case like func$VARIANT$armv81
+                if binding_name in lazy_binding_set and binding_name == symbol_name:
+                    continue
 
-                        if reloc_addr:
-                            addr = module.base - module.image_base + binding.address
+                for module, binding in lazy_bindings[binding_name]:
+                    reloc_addr = symbol_address
 
-                            value = reloc_addr + binding.addend
-                            value &= 0xFFFFFFFFFFFFFFFF
+                    if reloc_addr:
+                        addr = (
+                            module.base - module.dyld_info.image_base + binding.address
+                        )
 
-                            self.emu.write_pointer(addr, value)
+                        value = reloc_addr + binding.addend
+                        value &= 0xFFFFFFFFFFFFFFFF
 
-                    lazy_binding_set.add(binding_name)
+                        self.emu.write_pointer(addr, value)
 
+                lazy_binding_set.add(binding_name)
+
+            symbol_struct = Symbol(
+                address=symbol_address,
+                name=symbol_name,
+            )
+            symbols.append(symbol_struct)
+
+            if binding_name != symbol_name:
                 symbol_struct = Symbol(
                     address=symbol_address,
-                    name=symbol_name,
+                    name=binding_name,
                 )
                 symbols.append(symbol_struct)
-
-                if binding_name != symbol_name:
-                    symbol_struct = Symbol(
-                        address=symbol_address,
-                        name=binding_name,
-                    )
-                    symbols.append(symbol_struct)
 
         return symbols
 
@@ -316,14 +320,21 @@ class MachoLoader(BaseLoader):
             )
             shared_segments.append(shared_segment)
 
-        return Module(
-            base=module_base + image_base,
-            size=size - image_base,
-            name=module_name,
-            symbols=symbols,
-            init_array=init_array,
+        text_segment = binary.get_segment("__TEXT")
+        image_header = module_base + text_segment.virtual_address
+
+        dyld_info = DyldInfo(
             image_base=image_base,
+            image_header=image_header,
             lazy_bindings=lazy_bindings,
             shared_segments=shared_segments,
-            binary=binary,
+        )
+
+        return Module(
+            path=module_file,
+            base=module_base + image_base,
+            size=size - image_base,
+            symbols=symbols,
+            init_array=init_array,
+            dyld_info=dyld_info,
         )

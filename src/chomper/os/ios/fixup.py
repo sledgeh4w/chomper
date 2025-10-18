@@ -21,11 +21,8 @@ class SystemModuleFixer:
     def __init__(self, emu: Chomper, module: Module):
         self.emu = emu
 
-        if not module.binary:
-            raise ValueError("Empty binary")
-
-        self.module_base = module.base - (module.image_base or 0)
-        self.module_binary = module.binary
+        self.module_base = module.base - (module.dyld_info.image_base or 0)
+        self.module_binary: lief.MachO.Binary = lief.parse(module.path)  # type: ignore
 
         # Filter duplicate relocations
         self._relocation_cache: Dict[int, int] = {}
@@ -349,12 +346,12 @@ class SystemModuleFixer:
             method_type_addr = self.emu.read_pointer(method_type_offset)
 
             for module in self.emu.modules:
-                if not module.shared_segments:
+                if not module.dyld_info.shared_segments:
                     continue
 
-                for segment in module.shared_segments:
+                for segment in module.dyld_info.shared_segments:
                     if self.is_address_in_segment(method_type_addr, segment):
-                        module_base = module.base - (module.image_base or 0)
+                        module_base = module.base - module.dyld_info.image_base
                         self.relocate_reference(
                             method_type_offset,
                             module_base=module_base,
@@ -461,6 +458,7 @@ class SystemModuleFixer:
             [
                 ("__DATA", "__data"),
                 ("__DATA_CONST", "__const"),
+                ("__DATA_DIRTY", "__common"),
                 ("__DATA_DIRTY", "__data"),
                 ("__TEXT", "__const"),
             ]

@@ -247,6 +247,50 @@ def hook_dyld_program_sdk_at_least(
     return 0
 
 
+@register_hook("_dyld_image_header_containing_address")
+def hook_dyld_image_header_containing_address(
+    uc: Uc, address: int, size: int, user_data: HookContext
+):
+    emu = user_data["emu"]
+
+    address = emu.get_arg(0)
+
+    for module in emu.modules:
+        if module.contains(address):
+            return module.dyld_info.image_header
+
+    return 0
+
+
+@register_hook("__dyld_shared_cache_real_path")
+def hook_dyld_shared_cache_real_path(
+    uc: Uc, address: int, size: int, user_data: HookContext
+):
+    emu = user_data["emu"]
+
+    path = emu.get_arg(0)
+
+    return path
+
+
+@register_hook("__NSGetExecutablePath")
+def hook_ns_get_executable_path(
+    uc: Uc, address: int, size: int, user_data: HookContext
+):
+    emu = user_data["emu"]
+
+    buf = emu.get_arg(0)
+    buf_size = emu.get_arg(1)
+
+    executable_path = emu.ios_os.program_path
+    emu.write_u32(buf_size, len(executable_path))
+
+    if buf:
+        emu.write_string(buf, executable_path)
+
+    return 0
+
+
 @register_hook("_dispatch_async")
 def hook_dispatch_async(uc: Uc, address: int, size: int, user_data: HookContext):
     emu = user_data["emu"]
@@ -288,6 +332,19 @@ def hook_mg_copy_answer(uc: Uc, address: int, size: int, user_data: HookContext)
 
     if key in emu.ios_os.device_info:
         return objc.create_cf_string(emu.ios_os.device_info[key])
+
+    return 0
+
+
+@register_hook("_MGGetBoolAnswer")
+def hook_mg_get_bool_answer(uc: Uc, address: int, size: int, user_data: HookContext):
+    # emu = user_data["emu"]
+    # objc = ObjcRuntime(emu)
+
+    # str_ptr = objc.msg_send(emu.get_arg(0), "UTF8String")
+    # assert isinstance(str_ptr, int)
+    #
+    # key = emu.read_string(str_ptr)
 
     return 0
 
@@ -435,6 +492,21 @@ def hook_bootstrap_look_up3(uc: Uc, address: int, size: int, user_data: HookCont
 
     if port:
         emu.write_u32(service_port, port)
+
+    return 0
+
+
+@register_hook("_xpc_connection_send_message_with_reply_sync")
+def hook_xpc_connection_send_message_with_reply_sync(
+    uc: Uc, address: int, size: int, user_data: HookContext
+):
+    emu = user_data["emu"]
+
+    from_ = emu.debug_symbol(emu.uc.reg_read(emu.arch.reg_lr))
+    emu.logger.warning(
+        f"Emulator ignored an 'xpc_connection_send_message_with_reply_sync' "
+        f"call from {from_}."
+    )
 
     return 0
 

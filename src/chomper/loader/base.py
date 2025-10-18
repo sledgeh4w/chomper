@@ -1,12 +1,12 @@
+import os
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from enum import Enum
 from typing import Dict, List, Optional
 
-import lief
-
 
 class SymbolType(Enum):
+    UNKNOWN = 0
     FUNC = 1
     OTHER = 2
 
@@ -38,21 +38,67 @@ class Segment:
 
 
 @dataclass
+class DyldInfo:
+    image_base: int
+    image_header: int
+    lazy_bindings: List[Binding]
+    shared_segments: List[Segment]
+
+
 class Module:
-    base: int
-    size: int
-    name: str
-    symbols: List[Symbol]
+    def __init__(
+        self,
+        path: str,
+        base: int,
+        size: int,
+        symbols: List[Symbol],
+        init_array: List[int],
+        dyld_info: Optional[DyldInfo] = None,
+    ):
+        self._path = path
+        self._base = base
+        self._size = size
 
-    image_base: Optional[int] = None
+        self._symbols = symbols
+        self._init_array = init_array
 
-    init_array: Optional[List[int]] = None
+        self._dyld_info = dyld_info
 
-    lazy_bindings: Optional[List[Binding]] = None
+    @property
+    def path(self) -> str:
+        return self._path
 
-    shared_segments: Optional[List[Segment]] = None
+    @property
+    def name(self) -> str:
+        return os.path.basename(self._path)
 
-    binary: Optional[lief.MachO.Binary] = None
+    @property
+    def base(self) -> int:
+        return self._base
+
+    @property
+    def size(self) -> int:
+        return self._size
+
+    @property
+    def symbols(self) -> List[Symbol]:
+        return self._symbols
+
+    @property
+    def init_array(self) -> List[int]:
+        return self._init_array
+
+    @property
+    def has_dyld_info(self) -> bool:
+        return bool(self._dyld_info)
+
+    @property
+    def dyld_info(self) -> DyldInfo:
+        assert self._dyld_info
+        return self._dyld_info
+
+    def contains(self, address: int) -> bool:
+        return self.base <= address < self.base + self.size
 
 
 class BaseLoader(ABC):
@@ -76,7 +122,10 @@ class BaseLoader(ABC):
         bindings: Dict[str, List] = {}
 
         for module in self.emu.modules:
-            for binding in module.lazy_bindings:
+            if not module.has_dyld_info:
+                continue
+
+            for binding in module.dyld_info.lazy_bindings:
                 symbol_name = binding.symbol
 
                 if not bindings.get(symbol_name):
