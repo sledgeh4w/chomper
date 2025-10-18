@@ -1,0 +1,3 @@
+[submodule "rootfs"]
+	path = rootfs
+	url = https://github.com/sledgeh4w/rootfs.git
