@@ -46,3 +46,10 @@ warn_redundant_casts = true
 warn_unused_configs = true
 warn_unused_ignores = false
 ignore_missing_imports = true
+
+[tool.black]
+extend-exclude = '''
+(
+    src/chomper/plist17lib/.*
+)
+'''
