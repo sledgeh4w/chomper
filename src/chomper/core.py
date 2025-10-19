@@ -26,7 +26,13 @@ from .log import get_logger
 from .memory import MemoryManager
 from .objc import ObjcType
 from .os import AndroidOs, android_get_syscall_name, IosOs, ios_get_syscall_name
-from .typing import EndianType, HookContext, HookFuncCallable, HookMemCallable
+from .typing import (
+    EndianType,
+    ReturnType,
+    HookContext,
+    HookFuncCallable,
+    HookMemCallable,
+)
 from .utils import aligned, to_signed, bytes_to_float, float_to_bytes
 
 try:
@@ -225,6 +231,7 @@ class Chomper:
         address: int,
         *args: int,
         va_list: Optional[Sequence[int]] = None,
+        return_type: ReturnType = "int",
     ) -> int:
         """Start emulate at the specified address."""
         context = self.uc.context_save()
@@ -241,7 +248,7 @@ class Chomper:
         try:
             # self.logger.info(f"Start emulate at {self.debug_symbol(address)}")
             self.uc.emu_start(address, stop_addr)
-            return self.get_retval()
+            return self.get_retval(return_type=return_type)
         except UcError as e:
             self.crash("Unknown reason", exc=e)
         finally:
@@ -697,13 +704,22 @@ class Chomper:
                 self.set_arg(self.arch.addr_size + index, value)
             self.set_arg(self.arch.addr_size + len(va_list), 0)
 
-    def get_retval(self) -> int:
-        """Get return value."""
-        return self.uc.reg_read(self.arch.reg_retval)
+    def _get_retval_reg(self, return_type: ReturnType) -> int:
+        if return_type == "float":
+            return self.arch.reg_float_retval
+        elif return_type == "double":
+            return self.arch.reg_double_retval
+        return self.arch.reg_retval
 
-    def set_retval(self, value: int):
+    def get_retval(self, return_type: ReturnType = "int") -> int:
+        """Get return value."""
+        reg_id = self._get_retval_reg(return_type)
+        return self.uc.reg_read(reg_id)
+
+    def set_retval(self, value: int, return_type: ReturnType = "int"):
         """Set return value."""
-        self.uc.reg_write(self.arch.reg_retval, value)
+        reg_id = self._get_retval_reg(return_type)
+        self.uc.reg_write(reg_id, value)
 
     def create_buffer(self, size: int) -> int:
         """Create a buffer with the size."""
@@ -895,6 +911,7 @@ class Chomper:
         symbol_name: str,
         *args: int,
         va_list: Optional[Sequence[int]] = None,
+        return_type: ReturnType = "int",
     ) -> int:
         """Call function with the symbol name."""
         self.logger.info(f'Call symbol "{symbol_name}"')
@@ -902,13 +919,24 @@ class Chomper:
         symbol = self.find_symbol(symbol_name)
         address = symbol.address
 
-        return self._start_emulate(address, *args, va_list=va_list)
+        return self._start_emulate(
+            address,
+            *args,
+            va_list=va_list,
+            return_type=return_type,
+        )
 
     def call_address(
         self,
         address: int,
         *args: int,
         va_list: Optional[Sequence[int]] = None,
+        return_type: ReturnType = "int",
     ) -> int:
         """Call function at the address."""
-        return self._start_emulate(address, *args, va_list=va_list)
+        return self._start_emulate(
+            address,
+            *args,
+            va_list=va_list,
+            return_type=return_type,
+        )

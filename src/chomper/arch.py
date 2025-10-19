@@ -13,6 +13,8 @@ class Arch:
         reg_lr: int,
         reg_args: List[int],
         reg_retval: int,
+        reg_float_retval: int,
+        reg_double_retval: int,
     ):
         self.nbits = nbits
 
@@ -23,6 +25,8 @@ class Arch:
 
         self.reg_args = reg_args
         self.reg_retval = reg_retval
+        self.reg_float_retval = reg_float_retval
+        self.reg_double_retval = reg_double_retval
 
     @property
     def addr_size(self) -> int:
@@ -42,6 +46,8 @@ arm_arch = Arch(
         arm_const.UC_ARM_REG_R3,
     ],
     reg_retval=arm_const.UC_ARM_REG_R0,
+    reg_float_retval=arm_const.UC_ARM_REG_S0,
+    reg_double_retval=arm_const.UC_ARM_REG_D0,
 )
 
 arm64_arch = Arch(
@@ -61,4 +67,6 @@ arm64_arch = Arch(
         arm64_const.UC_ARM64_REG_X7,
     ],
     reg_retval=arm64_const.UC_ARM64_REG_X0,
+    reg_float_retval=arm64_const.UC_ARM64_REG_S0,
+    reg_double_retval=arm64_const.UC_ARM64_REG_D0,
 )
