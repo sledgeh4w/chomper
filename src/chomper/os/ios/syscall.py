@@ -313,8 +313,8 @@ def handle_sys_ioctl(emu: Chomper):
     length = (req >> 16) & 0x3FFF
 
     emu.logger.info(
-        f"Recv ioctl request: fd={fd}, inout={hex(inout)}, group='{chr(group)}', "
-        f"num={num}, length={length}"
+        f"Received an ioctl request: fd={fd}, inout={hex(inout)}, "
+        f"group='{chr(group)}', num={num}, length={length}"
     )
 
     emu.logger.warning("ioctl request not processed")
@@ -956,7 +956,7 @@ def handle_sys_kevent_id(emu: Chomper):
 @register_syscall_handler(const.SYS_MAC_SYSCALL, "SYS_mac_syscall")
 def handle_sys_mac_syscall(emu: Chomper):
     cmd = emu.read_string(emu.get_arg(0))
-    emu.logger.info(f"Recv mac syscall command: {cmd}")
+    emu.logger.info(f"Received a mac syscall command: {cmd}")
 
     if cmd == "Sandbox":
         pass
@@ -1364,10 +1364,10 @@ def handle_mach_msg_trap(emu: Chomper):
     option = emu.get_arg(1)
 
     emu.logger.info(
-        "Recv mach msg: msg_id=%s, remote_port=%s, option=0x%x",
+        "Received a mach msg: msg_id=%s, remote_port=%s, option=%s",
         msg_id,
         remote_port,
-        option,
+        hex(option),
     )
 
     if remote_port == emu.ios_os.MACH_PORT_HOST:

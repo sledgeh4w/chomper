@@ -28,6 +28,9 @@ class ObjcType:
         """Raw value."""
         return self._value
 
+    def __bool__(self):
+        return self._value != 0
+
     def __int__(self):
         return int(self.value)
 

@@ -303,8 +303,8 @@ def test_ui_device(emu_ios, objc):
 
         objc.msg_send(device, "setBatteryMonitoringEnabled:", 1)
 
-        # vendor_identifier = objc.msg_send(device, "identifierForVendor")
-        # assert vendor_identifier
+        vendor_identifier = objc.msg_send(device, "identifierForVendor")
+        assert vendor_identifier
 
 
 def test_ui_screen(emu_ios, objc):
@@ -315,11 +315,8 @@ def test_ui_screen(emu_ios, objc):
 
 def test_ca_display(emu_ios, objc):
     with objc.autorelease_pool():
-        displays = objc.msg_send("CADisplay", "displays")
-        assert displays
-
-        count = objc.msg_send(displays, "count")
-        assert count > 0
+        display = objc.msg_send("CADisplay", "mainDisplay")
+        assert display
 
 
 # def test_ct_telephony_network_info(emu_ios, objc):

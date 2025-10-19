@@ -3,16 +3,17 @@ repos:
     rev: 22.6.0
     hooks:
       - id: black
-        exclude: ^examples/|^rootfs/
+        exclude: ^examples/|^src/chomper/plist17lib/
   - repo: https://github.com/PyCQA/flake8
     rev: 4.0.1
     hooks:
       - id: flake8
-        exclude: ^examples/|^rootfs/
+        exclude: ^examples/|^src/chomper/plist17lib/
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v4.1.0
     hooks:
       - id: fix-byte-order-marker
       - id: trailing-whitespace
+        exclude: ^src/chomper/plist17lib/
       - id: end-of-file-fixer
-        exclude: ^examples/|^rootfs/
+        exclude: ^src/chomper/plist17lib/
