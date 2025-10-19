@@ -312,6 +312,9 @@ def test_ui_screen(emu_ios, objc):
         screen = objc.msg_send("UIScreen", "mainScreen")
         assert screen
 
+        brightness = screen.call_method("brightness")
+        assert brightness
+
 
 def test_ca_display(emu_ios, objc):
     with objc.autorelease_pool():

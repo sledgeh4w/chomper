@@ -10,6 +10,7 @@ if TYPE_CHECKING:
 
 
 EndianType = Literal["little", "big"]
+ReturnType = Literal["int", "float", "double"]
 PrecisionType = Literal["single", "double"]
 
 

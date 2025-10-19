@@ -83,6 +83,7 @@ UI_KIT_DEPENDENCIES = [
     "CoreServices",
     "CoreGraphics",
     "QuartzCore",
+    "BackBoardServices",
     "BaseBoard",
     "BoardServices",
     "FrontBoardServices",
@@ -157,6 +158,7 @@ class IosOs(BaseOs):
     MACH_PORT_NOTIFICATION_CENTER = 4096
     MACH_PORT_CA_RENDER_SERVER = 4097
     MACH_PORT_ADVERTISING_IDENTIFIERS = 4098
+    MACH_PORT_BKS_HID_SERVER = 4099
 
     MACH_PORT_START_VALUE = 65536
     MACH_PORT_MAX_NUM = 10000
@@ -194,6 +196,7 @@ class IosOs(BaseOs):
             "com.apple.lsd.advertisingidentifiers": (
                 self.MACH_PORT_ADVERTISING_IDENTIFIERS
             ),
+            "com.apple.backboard.hid.services": self.MACH_PORT_BKS_HID_SERVER,
         }
 
     def get_errno(self) -> int:
@@ -580,6 +583,12 @@ class IosOs(BaseOs):
                 self._init_system_pthread()
             elif module_name == "libobjc.A.dylib":
                 self._init_lib_objc()
+            elif module_name == "BackBoardServices":
+                bks_hid_sever_port = self.emu.find_symbol("_BKSHIDServerPort")
+                self.emu.write_u32(
+                    bks_hid_sever_port.address,
+                    self.MACH_PORT_BKS_HID_SERVER,
+                )
 
             # Initialize Objective-C
             self.init_objc(module)

@@ -13,7 +13,13 @@ from unicorn import arm64_const
 from chomper.exceptions import SystemOperationFailed, ProgramTerminated
 from chomper.os.base import SyscallError
 from chomper.typing import SyscallHandleCallable
-from chomper.utils import to_signed, int_to_bytes, struct_to_bytes, read_struct
+from chomper.utils import (
+    to_signed,
+    int_to_bytes,
+    struct_to_bytes,
+    float_to_bytes,
+    read_struct,
+)
 
 from . import const
 from .structs import (
@@ -1369,6 +1375,7 @@ def handle_mach_msg_trap(emu: Chomper):
         remote_port,
         hex(option),
     )
+    emu.log_backtrace()
 
     if remote_port == emu.ios_os.MACH_PORT_HOST:
         if msg_id == 412:  # host_get_special_port
@@ -1644,6 +1651,32 @@ def handle_mach_msg_trap(emu: Chomper):
                 + struct_to_bytes(ool_descriptor)
                 + int_to_bytes(0, 8)
                 + int_to_bytes(len(displays_data), 4),
+            )
+
+            return const.KERN_SUCCESS
+    elif remote_port == emu.ios_os.MACH_PORT_BKS_HID_SERVER:
+        if msg_id == 6000050:  # _BKSHIDGetCurrentDisplayBrightness
+            msg_header = MachMsgHeaderT(
+                msgh_bits=0,
+                msgh_size=40,
+                msgh_remote_port=0,
+                msgh_local_port=0,
+                msgh_voucher_port=0,
+                msgh_id=6000150,
+            )
+
+            msg_body = MachMsgBodyT(
+                msgh_descriptor_count=1,
+            )
+
+            brightness = 0.4
+
+            emu.write_bytes(
+                msg_ptr,
+                struct_to_bytes(msg_header)
+                + struct_to_bytes(msg_body)
+                + int_to_bytes(0, 8)
+                + float_to_bytes(brightness),
             )
 
             return const.KERN_SUCCESS

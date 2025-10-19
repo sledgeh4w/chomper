@@ -4,7 +4,7 @@ from contextlib import contextmanager
 from typing import List, Optional, Sequence, Union, TYPE_CHECKING
 
 from chomper.exceptions import EmulatorCrashed
-from chomper.typing import NSObjConvertible, CFObjConvertible
+from chomper.typing import ReturnType, NSObjConvertible, CFObjConvertible
 
 from .types import ObjcType, ObjcClass, ObjcObject, ObjcProtocol
 
@@ -92,8 +92,7 @@ class ObjcRuntime:
             integer value.
         """
         is_class_method = False
-        is_return_obj = False
-        is_return_void = False
+        return_type = ""
 
         if isinstance(receiver, str):
             receiver = self.find_class(receiver).value
@@ -121,11 +120,6 @@ class ObjcRuntime:
                 method = objc_class.get_instance_method(sel_name)
 
             return_type = method.return_type
-
-            if return_type.startswith("@") and return_type != "@?":
-                is_return_obj = True
-            elif return_type == "v":
-                is_return_void = True
         except (ValueError, EmulatorCrashed):
             # Failed to recognize the return type of the method,
             # typically because the selector is invalid.
@@ -149,17 +143,25 @@ class ObjcRuntime:
                     new.append(arg)
 
         try:
+            native_return_type: ReturnType = "int"
+
+            if return_type == "f":
+                native_return_type = "float"
+            elif return_type == "d":
+                native_return_type = "double"
+
             retval = self.emu.call_symbol(
                 "_objc_msgSend",
                 receiver,
                 sel,
                 *new_args,
                 va_list=new_va_list,
+                return_type=native_return_type,
             )
 
-            if is_return_obj:
+            if return_type.startswith("@") and return_type != "@?":
                 return ObjcObject(self, retval)
-            elif is_return_void:
+            elif return_type == "v":
                 return 0
 
             return retval
