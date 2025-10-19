@@ -1,12 +1,15 @@
 import os
 from functools import wraps
+from io import BytesIO
 from typing import Callable, Dict, Optional
 
 from unicorn import Uc
 
 from chomper.exceptions import EmulatorCrashed, SymbolMissing, ObjCUnrecognizedSelector
 from chomper.objc import ObjcRuntime, ObjcObject
+from chomper.plist17lib import _BinaryPlist17Parser, _BinaryPlist17Writer
 from chomper.typing import HookContext
+
 
 hooks: Dict[str, Callable] = {}
 
@@ -295,8 +298,8 @@ def hook_ns_get_executable_path(
 def hook_dispatch_async(uc: Uc, address: int, size: int, user_data: HookContext):
     emu = user_data["emu"]
 
-    from_ = emu.debug_symbol(emu.uc.reg_read(emu.arch.reg_lr))
-    emu.logger.warning(f"Emulator ignored a 'dispatch_async' call from {from_}.")
+    from_addr = emu.debug_symbol(emu.uc.reg_read(emu.arch.reg_lr))
+    emu.logger.warning(f"Ignored a 'dispatch_async' call from {from_addr}.")
 
     return 0
 
@@ -307,10 +310,8 @@ def hook_dispatch_barrier_async(
 ):
     emu = user_data["emu"]
 
-    from_ = emu.debug_symbol(emu.uc.reg_read(emu.arch.reg_lr))
-    emu.logger.warning(
-        f"Emulator ignored a 'dispatch_barrier_async' call from {from_}."
-    )
+    from_addr = emu.debug_symbol(emu.uc.reg_read(emu.arch.reg_lr))
+    emu.logger.warning(f"Ignored a 'dispatch_barrier_async' call from {from_addr}.")
 
     return 0
 
@@ -502,13 +503,83 @@ def hook_xpc_connection_send_message_with_reply_sync(
 ):
     emu = user_data["emu"]
 
-    from_ = emu.debug_symbol(emu.uc.reg_read(emu.arch.reg_lr))
-    emu.logger.warning(
-        f"Emulator ignored an 'xpc_connection_send_message_with_reply_sync' "
-        f"call from {from_}."
+    connection = emu.get_arg(0)
+    message = emu.get_arg(1)
+
+    name = None
+    name_ptr = emu.call_symbol("_xpc_connection_get_name", connection)
+    if name_ptr:
+        name = emu.read_string(name_ptr)
+
+    # Parse message
+    message_desc_ptr = emu.call_symbol("_xpc_copy_description", message)
+    message_desc = emu.read_string(message_desc_ptr)
+
+    emu.logger.info(
+        "Received an xpc message for %s: %s",
+        name if name else hex(connection),
+        message_desc,
     )
 
-    return 0
+    # Parse object
+    key_root = emu.create_string("root")
+    length_out = emu.create_buffer(4)
+
+    root_ptr = emu.call_symbol(
+        "_xpc_dictionary_get_data",
+        message,
+        key_root,
+        length_out,
+    )
+    if root_ptr:
+        root_data = emu.read_bytes(root_ptr, emu.read_u32(length_out))
+
+        plist_parser = _BinaryPlist17Parser(dict_type=dict)
+        root_obj = plist_parser.parse(BytesIO(root_data))
+
+        emu.logger.info("object = %s", root_obj)
+
+    reply = 0
+
+    if name == "com.apple.lsd.advertisingidentifiers":
+        reply_obj = [
+            None,
+            'v16@?0@"NSUUID"8',
+            [
+                {
+                    "$class": "NSUUID",
+                }
+            ],
+        ]
+
+        write_io = BytesIO()
+        plist_writer = _BinaryPlist17Writer(write_io)
+        plist_writer.write(reply_obj)
+        reply_data = write_io.getvalue()
+
+        reply_buf = emu.create_buffer(len(reply_data))
+        emu.write_bytes(reply_buf, reply_data)
+
+        reply = emu.call_symbol("_xpc_dictionary_create_empty")
+        emu.call_symbol(
+            "_xpc_dictionary_set_data",
+            reply,
+            key_root,
+            reply_buf,
+            len(reply_data),
+        )
+
+        emu.free(reply_buf)
+    else:
+        from_addr = emu.debug_symbol(emu.uc.reg_read(emu.arch.reg_lr))
+        emu.logger.warning(
+            f"Ignored an 'xpc_connection_send_message_with_reply_sync' "
+            f"call from {from_addr}."
+        )
+
+    emu.free(key_root)
+
+    return reply
 
 
 @register_hook("+[NSObject(NSObject) doesNotRecognizeSelector:]")

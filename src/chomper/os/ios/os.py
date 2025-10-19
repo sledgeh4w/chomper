@@ -79,6 +79,8 @@ OBJC_DEPENDENCIES = [
 UI_KIT_DEPENDENCIES = [
     "libAccessibility.dylib",
     "libbsm.0.dylib",
+    "MobileKeyBag",
+    "CoreServices",
     "CoreGraphics",
     "QuartzCore",
     "BaseBoard",
@@ -744,7 +746,7 @@ class IosOs(BaseOs):
         self.emu.write_pointer(stderr_p.address, stderr_fp)
 
     def load_module_private(self, path: str) -> Optional[int]:
-        """Provide full module loading capabilities to `dlopen` and `_sl_dlopen_audited`.
+        """Provide module loading capabilities to `dlopen` and `_sl_dlopen_audited`.
 
         Presently supports system module loading only.
 
