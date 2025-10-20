@@ -39,67 +39,63 @@ __CF_USER_TEXT_ENCODING=0x0:0:0
 CFN_USE_HTTP3=0
 CFStringDisableROM=1"""
 
-# Dependent libraries of ObjC
-OBJC_DEPENDENCIES = [
-    "libsystem_platform.dylib",
-    "libsystem_kernel.dylib",
-    "libsystem_c.dylib",
-    "libsystem_pthread.dylib",
-    "libsystem_info.dylib",
-    "libsystem_darwin.dylib",
-    "libsystem_featureflags.dylib",
-    "libsystem_m.dylib",
-    "libcorecrypto.dylib",
-    "libcommonCrypto.dylib",
-    "libcompiler_rt.dylib",
-    "libc++abi.dylib",
-    "libc++.1.dylib",
-    "libmacho.dylib",
-    "libdyld.dylib",
-    "libobjc.A.dylib",
-    "libdispatch.dylib",
-    "libsystem_blocks.dylib",
-    "libsystem_trace.dylib",
-    "libsystem_sandbox.dylib",
-    "libsystem_coreservices.dylib",
-    "libsystem_notify.dylib",
-    "libnetwork.dylib",
-    "libicucore.A.dylib",
-    "libcache.dylib",
-    "libz.1.dylib",
-    "libremovefile.dylib",
-    "libxpc.dylib",
-    "CoreFoundation",
-    "CFNetwork",
-    "Foundation",
-    "Security",
+# System libraries and frameworks to load
+SYSTEM_MODULES = [
+    "/usr/lib/system/libsystem_kernel.dylib",
+    "/usr/lib/system/libsystem_platform.dylib",
+    "/usr/lib/system/libsystem_c.dylib",
+    "/usr/lib/system/libsystem_featureflags.dylib",
+    "/usr/lib/system/libsystem_pthread.dylib",
+    "/usr/lib/libc++abi.dylib",
+    "/usr/lib/libc++.1.dylib",
+    "/usr/lib/system/libmacho.dylib",
+    "/usr/lib/system/libdyld.dylib",
+    "/usr/lib/libobjc.A.dylib",
+    "/usr/lib/system/libcache.dylib",
+    "/usr/lib/system/libcorecrypto.dylib",
+    "/usr/lib/system/libcommonCrypto.dylib",
+    "/usr/lib/system/libcompiler_rt.dylib",
+    "/usr/lib/system/libdispatch.dylib",
+    "/usr/lib/system/libremovefile.dylib",
+    "/usr/lib/system/libsystem_blocks.dylib",
+    "/usr/lib/system/libsystem_coreservices.dylib",
+    "/usr/lib/system/libsystem_darwin.dylib",
+    "/usr/lib/system/libsystem_info.dylib",
+    "/usr/lib/system/libsystem_notify.dylib",
+    "/usr/lib/system/libsystem_m.dylib",
+    "/usr/lib/system/libsystem_sandbox.dylib",
+    "/usr/lib/system/libsystem_trace.dylib",
+    "/usr/lib/system/libxpc.dylib",
+    "/usr/lib/libAccessibility.dylib",
+    "/usr/lib/libbsm.0.dylib",
+    "/usr/lib/libicucore.A.dylib",
+    "/usr/lib/libnetwork.dylib",
+    "/usr/lib/libz.1.dylib",
+    "/System/Library/Frameworks/CoreFoundation",
+    "/System/Library/Frameworks/Foundation",
+    "/System/Library/Frameworks/CFNetwork",
+    "/System/Library/Frameworks/CoreGraphics",
+    "/System/Library/Frameworks/CoreServices",
+    "/System/Library/Frameworks/IOKit",
+    "/System/Library/Frameworks/QuartzCore",
+    "/System/Library/Frameworks/Security",
+    "/System/Library/Frameworks/SystemConfiguration",
+    "/System/Library/PrivateFrameworks/BackBoardServices",
+    "/System/Library/PrivateFrameworks/BaseBoard",
+    "/System/Library/PrivateFrameworks/BoardServices",
+    "/System/Library/PrivateFrameworks/CoreAutoLayout",
+    "/System/Library/PrivateFrameworks/FrontBoardServices",
+    "/System/Library/PrivateFrameworks/MobileKeyBag",
+    "/System/Library/PrivateFrameworks/PhysicsKit",
+    "/System/Library/PrivateFrameworks/PrototypeTools",
+    "/System/Library/PrivateFrameworks/RunningBoardServices",
+    "/System/Library/PrivateFrameworks/TextInput",
+    "/System/Library/PrivateFrameworks/UIFoundation",
+    "/System/Library/PrivateFrameworks/UIKitCore",
+    "/System/Library/PrivateFrameworks/UIKitServices",
 ]
 
-# Dependent libraries of UIKit
-UI_KIT_DEPENDENCIES = [
-    "libAccessibility.dylib",
-    "libbsm.0.dylib",
-    "MobileKeyBag",
-    "CoreServices",
-    "CoreGraphics",
-    "QuartzCore",
-    "BackBoardServices",
-    "BaseBoard",
-    "BoardServices",
-    "FrontBoardServices",
-    "RunningBoardServices",
-    "PrototypeTools",
-    "TextInput",
-    "PhysicsKit",
-    "CoreAutoLayout",
-    "IOKit",
-    "UIFoundation",
-    "UIKitServices",
-    "UIKitCore",
-    "SystemConfiguration",
-]
-
-# Define symbolic links in the file system
+# Symbolic links in the file system
 SYMBOLIC_LINKS = {
     "/etc": "/private/etc",
     "/tmp": "/private/tmp",
@@ -400,8 +396,8 @@ class IosOs(BaseOs):
         progname_pointer = self.emu.find_symbol("___progname_pointer")
         self.emu.write_pointer(progname_pointer.address, progname)
 
-    def _init_dyld_vars(self):
-        """Initialize global variables in `libdyld.dylib`."""
+    def _init_lib_dyld(self):
+        """Initialize `libdyld.dylib`."""
         g_use_dyld3 = self.emu.find_symbol("_gUseDyld3")
         self.emu.write_u8(g_use_dyld3.address, 1)
 
@@ -431,11 +427,11 @@ class IosOs(BaseOs):
         environ = self.emu.find_symbol("_environ")
         self.emu.write_pointer(environ.address, environ_buf)
 
-    def _init_system_kernel(self):
+    def _init_lib_system_kernel(self):
         """Initialize `libsystem_kernel.dylib`."""
         self.emu.call_symbol("_mach_init_doit")
 
-    def _init_system_c(self):
+    def _init_lib_system_c(self):
         """Initialize `libsystem_c.dylib`."""
         self._init_program_vars()
 
@@ -450,7 +446,7 @@ class IosOs(BaseOs):
         clock_port = self.emu.find_symbol("_clock_port")
         self.emu.write_u32(clock_port.address, self.MACH_PORT_CLOCK)
 
-    def _init_system_pthread(self):
+    def _init_lib_system_pthread(self):
         """Initialize `libsystem_pthread.dylib`."""
         main_thread = self.emu.create_buffer(256)
 
@@ -496,6 +492,36 @@ class IosOs(BaseOs):
 
         self.emu.call_symbol("__objc_init")
 
+    def _init_core_foundation(self):
+        """Initialize `CoreFoundation`."""
+        self.fix_method_signature_rom_table()
+
+        self.emu.call_symbol("___CFInitialize")
+
+    def _init_foundation(self):
+        """Initialize `Foundation`."""
+        self.emu.call_symbol("__NSInitializePlatform")
+
+    def _init_system_symbols(self):
+        """Initialize the values of system symbols."""
+        # libsandbox.dylib
+        amkrtemp_sentinel = self.emu.find_symbol("__amkrtemp.sentinel")
+        self.emu.write_pointer(
+            amkrtemp_sentinel.address,
+            self.emu.create_string(""),
+        )
+
+        # CoreFoundation
+        is_cf_prefs_d = self.emu.find_symbol("_isCFPrefsD")
+        self.emu.write_u8(is_cf_prefs_d.address, 1)
+
+        # BackBoardServices
+        bks_hid_sever_port = self.emu.find_symbol("_BKSHIDServerPort")
+        self.emu.write_u32(
+            bks_hid_sever_port.address,
+            self.MACH_PORT_BKS_HID_SERVER,
+        )
+
     def init_objc(self, module: Module):
         """Initialize Objective-C for the module by calling `map_images`
         and `load_images`.
@@ -524,11 +550,11 @@ class IosOs(BaseOs):
             lcl_rwlock = self.emu.find_symbol("_lcl_rwlock")
             self.emu.write_u64(lcl_rwlock.address, 0)
 
-    def search_module_binary(self, module_name: str) -> str:
+    def search_module_binary(self, name: str) -> str:
         """Search system module binary in rootfs directory.
 
         Args:
-            module_name: The module name.
+            name: The module name.
 
         Returns:
             Full file path if module found.
@@ -546,77 +572,54 @@ class IosOs(BaseOs):
         for lib_dir in lib_dirs:
             path = os.path.join(self.rootfs_path or ".", lib_dir)
 
-            lib_path = os.path.join(path, module_name)
+            lib_path = os.path.join(path, name)
             if os.path.exists(lib_path):
                 return lib_path
 
-            framework_path = os.path.join(path, f"{module_name}.framework")
+            framework_path = os.path.join(path, f"{name}.framework")
             if os.path.exists(framework_path):
-                return os.path.join(framework_path, module_name)
+                return os.path.join(framework_path, name)
 
-        raise FileNotFoundError("Module '%s' not found" % module_name)
+        raise FileNotFoundError("Module '%s' not found" % name)
 
-    def resolve_modules(self, module_names: List[str]):
-        """Load and initialize system modules if they haven't been loaded."""
-        for module_name in module_names:
-            if self.emu.find_module(module_name):
+    def resolve_modules(self, paths: List[str]):
+        """Load and initialize system modules."""
+        for path in paths:
+            name = os.path.basename(path)
+            if self.emu.find_module(name):
                 continue
 
-            module_file = self.search_module_binary(module_name)
+            module_file = self.search_module_binary(name)
             module = self.emu.load_module(
                 module_file=module_file,
                 exec_objc_init=False,
             )
 
-            # Fixup must be executed before initializing Objective-C.
+            # Fixup must be executed before initializing Objective-C
             fixer = SystemModuleFixer(self.emu, module)
             fixer.fixup_all()
 
             # Initialize system modules
-            if module_name == "libsystem_kernel.dylib":
-                self._init_system_kernel()
-            elif module_name == "libsystem_c.dylib":
-                self._init_system_c()
-            elif module_name == "libdyld.dylib":
-                self._init_dyld_vars()
-            elif module_name == "libsystem_pthread.dylib":
-                self._init_system_pthread()
-            elif module_name == "libobjc.A.dylib":
+            if name == "libsystem_kernel.dylib":
+                self._init_lib_system_kernel()
+            elif name == "libsystem_c.dylib":
+                self._init_lib_system_c()
+            elif name == "libdyld.dylib":
+                self._init_lib_dyld()
+            elif name == "libsystem_pthread.dylib":
+                self._init_lib_system_pthread()
+            elif name == "libobjc.A.dylib":
                 self._init_lib_objc()
-            elif module_name == "BackBoardServices":
-                bks_hid_sever_port = self.emu.find_symbol("_BKSHIDServerPort")
-                self.emu.write_u32(
-                    bks_hid_sever_port.address,
-                    self.MACH_PORT_BKS_HID_SERVER,
-                )
 
             # Initialize Objective-C
             self.init_objc(module)
 
-    def _enable_objc(self):
-        """Load dependent modules to enable Objective-C support."""
-        self.resolve_modules(OBJC_DEPENDENCIES)
-
-        self._init_lib_xpc()
-
-        # Call initialize function of `CoreFoundation`
-        self.emu.call_symbol("___CFInitialize")
-
-        is_cf_prefs_d = self.emu.find_symbol("_isCFPrefsD")
-        self.emu.write_u8(is_cf_prefs_d.address, 1)
-
-        # Call initialize function of `Foundation`
-        self.emu.call_symbol("__NSInitializePlatform")
-
-        self.fix_method_signature_rom_table()
-
-        amkrtemp_sentinel = self.emu.find_symbol("__amkrtemp.sentinel")
-        self.emu.write_pointer(amkrtemp_sentinel.address, self.emu.create_string(""))
-
-    def _enable_ui_kit(self):
-        """Load dependent modules to enable UIKit support. Which mainly used
-        to export `UIDevice` class."""
-        self.resolve_modules(UI_KIT_DEPENDENCIES)
+            if name == "libxpc.dylib":
+                self._init_lib_xpc()
+            elif name == "CoreFoundation":
+                self._init_core_foundation()
+            elif name == "Foundation":
+                self._init_foundation()
 
     def _setup_symbolic_links(self):
         for src, dst in SYMBOLIC_LINKS.items():
@@ -643,7 +646,7 @@ class IosOs(BaseOs):
         self.forward_path(container_path, local_container_path)
         self.forward_path(bundle_path, local_bundle_path)
 
-    def set_main_executable(self, executable_path: str):
+    def set_main_executable(self, path: str):
         """Set program path and name to global variables while forwarding
         the file access to executable.
 
@@ -651,7 +654,7 @@ class IosOs(BaseOs):
         the executable, the runtime automatically extracts its `CFBundleIdentifier`
         and `CFBundleExecutable` values.
         """
-        self.executable_path = executable_path
+        self.executable_path = path
 
         bundle_path = os.path.dirname(self.program_path)
         container_path = os.path.dirname(bundle_path)
@@ -871,10 +874,8 @@ class IosOs(BaseOs):
         self._setup_symbolic_links()
         self._setup_bundle_dir()
 
-        if self.emu.enable_objc:
-            self._enable_objc()
-
-        if self.emu.enable_ui_kit:
-            self._enable_ui_kit()
+        # Setup system modules
+        self.resolve_modules(SYSTEM_MODULES)
+        self._init_system_symbols()
 
         self._setup_standard_io()
