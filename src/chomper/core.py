@@ -51,8 +51,6 @@ class Chomper:
         logger: The logger to print log.
         endian: Default endian to use.
         enable_vfp: Enable VFP extension of ARM.
-        enable_objc: Enable Objective-C runtime of iOS.
-        enable_ui_kit: Enable UIKit framework of iOS.
         trace_inst: Print log when any instruction is executed. The emulator will
             call disassembler in real time to output the assembly instructions,
             so this will slow down the emulation.
@@ -71,8 +69,6 @@ class Chomper:
         endian: EndianType = const.LITTLE_ENDIAN,
         rootfs_path: Optional[str] = None,
         enable_vfp: bool = True,
-        enable_objc: bool = True,
-        enable_ui_kit: bool = True,
         trace_inst: bool = False,
         trace_symbol_calls: bool = False,
         trace_inst_callback: Optional[HookFuncCallable] = None,
@@ -86,9 +82,6 @@ class Chomper:
 
         self.os_type = os_type
         self.endian = endian
-
-        self.enable_objc = enable_objc
-        self.enable_ui_kit = enable_ui_kit
 
         self._trace_inst = trace_inst
         self._trace_symbol_calls = trace_symbol_calls
