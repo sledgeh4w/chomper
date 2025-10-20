@@ -13,7 +13,7 @@ def test_ns_number(emu_ios, objc):
         number = objc.msg_send("NSNumber", "numberWithInteger:", value)
         assert number
 
-        raw_value = objc.msg_send(number, "intValue")
+        raw_value = number.call_method("intValue")
         assert value == raw_value
 
 
@@ -29,12 +29,12 @@ def test_ns_mutable_string(emu_ios, objc):
 
         string = objc.msg_send("NSMutableString", "string")
 
-        objc.msg_send(string, "setString:", objc.create_ns_string(sample_str))
-        raw_string = objc.msg_send(string, "UTF8String")
+        string.call_method("setString:", objc.create_ns_string(sample_str))
+        raw_string = string.call_method("UTF8String")
         assert emu_ios.read_string(raw_string) == sample_str
 
-        objc.msg_send(string, "appendString:", objc.create_ns_string(sample_str))
-        raw_string = objc.msg_send(string, "UTF8String")
+        string.call_method("appendString:", objc.create_ns_string(sample_str))
+        raw_string = string.call_method("UTF8String")
         assert emu_ios.read_string(raw_string) == sample_str * 2
 
 
@@ -47,11 +47,11 @@ def test_ns_array(emu_ios, objc):
         )
         assert array
 
-        first_object = objc.msg_send(array, "objectAtIndex:", 0)
+        first_object = array.call_method("objectAtIndex:", 0)
         raw_string = objc.msg_send(first_object, "UTF8String")
         assert emu_ios.read_string(raw_string) == sample_str
 
-        description = objc.msg_send(array, "description")
+        description = array.call_method("description")
         assert description
 
 
@@ -62,10 +62,10 @@ def test_ns_mutable_array(emu_ios, objc):
         array = objc.msg_send("NSMutableArray", "array")
         assert array
 
-        objc.msg_send(array, "addObject:", objc.create_ns_string(sample_str))
+        array.call_method("addObject:", objc.create_ns_string(sample_str))
 
-        first_object = objc.msg_send(array, "objectAtIndex:", 0)
-        raw_string = objc.msg_send(first_object, "UTF8String")
+        first_object = array.call_method("objectAtIndex:", 0)
+        raw_string = first_object.call_method("UTF8String")
         assert emu_ios.read_string(raw_string) == sample_str
 
 
@@ -82,11 +82,11 @@ def test_ns_dictionary(emu_ios, objc):
         )
         assert dictionary
 
-        value2 = objc.msg_send(dictionary, "objectForKey:", key)
-        raw_string = objc.msg_send(value2, "UTF8String")
+        value2 = dictionary.call_method("objectForKey:", key)
+        raw_string = value2.call_method("UTF8String")
         assert emu_ios.read_string(raw_string) == sample_value
 
-        description = objc.msg_send(dictionary, "description")
+        description = dictionary.call_method("description")
         assert description
 
 
@@ -101,10 +101,10 @@ def test_ns_mutable_dictionary(emu_ios, objc):
         key = objc.create_ns_string(sample_key)
         value = objc.create_ns_string(sample_value)
 
-        objc.msg_send(dictionary, "setObject:forKey:", value, key)
+        dictionary.call_method("setObject:forKey:", value, key)
 
-        value2 = objc.msg_send(dictionary, "objectForKey:", key)
-        raw_string = objc.msg_send(value2, "UTF8String")
+        value2 = dictionary.call_method("objectForKey:", key)
+        raw_string = value2.call_method("UTF8String")
         assert emu_ios.read_string(raw_string) == sample_value
 
 
@@ -153,8 +153,10 @@ def test_ns_url(emu_ios, objc):
         session = objc.msg_send("NSURLSession", "sessionWithConfiguration:", config)
         assert session
 
-        task = objc.msg_send(
-            session, "dataTaskWithRequest:completionHandler:", request, 0
+        task = session.call_method(
+            "dataTaskWithRequest:completionHandler:",
+            request,
+            0,
         )
         assert task
 
@@ -169,7 +171,7 @@ def test_ns_locale(emu_ios, objc):
         preferred_languages = objc.msg_send("NSLocale", "preferredLanguages")
         assert preferred_languages
 
-        preferred_language = objc.msg_send(preferred_languages, "firstObject")
+        preferred_language = preferred_languages.call_method("firstObject")
         raw_string = objc.msg_send(preferred_language, "UTF8String")
         assert emu_ios.read_string(raw_string)
 
@@ -181,14 +183,14 @@ def test_ns_user_defaults(emu_ios, objc):
 
         key = objc.create_ns_string("AppleLocale")
 
-        apple_locale = objc.msg_send(user_defaults, "stringForKey:", key)
-        raw_string = objc.msg_send(apple_locale, "UTF8String")
+        apple_locale = user_defaults.call_method("stringForKey:", key)
+        raw_string = apple_locale.call_method("UTF8String")
         assert emu_ios.read_string(raw_string)
 
         test_key = objc.create_ns_string("TestKey")
         test_value = objc.create_ns_string("TestVey")
 
-        objc.msg_send(user_defaults, "setObject:forKey:", test_key, test_value)
+        user_defaults.call_method("setObject:forKey:", test_key, test_value)
 
 
 def test_ns_date(emu_ios, objc):
@@ -200,19 +202,18 @@ def test_ns_date(emu_ios, objc):
 def test_ns_date_formatter(emu_ios, objc):
     with objc.autorelease_pool():
         date_formatter = objc.msg_send("NSDateFormatter", "alloc")
-        date_formatter = objc.msg_send(date_formatter, "init")
+        date_formatter = date_formatter.call_method("init")
         assert date_formatter
 
         format_str = objc.create_ns_string("yyyy-MM-dd HH:mm:ss")
-        objc.msg_send(date_formatter, "setDateFormat:", format_str)
+        date_formatter.call_method("setDateFormat:", format_str)
 
         current_date = objc.msg_send("NSDate", "date")
-
-        date_str = objc.msg_send(date_formatter, "stringFromDate:", current_date)
-        raw_string = objc.msg_send(date_str, "UTF8String")
+        date_str = date_formatter.call_method("stringFromDate:", current_date)
+        raw_string = date_str.call_method("UTF8String")
         assert emu_ios.read_string(raw_string)
 
-        date = objc.msg_send(date_formatter, "dateFromString:", date_str)
+        date = date_formatter.call_method("dateFromString:", date_str)
         assert date
 
 
@@ -221,7 +222,7 @@ def test_ns_time_zone(emu_ios, objc):
         time_zone = objc.msg_send("NSTimeZone", "defaultTimeZone")
         assert time_zone
 
-        name = objc.msg_send(time_zone, "name")
+        name = time_zone.call_method("name")
         raw_string = objc.msg_send(name, "UTF8String")
         assert emu_ios.read_string(raw_string)
 
@@ -235,19 +236,22 @@ def test_ns_time_zone(emu_ios, objc):
 
 def test_ns_bundle(emu_ios, objc):
     with objc.autorelease_pool():
-        main_bundle = objc.msg_send("NSBundle", "mainBundle")
-        assert main_bundle
+        bundle = objc.msg_send("NSBundle", "mainBundle")
+        assert bundle
 
-        bundle_path = objc.msg_send(main_bundle, "bundlePath")
+        bundle_path = bundle.call_method("bundlePath")
         raw_string = objc.msg_send(bundle_path, "UTF8String")
         assert emu_ios.read_string(raw_string)
 
-        executable_path = objc.msg_send(main_bundle, "executablePath")
+        executable_path = bundle.call_method("executablePath")
         raw_string = objc.msg_send(executable_path, "UTF8String")
         assert emu_ios.read_string(raw_string)
 
-        info_dictionary = objc.msg_send(main_bundle, "infoDictionary")
+        info_dictionary = bundle.call_method("infoDictionary")
         assert info_dictionary
+
+        # app_store_receipt_url = bundle.call_method("appStoreReceiptURL")
+        # assert app_store_receipt_url
 
 
 def test_ns_method_signature(emu_ios, objc):
@@ -278,19 +282,22 @@ def test_ns_file_manager(emu_ios, objc):
         file_manager = objc.msg_send("NSFileManager", "defaultManager")
         assert file_manager
 
-        exists = objc.msg_send(file_manager, "fileExistsAtPath:", system_version_path)
+        exists = file_manager.call_method("fileExistsAtPath:", system_version_path)
         assert exists
 
-        attributes = objc.msg_send(
-            file_manager, "attributesOfItemAtPath:error:", system_version_path, 0
+        attributes = file_manager.call_method(
+            "attributesOfItemAtPath:error:",
+            system_version_path,
+            0,
         )
         assert attributes
 
         path = objc.create_ns_string("/System/Library")
-        directory_contents = objc.msg_send(
-            file_manager, "directoryContentsAtPath:", path
-        )
+        directory_contents = file_manager.call_method("directoryContentsAtPath:", path)
         assert directory_contents
+
+        identity_token = file_manager.call_method("ubiquityIdentityToken")
+        assert identity_token
 
 
 def test_ui_device(emu_ios, objc):
@@ -298,12 +305,12 @@ def test_ui_device(emu_ios, objc):
         device = objc.msg_send("UIDevice", "currentDevice")
         assert device
 
-        system_version = objc.msg_send(device, "systemVersion")
+        system_version = device.call_method("systemVersion")
         assert system_version
 
-        objc.msg_send(device, "setBatteryMonitoringEnabled:", 1)
+        device.call_method("setBatteryMonitoringEnabled:", 1)
 
-        vendor_identifier = objc.msg_send(device, "identifierForVendor")
+        vendor_identifier = device.call_method("identifierForVendor")
         assert vendor_identifier
 
 
@@ -314,6 +321,12 @@ def test_ui_screen(emu_ios, objc):
 
         brightness = screen.call_method("brightness")
         assert brightness
+
+
+# def test_ui_font(emu_ios, objc):
+#     with objc.autorelease_pool():
+#         family_names = objc.msg_send("UIFont", "familyNames")
+#         assert family_names
 
 
 def test_ca_display(emu_ios, objc):

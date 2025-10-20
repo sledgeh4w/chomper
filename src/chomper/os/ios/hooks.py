@@ -497,6 +497,32 @@ def hook_bootstrap_look_up3(uc: Uc, address: int, size: int, user_data: HookCont
     return 0
 
 
+def _create_xpc_replay(emu, obj):
+    write_io = BytesIO()
+    plist_writer = _BinaryPlist17Writer(write_io)
+    plist_writer.write(obj)
+    reply_data = write_io.getvalue()
+
+    key_root = emu.create_string("root")
+
+    reply_buf = emu.create_buffer(len(reply_data))
+    emu.write_bytes(reply_buf, reply_data)
+
+    reply = emu.call_symbol("_xpc_dictionary_create_empty")
+    emu.call_symbol(
+        "_xpc_dictionary_set_data",
+        reply,
+        key_root,
+        reply_buf,
+        len(reply_data),
+    )
+
+    emu.free(key_root)
+    emu.free(reply_buf)
+
+    return reply
+
+
 @register_hook("_xpc_connection_send_message_with_reply_sync")
 def hook_xpc_connection_send_message_with_reply_sync(
     uc: Uc, address: int, size: int, user_data: HookContext
@@ -548,28 +574,22 @@ def hook_xpc_connection_send_message_with_reply_sync(
             [
                 {
                     "$class": "NSUUID",
-                }
+                },
             ],
         ]
 
-        write_io = BytesIO()
-        plist_writer = _BinaryPlist17Writer(write_io)
-        plist_writer.write(reply_obj)
-        reply_data = write_io.getvalue()
+        reply = _create_xpc_replay(emu, reply_obj)
+    elif name == "com.apple.bird.token":
+        reply_obj = [
+            None,
+            'v24@?0@"NSData"8@"NSError"16',
+            [
+                b"\x00" * 128,
+                None,
+            ],
+        ]
 
-        reply_buf = emu.create_buffer(len(reply_data))
-        emu.write_bytes(reply_buf, reply_data)
-
-        reply = emu.call_symbol("_xpc_dictionary_create_empty")
-        emu.call_symbol(
-            "_xpc_dictionary_set_data",
-            reply,
-            key_root,
-            reply_buf,
-            len(reply_data),
-        )
-
-        emu.free(reply_buf)
+        reply = _create_xpc_replay(emu, reply_obj)
     else:
         from_addr = emu.debug_symbol(emu.uc.reg_read(emu.arch.reg_lr))
         emu.logger.warning(
