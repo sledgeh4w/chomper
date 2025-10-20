@@ -5,7 +5,7 @@ from chomper.const import ARCH_ARM64, OS_IOS
 from chomper.objc import ObjcRuntime
 
 base_path = os.path.abspath(os.path.dirname(__file__))
-rootfs_path = os.path.join(base_path, "../../rootfs/ios")
+rootfs_path = os.path.join(base_path, "../rootfs/ios")
 
 
 def main():
