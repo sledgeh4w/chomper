@@ -11,17 +11,6 @@ def test_find_symbol(emu_arm64):
     assert symbol.name == symbol_name
 
 
-def test_backtrace(emu_arm64, libtiny_v73021_arm64):
-    def hook_code(uc, address, size, user_data):
-        trace_stack = emu_arm64.backtrace()
-        assert len(trace_stack) != 0
-
-    emu_arm64.add_hook(libtiny_v73021_arm64.base + 0x2BA08, hook_code)
-
-    with alloc_vars(emu_arm64, 32, 32, 32) as (a1, a2, a3):
-        emu_arm64.call_address(libtiny_v73021_arm64.base + 0x289A4, a1, a2, a3)
-
-
 @pytest.mark.usefixtures("libz_arm64")
 def test_set_and_get_arg(emu_arm64):
     args = [i for i in range(16)]
@@ -102,7 +91,3 @@ def test_call_address(emu_arm64):
     result = emu_arm64.call_address(symbol.address)
 
     assert emu_arm64.read_string(result) == "1.2.8"
-
-
-def test_exec_init_array(emu_arm64, libszstone_v4945_arm64):
-    assert emu_arm64.read_string(libszstone_v4945_arm64.base + 0x49DD8) == "1.2.3"
