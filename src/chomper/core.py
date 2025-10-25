@@ -569,13 +569,14 @@ class Chomper:
 
     def add_inst_trace(self, module: Module):
         """Add instruction trace for the module."""
-        self.uc.hook_add(
-            UC_HOOK_CODE,
-            self.trace_inst_callback,
-            begin=module.base,
-            end=module.base + module.size,
-            user_data={"emu": self},
-        )
+        for region in module.map_regions:
+            self.uc.hook_add(
+                UC_HOOK_CODE,
+                self.trace_inst_callback,
+                begin=region.start,
+                end=region.end,
+                user_data={"emu": self},
+            )
 
         # Ensure trace effect
         self.uc.ctl_flush_tb()  # type: ignore
@@ -813,7 +814,13 @@ class Chomper:
         """Read a pointer from the address."""
         return self.read_int(address, self.arch.addr_size)
 
-    def read_array(self, begin: int, end: int, size: Optional[int] = None) -> List[int]:
+    def read_array(
+        self,
+        begin: int,
+        end: int,
+        size: Optional[int] = None,
+        signed: bool = False,
+    ) -> List[int]:
         """Read an array from the address."""
         if size is None:
             size = self.arch.addr_size
@@ -823,7 +830,7 @@ class Chomper:
 
         for offset in range(0, len(data), size):
             int_bytes = data[offset : offset + size]
-            value = int.from_bytes(int_bytes, byteorder=self.endian)
+            value = int.from_bytes(int_bytes, byteorder=self.endian, signed=signed)
             array.append(value)
 
         return array
@@ -832,7 +839,7 @@ class Chomper:
         """Write an integer into the address."""
         self.uc.mem_write(
             address,
-            value.to_bytes(size, signed=signed, byteorder=self.endian),
+            value.to_bytes(size, byteorder=self.endian, signed=signed),
         )
 
     def write_s8(self, address: int, value: int):
@@ -890,13 +897,19 @@ class Chomper:
         self.write_int(address, value, self.arch.addr_size)
 
     def write_array(
-        self, address: int, array: Sequence[int], size: Optional[int] = None
+        self,
+        address: int,
+        array: Sequence[int],
+        size: Optional[int] = None,
+        signed: bool = False,
     ):
         """Write an array into the address."""
         if size is None:
             size = self.arch.addr_size
 
-        data = b"".join(value.to_bytes(size, self.endian) for value in array)
+        data = b"".join(
+            value.to_bytes(size, self.endian, signed=signed) for value in array
+        )
         self.write_bytes(address, data)
 
     def call_symbol(
