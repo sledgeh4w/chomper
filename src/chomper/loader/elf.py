@@ -8,15 +8,15 @@ from elftools.elf.relocation import Relocation
 
 from chomper.utils import aligned, to_unsigned
 
-from .base import BaseLoader, Module, Symbol, SymbolType
+from .base import BaseLoader, Module, Symbol, SymbolType, AddressRegion
 
 
 class ELFLoader(BaseLoader):
     """The ELF file loader."""
 
-    def _map_segments(self, elffile: ELFFile, module_base: int) -> int:
+    def _map_segments(self, elffile: ELFFile, module_base: int) -> List[AddressRegion]:
         """Map segment of type `LOAD` into memory."""
-        boundary = 0
+        regions = []
 
         for segment in elffile.iter_segments(type="PT_LOAD"):
             seg_addr = module_base + segment.header.p_vaddr
@@ -28,13 +28,17 @@ class ELFLoader(BaseLoader):
             self.emu.uc.mem_map(map_addr, map_size)
             self.emu.uc.mem_write(seg_addr, segment.data())
 
-            boundary = max(boundary, map_addr + map_size)
+            region = AddressRegion(
+                base=map_addr,
+                size=map_size,
+            )
+            regions.append(region)
 
-        return boundary - module_base
+        return regions
 
     @staticmethod
     def _load_symbols(elffile: ELFFile, module_base: int) -> List[Symbol]:
-        """Get all symbols in the module."""
+        """Get symbols in the module."""
         symbols = []
 
         for segment in elffile.iter_segments(type="PT_DYNAMIC"):
@@ -152,13 +156,15 @@ class ELFLoader(BaseLoader):
             module_name = os.path.basename(module_file)
             self.emu.logger.info(f'Load module "{module_name}"')
 
-            # Map segments into memory.
-            size = self._map_segments(elffile, module_base)
+            # Map segments into memory
+            map_regions = self._map_segments(elffile, module_base)
+            size = (map_regions[-1].end - module_base) if map_regions else 0
+
             symbols = self._load_symbols(elffile, module_base)
 
             self.add_symbol_hooks(symbols, trace_symbol_calls)
 
-            # Process address relocation.
+            # Process address relocation
             self._process_relocation(elffile, module_base, symbols)
 
             init_array = self._get_init_array(elffile, module_base)
@@ -168,5 +174,6 @@ class ELFLoader(BaseLoader):
                 base=module_base,
                 size=size,
                 symbols=symbols,
+                map_regions=map_regions,
                 init_array=init_array,
             )

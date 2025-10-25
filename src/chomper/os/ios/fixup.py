@@ -212,7 +212,7 @@ class SystemModuleFixer:
         for symbol in self.module_binary.symbols:
             symbol_name = str(symbol.name)
 
-            if symbol.value and symbol_name.startswith("__OBJC_PROTOCOL_$"):
+            if symbol.value and symbol_name.startswith("_OBJC_PROTOCOL_$"):
                 self.fixup_protocol_struct(symbol.value)
 
     def fixup_class_method_list(self, address: int):
@@ -332,9 +332,13 @@ class SystemModuleFixer:
         self,
         method_types_ptr: int,
         instance_methods_ptr: int,
+        instance_methods2_ptr: int,
     ):
         """Fixup the method types list of Objective-C."""
-        instance_methods_addr = self.emu.read_pointer(instance_methods_ptr)
+        instance_methods_addr = self.emu.read_pointer(
+            instance_methods_ptr
+        ) or self.emu.read_pointer(instance_methods2_ptr)
+
         if not instance_methods_addr:
             return
 
@@ -371,8 +375,15 @@ class SystemModuleFixer:
         instance_methods_ptr = address + 24
         self.fixup_class_method_list(instance_methods_ptr)
 
+        instance_methods2_ptr = address + 40
+        self.fixup_class_method_list(instance_methods2_ptr)
+
         method_types_ptr = address + 72
-        self.fixup_protocol_method_types(method_types_ptr, instance_methods_ptr)
+        self.fixup_protocol_method_types(
+            method_types_ptr,
+            instance_methods_ptr,
+            instance_methods2_ptr,
+        )
 
     def fixup_category_struct(self, address: int):
         """Fixup the category struct of Objective-C."""
@@ -457,6 +468,9 @@ class SystemModuleFixer:
         sections = self.get_sections(
             [
                 ("__DATA", "__data"),
+                ("__DATA", "__objc_arraydata"),
+                ("__DATA", "__objc_arrayobj"),
+                ("__DATA", "__objc_dictobj"),
                 ("__DATA_CONST", "__const"),
                 ("__DATA_DIRTY", "__common"),
                 ("__DATA_DIRTY", "__data"),

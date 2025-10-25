@@ -68,14 +68,19 @@ SYSTEM_MODULES = [
     "/usr/lib/system/libxpc.dylib",
     "/usr/lib/libAccessibility.dylib",
     "/usr/lib/libbsm.0.dylib",
+    "/usr/lib/libcupolicy.dylib",
     "/usr/lib/libicucore.A.dylib",
     "/usr/lib/libnetwork.dylib",
+    "/usr/lib/libMobileGestalt.dylib",
+    "/usr/lib/libTelephonyUtilDynamic.dylib",
     "/usr/lib/libz.1.dylib",
     "/System/Library/Frameworks/CoreFoundation",
     "/System/Library/Frameworks/Foundation",
     "/System/Library/Frameworks/CFNetwork",
     "/System/Library/Frameworks/CoreGraphics",
     "/System/Library/Frameworks/CoreServices",
+    "/System/Library/Frameworks/CoreTelephony",
+    "/System/Library/Frameworks/CoreText",
     "/System/Library/Frameworks/IOKit",
     "/System/Library/Frameworks/QuartzCore",
     "/System/Library/Frameworks/Security",
@@ -84,6 +89,9 @@ SYSTEM_MODULES = [
     "/System/Library/PrivateFrameworks/BaseBoard",
     "/System/Library/PrivateFrameworks/BoardServices",
     "/System/Library/PrivateFrameworks/CoreAutoLayout",
+    "/System/Library/PrivateFrameworks/CoreServicesStore",
+    "/System/Library/PrivateFrameworks/FontServices.framework/libGSFont.dylib",
+    "/System/Library/PrivateFrameworks/FontServices.framework/libGSFontCache.dylib",
     "/System/Library/PrivateFrameworks/FrontBoardServices",
     "/System/Library/PrivateFrameworks/MobileKeyBag",
     "/System/Library/PrivateFrameworks/PhysicsKit",
@@ -118,13 +126,6 @@ PREFERENCES = {
         "en",
     ],
     "AppleLocale": "zh-Hans",
-}
-
-DEVICE_INFO = {
-    "DeviceClassNumber": 1,
-    "UserAssignedDeviceName": "iPhone",
-    "DeviceName": "iPhone13,1",
-    "ProductVersion": "14.2.1",
 }
 
 
@@ -170,11 +171,9 @@ class IosOs(BaseOs):
             f"/{BUNDLE_IDENTIFIER}"
             f"/{BUNDLE_EXECUTABLE}"
         )
-
         self.executable_path = ""
 
         self.preferences = PREFERENCES.copy()
-        self.device_info = DEVICE_INFO.copy()
 
         # Semaphore
         self._semaphore_map = {}
@@ -359,6 +358,9 @@ class IosOs(BaseOs):
             # vm_kernel_page_shift
             elif offset == 0x37:
                 return 0xE
+            # whether to trace
+            elif offset == 0x100:
+                return 0x0
             # unknown, appear at _os_trace_init_slow
             elif offset == 0x104:
                 return 0x100
@@ -589,7 +591,14 @@ class IosOs(BaseOs):
             if self.emu.find_module(name):
                 continue
 
-            module_file = self.search_module_binary(name)
+            module_file = None
+
+            if path.startswith("/"):
+                module_file = os.path.join(self.rootfs_path or ".", path[1:])
+
+            if not module_file or not os.path.exists(module_file):
+                module_file = self.search_module_binary(name)
+
             module = self.emu.load_module(
                 module_file=module_file,
                 exec_objc_init=False,

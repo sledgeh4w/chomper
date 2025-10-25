@@ -1681,6 +1681,10 @@ def handle_mach_msg_trap(emu: Chomper):
 
             return const.KERN_SUCCESS
 
+    # xpc message to com.apple.commcenter.cupolicy.xpc
+    if msg_id == 268435456:
+        return const.KERN_SUCCESS
+
     emu.logger.warning("Unhandled mach msg, returning KERN_RESOURCE_SHORTAGE")
     return const.KERN_RESOURCE_SHORTAGE
 

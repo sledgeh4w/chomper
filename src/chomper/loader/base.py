@@ -27,6 +27,20 @@ class Binding:
 
 
 @dataclass
+class AddressRegion:
+    base: int
+    size: int
+
+    @property
+    def start(self) -> int:
+        return self.base
+
+    @property
+    def end(self) -> int:
+        return self.base + self.size
+
+
+@dataclass
 class Segment:
     name: str
 
@@ -52,6 +66,7 @@ class Module:
         base: int,
         size: int,
         symbols: List[Symbol],
+        map_regions: List[AddressRegion],
         init_array: List[int],
         dyld_info: Optional[DyldInfo] = None,
     ):
@@ -60,6 +75,7 @@ class Module:
         self._size = size
 
         self._symbols = symbols
+        self._map_regions = map_regions
         self._init_array = init_array
 
         self._dyld_info = dyld_info
@@ -85,6 +101,10 @@ class Module:
         return self._symbols
 
     @property
+    def map_regions(self) -> List[AddressRegion]:
+        return self._map_regions
+
+    @property
     def init_array(self) -> List[int]:
         return self._init_array
 
@@ -98,7 +118,10 @@ class Module:
         return self._dyld_info
 
     def contains(self, address: int) -> bool:
-        return self.base <= address < self.base + self.size
+        for region in self.map_regions:
+            if region.start <= address < region.end:
+                return True
+        return False
 
 
 class BaseLoader(ABC):
