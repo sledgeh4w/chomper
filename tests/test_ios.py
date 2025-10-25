@@ -172,8 +172,7 @@ def test_ns_locale(emu_ios, objc):
         assert preferred_languages
 
         preferred_language = preferred_languages.call_method("firstObject")
-        raw_string = objc.msg_send(preferred_language, "UTF8String")
-        assert emu_ios.read_string(raw_string)
+        assert emu_ios.read_string(objc.msg_send(preferred_language, "UTF8String"))
 
 
 def test_ns_user_defaults(emu_ios, objc):
@@ -184,8 +183,7 @@ def test_ns_user_defaults(emu_ios, objc):
         key = objc.create_ns_string("AppleLocale")
 
         apple_locale = user_defaults.call_method("stringForKey:", key)
-        raw_string = apple_locale.call_method("UTF8String")
-        assert emu_ios.read_string(raw_string)
+        assert emu_ios.read_string(apple_locale.call_method("UTF8String"))
 
         test_key = objc.create_ns_string("TestKey")
         test_value = objc.create_ns_string("TestVey")
@@ -202,7 +200,7 @@ def test_ns_date(emu_ios, objc):
 def test_ns_date_formatter(emu_ios, objc):
     with objc.autorelease_pool():
         date_formatter = objc.msg_send("NSDateFormatter", "alloc")
-        date_formatter = date_formatter.call_method("init")
+        date_formatter.call_method("init")
         assert date_formatter
 
         format_str = objc.create_ns_string("yyyy-MM-dd HH:mm:ss")
@@ -210,8 +208,7 @@ def test_ns_date_formatter(emu_ios, objc):
 
         current_date = objc.msg_send("NSDate", "date")
         date_str = date_formatter.call_method("stringFromDate:", current_date)
-        raw_string = date_str.call_method("UTF8String")
-        assert emu_ios.read_string(raw_string)
+        assert emu_ios.read_string(date_str.call_method("UTF8String"))
 
         date = date_formatter.call_method("dateFromString:", date_str)
         assert date
@@ -223,8 +220,7 @@ def test_ns_time_zone(emu_ios, objc):
         assert time_zone
 
         name = time_zone.call_method("name")
-        raw_string = objc.msg_send(name, "UTF8String")
-        assert emu_ios.read_string(raw_string)
+        assert emu_ios.read_string(objc.msg_send(name, "UTF8String"))
 
         time_zone_shanghai = objc.msg_send(
             "NSTimeZone", "timeZoneWithName:", objc.create_ns_string("Asia/Shanghai")
@@ -240,12 +236,10 @@ def test_ns_bundle(emu_ios, objc):
         assert bundle
 
         bundle_path = bundle.call_method("bundlePath")
-        raw_string = objc.msg_send(bundle_path, "UTF8String")
-        assert emu_ios.read_string(raw_string)
+        assert emu_ios.read_string(bundle_path.call_method("UTF8String"))
 
         executable_path = bundle.call_method("executablePath")
-        raw_string = objc.msg_send(executable_path, "UTF8String")
-        assert emu_ios.read_string(raw_string)
+        assert emu_ios.read_string(executable_path.call_method("UTF8String"))
 
         info_dictionary = bundle.call_method("infoDictionary")
         assert info_dictionary
@@ -305,6 +299,9 @@ def test_ui_device(emu_ios, objc):
         device = objc.msg_send("UIDevice", "currentDevice")
         assert device
 
+        system_name = device.call_method("systemName")
+        assert system_name
+
         system_version = device.call_method("systemVersion")
         assert system_version
 
@@ -323,10 +320,10 @@ def test_ui_screen(emu_ios, objc):
         assert brightness
 
 
-# def test_ui_font(emu_ios, objc):
-#     with objc.autorelease_pool():
-#         family_names = objc.msg_send("UIFont", "familyNames")
-#         assert family_names
+def test_ui_font(emu_ios, objc):
+    with objc.autorelease_pool():
+        family_names = objc.msg_send("UIFont", "familyNames")
+        assert family_names
 
 
 def test_ca_display(emu_ios, objc):
@@ -335,16 +332,29 @@ def test_ca_display(emu_ios, objc):
         assert display
 
 
-# def test_ct_telephony_network_info(emu_ios, objc):
-#     with objc.autorelease_pool():
-#         network_info = objc.msg_send("CTTelephonyNetworkInfo", "new")
-#         assert network_info
-#
-#         radio_access_technology = objc.msg_send(
-#             network_info,
-#             "currentRadioAccessTechnology",
-#         )
-#         assert radio_access_technology
+def test_ct_telephony_network_info(emu_ios, objc):
+    with objc.autorelease_pool():
+        network_info = objc.msg_send("CTTelephonyNetworkInfo", "alloc")
+        assert network_info
+
+        network_info.call_method("init")
+
+        # radio_access_technology = objc.msg_send(
+        #     network_info,
+        #     "currentRadioAccessTechnology",
+        # )
+        # assert radio_access_technology
+
+
+def test_ct_cellular_data(emu_ios, objc):
+    with objc.autorelease_pool():
+        cellular_data = objc.msg_send("CTCellularData", "alloc")
+        assert cellular_data
+
+        cellular_data.call_method("init")
+
+        # state = objc.msg_send(cellular_data, "restrictedState")
+        # assert state
 
 
 def test_ns_log(emu_ios, objc):

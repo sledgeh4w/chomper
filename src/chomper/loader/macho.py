@@ -1,4 +1,5 @@
 import os
+from itertools import chain
 from typing import Dict, List, Tuple, Optional
 
 import lief
@@ -6,7 +7,7 @@ from lief.MachO import ARM64_RELOCATION, RelocationFixup
 
 from chomper.utils import aligned
 
-from .base import BaseLoader, Module, DyldInfo, Symbol, Binding, Segment
+from .base import BaseLoader, Module, DyldInfo, Symbol, Binding, Segment, AddressRegion
 
 
 _ARMV81_SYMBOL_POSTFIX = "$VARIANT$armv81"
@@ -15,10 +16,14 @@ _ARMV81_SYMBOL_POSTFIX = "$VARIANT$armv81"
 class MachoLoader(BaseLoader):
     """The Mach-O file loader."""
 
-    def _map_segments(self, binary: lief.MachO.Binary, module_base: int) -> int:
-        """Map all segments into memory."""
-        mapped: List[Tuple[int, int]] = []
-        boundary = 0
+    def _map_segments(
+        self,
+        binary: lief.MachO.Binary,
+        module_base: int,
+        dry_run: bool = False,
+    ) -> List[AddressRegion]:
+        """Map segments into memory."""
+        regions: List[AddressRegion] = []
 
         for segment in binary.segments:
             if not segment.virtual_size or segment.name == "__PAGEZERO":
@@ -31,35 +36,51 @@ class MachoLoader(BaseLoader):
 
             map_parts = []
 
-            for mapped_start, mapped_end in mapped:
-                overlap_start = max(map_addr, mapped_start)
-                overlap_end = min(map_addr + map_size, mapped_end)
+            for region in regions:
+                overlap_start = max(map_addr, region.base)
+                overlap_end = min(map_addr + map_size, region.base + region.size)
 
                 if overlap_start < overlap_end:
                     if map_addr < overlap_start:
-                        map_parts.append((map_addr, overlap_end - map_addr))
+                        start = map_addr
+                        size = overlap_end - map_addr
+                        map_parts.append((start, size))
+
                     if map_addr + map_size > overlap_end:
-                        map_parts.append(
-                            (overlap_end, map_addr + map_size - overlap_end)
-                        )
+                        start = overlap_end
+                        size = map_addr + map_size - overlap_end
+                        map_parts.append((start, size))
+
                     map_addr = -1
                     break
 
-            if map_addr > 0:
-                self.emu.uc.mem_map(map_addr, map_size)
+            if map_addr >= 0:
+                if not dry_run:
+                    self.emu.uc.mem_map(map_addr, map_size)
+
+                region = AddressRegion(
+                    base=map_addr,
+                    size=map_size,
+                )
+                regions.append(region)
 
             for map_addr, map_size in map_parts:
-                self.emu.uc.mem_map(map_addr, map_size)
+                if not dry_run:
+                    self.emu.uc.mem_map(map_addr, map_size)
 
-            self.emu.uc.mem_write(
-                seg_addr,
-                bytes(segment.content),
-            )
+                region = AddressRegion(
+                    base=map_addr,
+                    size=map_size,
+                )
+                regions.append(region)
 
-            mapped.append((map_addr, map_addr + map_size))
-            boundary = max(boundary, map_addr + map_size)
+            if not dry_run:
+                self.emu.uc.mem_write(
+                    seg_addr,
+                    bytes(segment.content),
+                )
 
-        return boundary - module_base
+        return regions
 
     @staticmethod
     def _get_binding_name(symbol_name: str) -> str:
@@ -73,7 +94,7 @@ class MachoLoader(BaseLoader):
         binary: lief.MachO.Binary,
         module_base: int,
     ) -> List[Symbol]:
-        """Get all symbols in the module."""
+        """Get symbols in the module."""
         symbols = []
 
         lazy_bindings = self.get_lazy_bindings()
@@ -90,7 +111,7 @@ class MachoLoader(BaseLoader):
 
             # Lazy bind
             if lazy_bindings.get(binding_name):
-                # Avoid duplicate bind for special case like func$VARIANT$armv81
+                # Avoid duplicate bind
                 if binding_name in lazy_binding_set and binding_name == symbol_name:
                     continue
 
@@ -130,22 +151,23 @@ class MachoLoader(BaseLoader):
         symbol_name: str,
     ) -> Optional[int]:
         """Get the relocation address of a symbol."""
-        reloc_addr = None
+        symbol = None
 
-        if symbol_map.get(f"{symbol_name}{_ARMV81_SYMBOL_POSTFIX}"):
+        name_with_arch = f"{symbol_name}{_ARMV81_SYMBOL_POSTFIX}"
+        name_with_platform = f"__platform{symbol_name}"
+
+        if symbol_map.get(name_with_arch):
             if not self.emu.hooks.get(symbol_name):
-                reloc_addr = symbol_map[
-                    f"{symbol_name}{_ARMV81_SYMBOL_POSTFIX}"
-                ].address
+                symbol = symbol_map[name_with_arch]
         elif symbol_name == "___chkstk_darwin":
             if symbol_map.get(f"_{symbol_name}"):
-                reloc_addr = symbol_map[f"_{symbol_name}"].address
+                symbol = symbol_map[f"_{symbol_name}"]
         elif symbol_map.get(symbol_name):
-            reloc_addr = symbol_map[symbol_name].address
-        elif symbol_map.get(f"__platform{symbol_name}"):
-            reloc_addr = symbol_map[f"__platform{symbol_name}"].address
+            symbol = symbol_map[symbol_name]
+        elif symbol_map.get(name_with_platform):
+            symbol = symbol_map[name_with_platform]
 
-        return reloc_addr
+        return symbol.address if symbol else None
 
     def _process_symbol_relocation(
         self,
@@ -243,10 +265,10 @@ class MachoLoader(BaseLoader):
 
         # Read and write as blocks
         for begin, end in blocks:
-            values = self.emu.read_array(begin, end)
+            values = self.emu.read_array(begin, end, signed=True)
             values = map(lambda v: module_base + v, values)
 
-            self.emu.write_array(begin, values)
+            self.emu.write_array(begin, values, signed=True)
 
         return self._process_symbol_relocation(binary, module_base, symbols)
 
@@ -276,6 +298,59 @@ class MachoLoader(BaseLoader):
 
         return list(symbol_map.values())
 
+    @staticmethod
+    def _get_minium_seg_addr(binary: lief.MachO.Binary) -> int:
+        addr_list = []
+
+        for segment in binary.segments:
+            if not segment.virtual_size or segment.name == "__PAGEZERO":
+                continue
+
+            addr_list.append(segment.virtual_address)
+
+        return min(addr_list)
+
+    @staticmethod
+    def _has_overlap(
+        regions: List[AddressRegion],
+        other_regions: List[AddressRegion],
+    ) -> bool:
+        """Check if the two address regions overlap."""
+        for region1 in regions:
+            for region2 in other_regions:
+                if region1.start < region2.end and region2.start < region1.end:
+                    return True
+        return False
+
+    def _find_load_base(self, binary: lief.MachO.Binary) -> int:
+        """Try to find the lowest address to load a module."""
+        mapped_regions = list(
+            chain.from_iterable((module.map_regions for module in self.emu.modules))
+        )
+
+        minium_seg_addr = self._get_minium_seg_addr(binary)
+        regions = self._map_segments(
+            binary,
+            module_base=-minium_seg_addr,
+            dry_run=True,
+        )
+
+        for mapped_region in mapped_regions:
+            offset = aligned(mapped_region.end, 1024 * 1024)
+
+            regions_with_offset = [
+                AddressRegion(
+                    base=region.base + offset,
+                    size=region.size,
+                )
+                for region in regions
+            ]
+
+            if not self._has_overlap(mapped_regions, regions_with_offset):
+                return offset
+
+        return max([region.end for region in mapped_regions])
+
     def load(
         self,
         module_base: int,
@@ -288,15 +363,17 @@ class MachoLoader(BaseLoader):
 
         binary: lief.MachO.Binary = lief.parse(module_file)  # type: ignore
 
-        segment_addresses = [t.virtual_address for t in binary.segments]
+        if self.emu.modules:
+            # Make the segments of different modules are interleaved
+            module_base = self._find_load_base(binary)
 
         # Make module memory distribution more compact
-        module_base -= aligned(min(segment_addresses), 1024)
-        image_base = binary.imagebase
+        module_base -= aligned(self._get_minium_seg_addr(binary), 1024)
 
-        size = self._map_segments(binary, module_base)
+        map_regions = self._map_segments(binary, module_base)
+        size = (map_regions[-1].end - module_base) if map_regions else 0
+
         symbols = self._load_symbols(binary, module_base)
-
         symbols = self._process_symbol_aliases(symbols)
 
         self.add_symbol_hooks(symbols, trace_symbol_calls)
@@ -304,6 +381,7 @@ class MachoLoader(BaseLoader):
         lazy_bindings = self._process_relocation(binary, module_base, symbols)
         init_array = self._get_init_array(binary, module_base)
 
+        # Different dyld cache modules may share the same segment
         shared_segment_names = ("__OBJC_RO",)
 
         shared_segments = []
@@ -321,6 +399,8 @@ class MachoLoader(BaseLoader):
             shared_segments.append(shared_segment)
 
         text_segment = binary.get_segment("__TEXT")
+
+        image_base = binary.imagebase
         image_header = module_base + text_segment.virtual_address
 
         dyld_info = DyldInfo(
@@ -335,6 +415,7 @@ class MachoLoader(BaseLoader):
             base=module_base + image_base,
             size=size - image_base,
             symbols=symbols,
+            map_regions=map_regions,
             init_array=init_array,
             dyld_info=dyld_info,
         )
