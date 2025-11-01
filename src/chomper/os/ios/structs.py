@@ -225,3 +225,17 @@ class MachTimespec(ctypes.Structure):
             tv_sec=time_ns // (10**9),
             tv_nsec=time_ns % (10**9),
         )
+
+
+class VmRegionBasicInfo64(ctypes.Structure):
+    _pack_ = 1
+    _fields_ = [
+        ("protection", ctypes.c_int32),
+        ("max_protection", ctypes.c_int32),
+        ("inheritance", ctypes.c_uint32),
+        ("shared", ctypes.c_int32),
+        ("reserved", ctypes.c_int32),
+        ("offset", ctypes.c_uint64),
+        ("behavior", ctypes.c_int32),
+        ("user_wired_count", ctypes.c_uint16),
+    ]

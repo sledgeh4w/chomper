@@ -542,17 +542,19 @@ class Chomper:
         """Dispatch system calls to the registered handlers of the OS."""
         syscall_no = None
         syscall_name = None
+        syscall_display = None
 
         if self.os_type == const.OS_IOS:
             syscall_no = to_signed(self.uc.reg_read(arm64_const.UC_ARM64_REG_W16), 4)
-            syscall_name = ios_get_syscall_name(syscall_no) or hex(syscall_no)
+            syscall_name = ios_get_syscall_name(syscall_no)
         elif self.os_type == const.OS_ANDROID and self.arch == arm64_arch:
             syscall_no = to_signed(self.uc.reg_read(arm64_const.UC_ARM64_REG_W8), 4)
-            syscall_name = android_get_syscall_name(syscall_no) or hex(syscall_no)
+            syscall_name = android_get_syscall_name(syscall_no)
 
-        if syscall_no and syscall_name:
-            from_ = self.debug_symbol(self.uc.reg_read(self.arch.reg_pc))
-            self.logger.info(f"System call {syscall_name} invoked from {from_}")
+        if syscall_no:
+            syscall_display = f"'{syscall_name}'" if syscall_name else hex(syscall_no)
+            from_addr = self.debug_symbol(self.uc.reg_read(self.arch.reg_pc))
+            self.logger.info(f"System call {syscall_display} invoked from {from_addr}")
 
             syscall_handler = self.syscall_handlers.get(syscall_no)
 
@@ -562,8 +564,8 @@ class Chomper:
                     self.set_retval(result)
                 return
 
-        if syscall_name is not None:
-            self.crash(f"Unhandled system call {syscall_name}")
+        if syscall_display is not None:
+            self.crash(f"Unhandled system call {syscall_display}")
         else:
             self.crash("Unhandled system call")
 
