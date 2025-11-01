@@ -279,6 +279,30 @@ def hook_dyld_shared_cache_real_path(
     return path
 
 
+@register_hook("__dyld_get_image_header")
+def hook_dyld_get_image_header(uc: Uc, address: int, size: int, user_data: HookContext):
+    emu = user_data["emu"]
+
+    if emu.modules:
+        module = emu.modules[-1]
+        return module.dyld_info.image_header
+
+    return 0
+
+
+@register_hook("__dyld_get_image_vmaddr_slide")
+def hook_dyld_get_image_vmaddr_slide(
+    uc: Uc, address: int, size: int, user_data: HookContext
+):
+    emu = user_data["emu"]
+
+    if emu.modules:
+        module = emu.modules[-1]
+        return module.base - module.dyld_info.image_base
+
+    return 0
+
+
 @register_hook("__NSGetExecutablePath")
 def hook_ns_get_executable_path(
     uc: Uc, address: int, size: int, user_data: HookContext

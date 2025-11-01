@@ -155,15 +155,15 @@ class SystemModuleFixer:
             if not section:
                 continue
 
-            begin = self.module_base + section.virtual_address
-            end = begin + section.size
+            start = self.module_base + section.virtual_address
+            end = start + section.size
 
             if section_name == "__objc_arraydata":
-                for offset in range(begin, end, 8):
+                for offset in range(start, end, 8):
                     self.add_refs_to_relocation(offset - self.module_base)
                 continue
 
-            values = self.emu.read_array(begin, end)
+            values = self.emu.read_array(start, end)
 
             if section_name == "__objc_classlist":
                 for value in values:
@@ -185,7 +185,7 @@ class SystemModuleFixer:
                     self.relocate_reference(self.module_base + value + 8)
 
             values = [self.module_base + v if v else 0 for v in values]
-            self.emu.write_array(begin, values)
+            self.emu.write_array(start, values)
 
         # Certain system libraries don't contain `__objc_classlist`
         # or `__objc_protolist` sections, so we find structs using symbol names.
@@ -478,20 +478,30 @@ class SystemModuleFixer:
             ]
         )
 
+        # Address range of the module
+        module_start = self.module_binary.imagebase
+        module_end = module_start
+
+        for segment in self.module_binary.segments:
+            module_end = max(module_end, segment.virtual_address + segment.virtual_size)
+
         text_section = self.module_binary.get_section("__TEXT", "__text")
 
-        text_begin = text_section.virtual_address
-        text_end = text_begin + text_section.size
+        # Address range of the `__TEXT` segment
+        text_start = text_section.virtual_address
+        text_end = text_start + text_section.size
 
         for section in sections:
             for offset in range(0, section.size, 8):
                 address = int.from_bytes(section.content[offset : offset + 8], "little")
+                if not (module_start <= address < module_end):
+                    continue
 
                 for data_section in sections:
                     if self.is_address_in_section(address, data_section):
                         self.add_refs_to_relocation(address)
 
-                if offset % 4 == 0 and text_begin < address < text_end:
+                if text_start <= address < text_end:
                     self.add_refs_to_relocation(address)
 
     def fixup_stubs_section(self):

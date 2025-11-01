@@ -176,7 +176,7 @@ class BaseOs(ABC):
 
     def forward_path(self, src_path: str, dst_path: str):
         """Forward all access from `src_path` to `dst_path`."""
-        self._path_map[src_path] = dst_path
+        self._path_map[src_path] = os.path.abspath(dst_path)
 
     def set_symbolic_link(self, src_path: str, dst_path: str):
         """Set a symbolic link to specified path."""
@@ -302,12 +302,12 @@ class BaseOs(ABC):
 
     @abstractmethod
     def get_errno(self) -> int:
-        """Get the value of `errno`."""
+        """Get the `errno`."""
         pass
 
     @abstractmethod
     def set_errno(self, value: int):
-        """Set the value of `errno`."""
+        """Set the `errno`."""
         pass
 
     def _open(self, path: str, flags: int, mode: int) -> int:
