@@ -230,6 +230,7 @@ ENOTDIR = 20
 # mach/kern_return.h
 
 KERN_SUCCESS = 0
+KERN_INVALID_ADDRESS = 1
 KERN_RESOURCE_SHORTAGE = 6
 
 # mach/port.h
@@ -277,6 +278,20 @@ TASK_AUDIT_TOKEN = 15
 # mach/task_special_ports.h
 
 TASK_BOOTSTRAP_PORT = 4
+
+# mach/vm_prot.h
+
+VM_PROT_READ = 0x01
+VM_PROT_WRITE = 0x02
+VM_PROT_EXECUTE = 0x04
+
+VM_PROT_DEFAULT = VM_PROT_READ | VM_PROT_WRITE
+
+VM_PROT_ALL = VM_PROT_READ | VM_PROT_WRITE | VM_PROT_EXECUTE
+
+# mach/vm_region.h
+
+VM_REGION_BASIC_INFO_64 = 9
 
 # mach/vm_statistics.h
 

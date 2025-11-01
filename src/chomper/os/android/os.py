@@ -34,11 +34,11 @@ class AndroidOs(BaseOs):
         self._dir_read_offset = {}
 
     def get_errno(self) -> int:
-        """Get the value of `errno`."""
+        """Get the `errno`."""
         return self.emu.read_s32(TLS_ADDRESS + 0x10)
 
     def set_errno(self, value: int):
-        """Set the value of `errno`."""
+        """Set the `errno`."""
         self.emu.write_s32(TLS_ADDRESS + 0x10, value)
 
     @staticmethod

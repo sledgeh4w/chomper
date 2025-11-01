@@ -195,12 +195,12 @@ class IosOs(BaseOs):
         }
 
     def get_errno(self) -> int:
-        """Get the value of `errno`."""
+        """Get the `errno`."""
         errno = self.emu.find_symbol("_errno")
         return self.emu.read_s32(errno.address)
 
     def set_errno(self, value: int):
-        """Set the value of `errno`."""
+        """Set the `errno`."""
         errno = self.emu.find_symbol("_errno")
         self.emu.write_s32(errno.address, value)
 

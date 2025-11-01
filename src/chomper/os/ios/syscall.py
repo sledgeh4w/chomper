@@ -8,7 +8,7 @@ from functools import wraps
 from typing import Dict, Optional, TYPE_CHECKING
 
 import plistlib
-from unicorn import arm64_const
+from unicorn import arm64_const, UcError
 
 from chomper.exceptions import SystemOperationFailed, ProgramTerminated
 from chomper.os.base import SyscallError
@@ -29,6 +29,7 @@ from .structs import (
     MachMsgPortDescriptorT,
     MachMsgOolDescriptorT,
     MachTimespec,
+    VmRegionBasicInfo64,
 )
 from .sysctl import sysctl, sysctlbyname
 
@@ -1375,7 +1376,6 @@ def handle_mach_msg_trap(emu: Chomper):
         remote_port,
         hex(option),
     )
-    emu.log_backtrace()
 
     if remote_port == emu.ios_os.MACH_PORT_HOST:
         if msg_id == 412:  # host_get_special_port
@@ -1446,7 +1446,7 @@ def handle_mach_msg_trap(emu: Chomper):
                     + b"".join([int_to_bytes(value, 4) for value in audit_token]),
                 )
 
-            return const.KERN_SUCCESS
+                return const.KERN_SUCCESS
         elif msg_id == 3409:  # task_get_special_port
             which_port = emu.read_s32(msg_ptr + 0x20)
 
@@ -1514,6 +1514,43 @@ def handle_mach_msg_trap(emu: Chomper):
             )
 
             return const.KERN_SUCCESS
+        elif msg_id == 4808:  # vm_read_overwrite
+            address = emu.read_u64(msg_ptr + 0x20)
+            size = emu.read_u32(msg_ptr + 0x28)
+            data = emu.read_u64(msg_ptr + 0x30)
+
+            emu.logger.info(f"address={hex(address)}, size={size}, data={hex(data)}")
+
+            try:
+                read_data = emu.read_bytes(address, size)
+                out_size = len(read_data)
+                emu.write_bytes(data, read_data)
+            except UcError:
+                emu.logger.warning("vm_read_overwrite failed: invalid address")
+                return const.KERN_INVALID_ADDRESS
+
+            msg_header = MachMsgHeaderT(
+                msgh_bits=0,
+                msgh_size=44,
+                msgh_remote_port=0,
+                msgh_local_port=0,
+                msgh_voucher_port=0,
+                msgh_id=4908,
+            )
+
+            msg_body = MachMsgBodyT(
+                msgh_descriptor_count=0,
+            )
+
+            emu.write_bytes(
+                msg_ptr,
+                struct_to_bytes(msg_header)
+                + struct_to_bytes(msg_body)
+                + int_to_bytes(0, 8)
+                + int_to_bytes(out_size, 8),
+            )
+
+            return const.KERN_SUCCESS
         elif msg_id == 4813:  # _kernelrpc_vm_remap
             target_address = emu.read_u64(msg_ptr + 0x30)
             size = emu.read_u32(msg_ptr + 0x38)
@@ -1530,8 +1567,8 @@ def handle_mach_msg_trap(emu: Chomper):
             if not target_address:
                 target_address = emu.create_buffer(size)
 
-            data = emu.read_bytes(src_address, size)
-            emu.write_bytes(target_address, data)
+            read_data = emu.read_bytes(src_address, size)
+            emu.write_bytes(target_address, read_data)
 
             msg_header = MachMsgHeaderT(
                 msgh_bits=0,
@@ -1557,6 +1594,64 @@ def handle_mach_msg_trap(emu: Chomper):
             )
 
             return const.KERN_SUCCESS
+        elif msg_id == 4816:  # vm_region_64
+            address = emu.read_u64(msg_ptr + 0x20)
+            flavor = emu.read_s32(msg_ptr + 0x28)
+            count = emu.read_u32(msg_ptr + 0x2C)
+
+            emu.logger.info(f"address={hex(address)}, flavor={flavor}, count={count}")
+
+            if flavor == const.VM_REGION_BASIC_INFO_64:
+                for start, end, prop in emu.uc.mem_regions():
+                    if start <= address < end:
+                        out_address = start
+                        size = end - start
+                        break
+                else:
+                    emu.logger.warning("vm_region_64 failed: invalid address")
+                    return const.KERN_INVALID_ADDRESS
+
+                out_count = ctypes.sizeof(VmRegionBasicInfo64) // 4
+                object_name = 0
+
+                info = VmRegionBasicInfo64(
+                    protection=const.VM_PROT_DEFAULT,
+                    max_protection=const.VM_PROT_DEFAULT,
+                    inheritance=0,
+                    shared=0,
+                    reserved=0,
+                    offset=0,
+                    behavior=0,
+                    user_wired_count=0,
+                )
+
+                msg_header = MachMsgHeaderT(
+                    msgh_bits=const.MACH_MSGH_BITS_COMPLEX,
+                    msgh_size=(68 + out_count * 4),
+                    msgh_remote_port=0,
+                    msgh_local_port=0,
+                    msgh_voucher_port=0,
+                    msgh_id=4916,
+                )
+
+                msg_body = MachMsgBodyT(
+                    msgh_descriptor_count=1,
+                )
+
+                emu.write_bytes(
+                    msg_ptr,
+                    struct_to_bytes(msg_header)
+                    + struct_to_bytes(msg_body)
+                    + int_to_bytes(object_name, 8)
+                    + int_to_bytes(0x110000, 4)
+                    + int_to_bytes(0, 8)
+                    + int_to_bytes(out_address, 8)
+                    + int_to_bytes(size, 8)
+                    + int_to_bytes(out_count, 4)
+                    + struct_to_bytes(info),
+                )
+
+                return const.KERN_SUCCESS
         elif msg_id == 8000:  # task_restartable_ranges_register
             return const.KERN_RESOURCE_SHORTAGE
     elif remote_port == emu.ios_os.MACH_PORT_BOOTSTRAP:
