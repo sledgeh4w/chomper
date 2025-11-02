@@ -222,9 +222,9 @@ class AndroidOs(BaseOs):
         """Convert standard I/O file descriptors to FILE objects and assign them
         to target symbols.
         """
-        stdin_p = self.emu.find_symbol("stdin")
-        stdout_p = self.emu.find_symbol("stdout")
-        stderr_p = self.emu.find_symbol("stderr")
+        stdin_p = self.emu.get_symbol("stdin")
+        stdout_p = self.emu.get_symbol("stdout")
+        stderr_p = self.emu.get_symbol("stderr")
 
         if isinstance(self.stdin, int):
             stdin_fp = self._create_fp(self.stdin, "r")
@@ -241,7 +241,7 @@ class AndroidOs(BaseOs):
         environ = self.emu.create_buffer(8)
         self.emu.write_pointer(environ, self._construct_environ(ENVIRON_VARIABLES))
 
-        environ_pointer = self.emu.find_symbol("environ")
+        environ_pointer = self.emu.get_symbol("environ")
         self.emu.write_pointer(environ_pointer.address, environ)
 
     def initialize(self):
