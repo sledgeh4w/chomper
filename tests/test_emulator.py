@@ -1,7 +1,5 @@
 import pytest
 
-from .utils import alloc_vars
-
 
 @pytest.mark.usefixtures("libc_arm64")
 def test_find_symbol(emu_arm64):
@@ -54,27 +52,33 @@ def test_free(emu_arm64):
 def test_read_and_write_int(emu_arm64):
     value = 105
 
-    with alloc_vars(emu_arm64, 1024) as (addr,):
-        emu_arm64.write_int(addr, value, size=4)
-        result = emu_arm64.read_int(addr, size=4)
+    with emu_arm64.mem_context() as ctx:
+        buf = ctx.create_buffer(1024)
+        emu_arm64.write_int(buf, value, size=4)
+
+        result = emu_arm64.read_int(buf, size=4)
         assert result == value
 
 
 def test_read_and_write_bytes(emu_arm64):
     sample_bytes = b"chomper"
 
-    with alloc_vars(emu_arm64, 1024) as (addr,):
-        emu_arm64.write_bytes(addr, sample_bytes)
-        result = emu_arm64.read_bytes(addr, len(sample_bytes))
+    with emu_arm64.mem_context() as ctx:
+        buf = ctx.create_buffer(1024)
+        emu_arm64.write_bytes(buf, sample_bytes)
+
+        result = emu_arm64.read_bytes(buf, len(sample_bytes))
         assert result == sample_bytes
 
 
 def test_read_and_write_string(emu_arm64):
     sample_str = "chomper"
 
-    with alloc_vars(emu_arm64, 1024) as (addr,):
-        emu_arm64.write_string(addr, sample_str)
-        result = emu_arm64.read_string(addr)
+    with emu_arm64.mem_context() as ctx:
+        buf = ctx.create_buffer(1024)
+        emu_arm64.write_string(buf, sample_str)
+
+        result = emu_arm64.read_string(buf)
         assert result == sample_str
 
 

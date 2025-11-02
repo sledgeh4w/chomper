@@ -3,8 +3,6 @@ from ctypes import sizeof
 from chomper.os.ios import const
 from chomper.os.ios.structs import MachTimespec
 
-from .utils import alloc_vars
-
 
 def test_ns_number(emu_ios, objc):
     with objc.autorelease_pool():
@@ -379,19 +377,21 @@ def test_cf_run_loop(emu_ios, objc):
 
 
 def test_sc_network_reachability(emu_ios, objc):
-    with objc.autorelease_pool():
+    with emu_ios.mem_context() as ctx, objc.autorelease_pool():
         name = "apple.com"
 
-        with alloc_vars(emu_ios, name, 8) as (name_ptr, flags):
-            reachability = emu_ios.call_symbol(
-                "_SCNetworkReachabilityCreateWithName", 0, name_ptr
-            )
-            assert reachability
+        name_buf = ctx.create_string(name)
+        flags_buf = ctx.create_buffer(8)
 
-            result = emu_ios.call_symbol(
-                "_SCNetworkReachabilityGetFlags", reachability, flags
-            )
-            assert result
+        reachability = emu_ios.call_symbol(
+            "_SCNetworkReachabilityCreateWithName", 0, name_buf
+        )
+        assert reachability
+
+        result = emu_ios.call_symbol(
+            "_SCNetworkReachabilityGetFlags", reachability, flags_buf
+        )
+        assert result
 
 
 def test_dispatch_semaphore(emu_ios):
@@ -409,13 +409,17 @@ def test_dispatch_semaphore(emu_ios):
 def test_clock(emu_ios):
     clock_port = emu_ios.ios_os.MACH_PORT_CLOCK
 
-    with alloc_vars(emu_ios, sizeof(MachTimespec)) as (cur_time_buf,):
+    with emu_ios.mem_context() as ctx:
+        cur_time_buf = ctx.create_buffer(sizeof(MachTimespec))
+
         result = emu_ios.call_symbol("_clock_get_time", clock_port, cur_time_buf)
         assert result == 0
 
 
 def test_mach_ports(emu_ios):
-    with alloc_vars(emu_ios, 4) as (port_buf,):
+    with emu_ios.mem_context() as ctx:
+        port_buf = ctx.create_buffer(4)
+
         port = emu_ios.call_symbol("_mach_host_self")
         assert port == emu_ios.ios_os.MACH_PORT_HOST
 

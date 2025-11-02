@@ -8,7 +8,7 @@ from typing import Callable, Dict, Optional
 
 from unicorn import Uc
 
-from chomper.exceptions import EmulatorCrashed, SymbolMissing, ObjCUnrecognizedSelector
+from chomper.exceptions import EmulatorCrashed, ObjCUnrecognizedSelector
 from chomper.objc import ObjcRuntime, ObjcObject
 from chomper.plist17lib import _BinaryPlist17Parser, _BinaryPlist17Writer
 from chomper.typing import HookContext
@@ -42,7 +42,7 @@ def register_hook(symbol_name: str):
 def hook_pthread_self(uc: Uc, address: int, size: int, user_data: HookContext):
     emu = user_data["emu"]
 
-    return emu.read_pointer(emu.find_symbol("__main_thread_ptr").address)
+    return emu.read_pointer(emu.get_symbol("__main_thread_ptr").address)
 
 
 @register_hook("_malloc")
@@ -235,15 +235,13 @@ def hook_sl_dlopen_audited(uc: Uc, address: int, size: int, user_data: HookConte
 def hook_dlsym(uc: Uc, address: int, size: int, user_data: HookContext):
     emu = user_data["emu"]
 
-    symbol_name = f"_{emu.read_string(emu.get_arg(1))}"
+    name = f"_{emu.read_string(emu.get_arg(1))}"
 
-    try:
-        symbol = emu.find_symbol(symbol_name)
-        return symbol.address
-    except SymbolMissing:
-        pass
+    symbol = emu.find_symbol(name)
+    if not symbol:
+        return 0
 
-    return 0
+    return symbol.address
 
 
 @register_hook("_dyld_program_sdk_at_least")
@@ -401,7 +399,7 @@ def hook_cf_bundle_create_info_dict_from_main_executable(
 
     if not os.path.exists(info_path):
         # Ensure `_mainBundleLock` is released
-        main_bundle_lock = emu.find_symbol("__mainBundleLock")
+        main_bundle_lock = emu.get_symbol("__mainBundleLock")
         emu.call_symbol("_pthread_mutex_unlock", main_bundle_lock.address)
 
         raise FileNotFoundError(
@@ -412,12 +410,13 @@ def hook_cf_bundle_create_info_dict_from_main_executable(
     with open(info_path, "rb") as f:
         info_content = f.read()
 
-    info_data = emu.create_buffer(len(info_content) + 100)
-    emu.write_bytes(info_data, info_content)
+    with emu.mem_context() as ctx:
+        info_data = ctx.create_buffer(len(info_content) + 100)
+        emu.write_bytes(info_data, info_content)
 
-    cf_bundle = emu.call_symbol(
-        "__CFBundleCreateInfoDictFromData", info_data, len(info_content)
-    )
+        cf_bundle = emu.call_symbol(
+            "__CFBundleCreateInfoDictFromData", info_data, len(info_content)
+        )
 
     return cf_bundle
 
@@ -460,29 +459,27 @@ def hook_sec_item_copy_matching(
     sec_return_data = objc.msg_send(
         a1,
         "objectForKey:",
-        emu.read_pointer(emu.find_symbol("_kSecReturnData").address),
+        emu.read_pointer(emu.get_symbol("_kSecReturnData").address),
     )
     assert isinstance(sec_return_data, ObjcObject)
 
     sec_return_attributes = objc.msg_send(
         a1,
         "objectForKey:",
-        emu.read_pointer(emu.find_symbol("_kSecReturnAttributes").address),
+        emu.read_pointer(emu.get_symbol("_kSecReturnAttributes").address),
     )
     assert isinstance(sec_return_attributes, ObjcObject)
 
     sec_match_limit = objc.msg_send(
         a1,
         "objectForKey:",
-        emu.read_pointer(emu.find_symbol("_kSecMatchLimit").address),
+        emu.read_pointer(emu.get_symbol("_kSecMatchLimit").address),
     )
     assert isinstance(sec_match_limit, ObjcObject)
 
-    cf_boolean_true = emu.read_pointer(emu.find_symbol("_kCFBooleanTrue").address)
+    cf_boolean_true = emu.read_pointer(emu.get_symbol("_kCFBooleanTrue").address)
 
-    sec_match_limit_all = emu.read_pointer(
-        emu.find_symbol("_kSecMatchLimitAll").address
-    )
+    sec_match_limit_all = emu.read_pointer(emu.get_symbol("_kSecMatchLimitAll").address)
 
     if sec_match_limit.value == sec_match_limit_all:
         result = objc.create_cf_array([])
@@ -574,22 +571,20 @@ def _create_xpc_replay(emu, obj):
     plist_writer.write(_add_type_info(obj), with_type_info=True)
     reply_data = write_io.getvalue()
 
-    key_root = emu.create_string("root")
+    with emu.mem_context() as ctx:
+        key_root = ctx.create_string("root")
 
-    reply_buf = emu.create_buffer(len(reply_data))
-    emu.write_bytes(reply_buf, reply_data)
+        reply_buf = ctx.create_buffer(len(reply_data))
+        emu.write_bytes(reply_buf, reply_data)
 
-    reply = emu.call_symbol("_xpc_dictionary_create_empty")
-    emu.call_symbol(
-        "_xpc_dictionary_set_data",
-        reply,
-        key_root,
-        reply_buf,
-        len(reply_data),
-    )
-
-    emu.free(key_root)
-    emu.free(reply_buf)
+        reply = emu.call_symbol("_xpc_dictionary_create_empty")
+        emu.call_symbol(
+            "_xpc_dictionary_set_data",
+            reply,
+            key_root,
+            reply_buf,
+            len(reply_data),
+        )
 
     return reply
 
@@ -618,27 +613,28 @@ def hook_xpc_connection_send_message_with_reply_sync(
         message_desc,
     )
 
-    # Parse object
-    key_root = emu.create_string("root")
-    length_out = emu.create_buffer(4)
+    with emu.mem_context() as ctx:
+        # Parse object
+        key_root = ctx.create_string("root")
+        length_out = ctx.create_buffer(4)
 
-    root_ptr = emu.call_symbol(
-        "_xpc_dictionary_get_data",
-        message,
-        key_root,
-        length_out,
-    )
-    sel_name = None
+        root_ptr = emu.call_symbol(
+            "_xpc_dictionary_get_data",
+            message,
+            key_root,
+            length_out,
+        )
+        sel_name = None
 
-    if root_ptr:
-        root_data = emu.read_bytes(root_ptr, emu.read_u32(length_out))
-        plist_parser = _BinaryPlist17Parser(dict_type=dict)
+        if root_ptr:
+            root_data = emu.read_bytes(root_ptr, emu.read_u32(length_out))
+            plist_parser = _BinaryPlist17Parser(dict_type=dict)
 
-        root_obj = plist_parser.parse(BytesIO(root_data))
-        if root_obj:
-            sel_name = root_obj[0]
+            root_obj = plist_parser.parse(BytesIO(root_data))
+            if root_obj:
+                sel_name = root_obj[0]
 
-        emu.logger.info("object = %s", root_obj)
+            emu.logger.info("object = %s", root_obj)
 
     reply_obj = None
 
@@ -708,8 +704,6 @@ def hook_xpc_connection_send_message_with_reply_sync(
         )
 
     reply = _create_xpc_replay(emu, reply_obj) if reply_obj else 0
-
-    emu.free(key_root)
 
     return reply
 

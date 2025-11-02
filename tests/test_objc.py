@@ -1,7 +1,7 @@
 from chomper.objc import ObjcObject
 
 
-def test_create_ns_objs(emu_ios, objc):
+def test_create_ns_objects(emu_ios, objc):
     with objc.autorelease_pool():
         result = objc.create_ns_number(1)
         assert result
@@ -23,7 +23,7 @@ def test_create_ns_objs(emu_ios, objc):
         assert result
 
 
-def test_create_cf_objs(emu_ios, objc):
+def test_create_cf_objects(emu_ios, objc):
     with objc.autorelease_pool():
         result = objc.create_cf_number(1)
         assert result
@@ -52,12 +52,12 @@ def test_msg_send(emu_ios, objc):
         dictionary = ns_mutable_dictionary_class.call_method("dictionary")
         assert isinstance(dictionary, ObjcObject)
 
-        retval = dictionary.call_method(
+        result = dictionary.call_method(
             "setObject:forKey:",
             objc.create_ns_string("key"),
             objc.create_ns_string("value"),
         )
-        assert retval == 0
+        assert result == 0
 
         count = dictionary.call_method("count")
         assert isinstance(count, int)
