@@ -1,6 +1,6 @@
 import os
 from itertools import chain
-from typing import Dict, List, Tuple, Optional
+from typing import Dict, List, Tuple
 
 import lief
 from lief.MachO import ARM64_RELOCATION, RelocationFixup
@@ -10,11 +10,46 @@ from chomper.utils import aligned
 from .base import BaseLoader, Module, DyldInfo, Symbol, Binding, Segment, AddressRegion
 
 
-_ARMV81_SYMBOL_POSTFIX = "$VARIANT$armv81"
-
-
 class MachoLoader(BaseLoader):
     """The Mach-O file loader."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        self._symbol_aliases = {}
+        self._init_symbol_aliases()
+
+    def _init_symbol_aliases(self):
+        symbol_aliases = {
+            "____chkstk_darwin": "___chkstk_darwin",
+        }
+
+        platform_funcs = [
+            "_bzero",
+            "_memccpy",
+            "_memchr",
+            "_memcmp",
+            "_memmove",
+            "_memset",
+            "_memset_pattern16",
+            "_memset_pattern4",
+            "_memset_pattern8",
+            "_strchr",
+            "_strcmp",
+            "_strcpy",
+            "_strlcat",
+            "_strlcpy",
+            "_strlen",
+            "_strncmp",
+            "_strncpy",
+            "_strnlen",
+            "_strstr",
+        ]
+
+        for func in platform_funcs:
+            symbol_aliases[f"__platform{func}"] = func
+
+        self._symbol_aliases.update(symbol_aliases)
 
     def _map_segments(
         self,
@@ -31,46 +66,40 @@ class MachoLoader(BaseLoader):
 
             seg_addr = module_base + segment.virtual_address
 
-            map_addr = aligned(seg_addr, 1024) - (1024 if seg_addr % 1024 else 0)
-            map_size = aligned(seg_addr - map_addr + segment.virtual_size, 1024)
+            address = aligned(seg_addr, 1024) - (1024 if seg_addr % 1024 else 0)
+            size = aligned(seg_addr - address + segment.virtual_size, 1024)
 
-            map_parts = []
+            blocks = []
 
             for region in regions:
-                overlap_start = max(map_addr, region.base)
-                overlap_end = min(map_addr + map_size, region.base + region.size)
+                overlap_start = max(address, region.base)
+                overlap_end = min(address + size, region.base + region.size)
 
                 if overlap_start < overlap_end:
-                    if map_addr < overlap_start:
-                        start = map_addr
-                        size = overlap_end - map_addr
-                        map_parts.append((start, size))
+                    if address < overlap_start:
+                        start = address
+                        size = overlap_end - address
+                        blocks.append((start, size))
 
-                    if map_addr + map_size > overlap_end:
+                    if address + size > overlap_end:
                         start = overlap_end
-                        size = map_addr + map_size - overlap_end
-                        map_parts.append((start, size))
+                        size = address + size - overlap_end
+                        blocks.append((start, size))
 
-                    map_addr = -1
+                    address = -1
                     break
 
-            if map_addr >= 0:
+            # No overlap
+            if address >= 0:
+                blocks.append((address, size))
+
+            for address, size in blocks:
                 if not dry_run:
-                    self.emu.uc.mem_map(map_addr, map_size)
+                    self.emu.uc.mem_map(address, size)
 
                 region = AddressRegion(
-                    base=map_addr,
-                    size=map_size,
-                )
-                regions.append(region)
-
-            for map_addr, map_size in map_parts:
-                if not dry_run:
-                    self.emu.uc.mem_map(map_addr, map_size)
-
-                region = AddressRegion(
-                    base=map_addr,
-                    size=map_size,
+                    base=address,
+                    size=size,
                 )
                 regions.append(region)
 
@@ -82,12 +111,13 @@ class MachoLoader(BaseLoader):
 
         return regions
 
-    @staticmethod
-    def _get_binding_name(symbol_name: str) -> str:
-        if symbol_name == "____chkstk_darwin":
-            return symbol_name.replace("_", "", 1)
+    def _get_binding_name(self, symbol_name: str) -> str:
+        if symbol_name in self._symbol_aliases:
+            return self._symbol_aliases[symbol_name]
+        elif symbol_name.endswith("$VARIANT$armv81"):
+            return symbol_name.replace("$VARIANT$armv81", "")
 
-        return symbol_name.replace(_ARMV81_SYMBOL_POSTFIX, "")
+        return symbol_name
 
     def _load_symbols(
         self,
@@ -119,14 +149,14 @@ class MachoLoader(BaseLoader):
                     reloc_addr = symbol_address
 
                     if reloc_addr:
-                        addr = (
+                        address = (
                             module.base - module.dyld_info.image_base + binding.address
                         )
 
                         value = reloc_addr + binding.addend
                         value &= 0xFFFFFFFFFFFFFFFF
 
-                        self.emu.write_pointer(addr, value)
+                        self.emu.write_pointer(address, value)
 
                 lazy_binding_set.add(binding_name)
 
@@ -144,30 +174,6 @@ class MachoLoader(BaseLoader):
                 symbols.append(symbol_struct)
 
         return symbols
-
-    def _get_symbol_reloc_addr(
-        self,
-        symbol_map: Dict[str, Symbol],
-        symbol_name: str,
-    ) -> Optional[int]:
-        """Get the relocation address of a symbol."""
-        symbol = None
-
-        name_with_arch = f"{symbol_name}{_ARMV81_SYMBOL_POSTFIX}"
-        name_with_platform = f"__platform{symbol_name}"
-
-        if symbol_map.get(name_with_arch):
-            if not self.emu.hooks.get(symbol_name):
-                symbol = symbol_map[name_with_arch]
-        elif symbol_name == "___chkstk_darwin":
-            if symbol_map.get(f"_{symbol_name}"):
-                symbol = symbol_map[f"_{symbol_name}"]
-        elif symbol_map.get(symbol_name):
-            symbol = symbol_map[symbol_name]
-        elif symbol_map.get(name_with_platform):
-            symbol = symbol_map[name_with_platform]
-
-        return symbol.address if symbol else None
 
     def _process_symbol_relocation(
         self,
@@ -189,9 +195,9 @@ class MachoLoader(BaseLoader):
             symbol = binding.symbol
             symbol_name = str(symbol.name)
 
-            reloc_addr = self._get_symbol_reloc_addr(symbol_map, symbol_name)
-
-            if not reloc_addr:
+            if symbol_name in symbol_map:
+                reloc_addr = symbol_map[symbol_name].address
+            else:
                 lazy_binding = Binding(
                     symbol=symbol_name,
                     address=binding.address,
@@ -222,9 +228,8 @@ class MachoLoader(BaseLoader):
                     # )
                     continue
 
-            if reloc_addr:
-                value = (reloc_addr + binding.addend) & 0xFFFFFFFFFFFFFFFF
-                self.emu.write_pointer(module_base + binding.address, value)
+            value = (reloc_addr + binding.addend) & 0xFFFFFFFFFFFFFFFF
+            self.emu.write_pointer(module_base + binding.address, value)
 
         return lazy_bindings
 
@@ -282,36 +287,35 @@ class MachoLoader(BaseLoader):
         end = begin + section.size
         values = self.emu.read_array(begin, end)
 
-        return [addr for addr in values if addr]
+        return [value for value in values if value]
 
-    @staticmethod
-    def _process_symbol_aliases(symbols: List[Symbol]) -> List[Symbol]:
-        """Reset symbol addresses based on actual aliases."""
+    def _process_symbol_aliases(self, symbols: List[Symbol]) -> List[Symbol]:
+        """Reset symbol addresses based on aliases."""
         symbol_map = {symbol.name: symbol for symbol in symbols}
 
         for name, symbol in symbol_map.items():
-            if name.endswith(_ARMV81_SYMBOL_POSTFIX):
-                export_name = name.replace(_ARMV81_SYMBOL_POSTFIX, "")
-                if export_name not in symbol_map:
-                    continue
-                symbol_map[export_name].address = symbol.address
+            export_name = self._get_binding_name(name)
+            if export_name not in symbol_map:
+                continue
+
+            symbol_map[export_name].address = symbol.address
 
         return list(symbol_map.values())
 
     @staticmethod
-    def _get_minium_seg_addr(binary: lief.MachO.Binary) -> int:
-        addr_list = []
+    def _get_lowest_address(binary: lief.MachO.Binary) -> int:
+        addresses = []
 
         for segment in binary.segments:
             if not segment.virtual_size or segment.name == "__PAGEZERO":
                 continue
 
-            addr_list.append(segment.virtual_address)
+            addresses.append(segment.virtual_address)
 
-        return min(addr_list)
+        return min(addresses)
 
     @staticmethod
-    def _has_overlap(
+    def _has_regions_overlap(
         regions: List[AddressRegion],
         other_regions: List[AddressRegion],
     ) -> bool:
@@ -323,22 +327,20 @@ class MachoLoader(BaseLoader):
         return False
 
     def _find_load_base(self, binary: lief.MachO.Binary) -> int:
-        """Try to find the lowest address to load a module."""
+        """Find the lowest address to load a module."""
         mapped_regions = list(
             chain.from_iterable((module.map_regions for module in self.emu.modules))
         )
-
-        minium_seg_addr = self._get_minium_seg_addr(binary)
         regions = self._map_segments(
             binary,
-            module_base=-minium_seg_addr,
+            module_base=-self._get_lowest_address(binary),
             dry_run=True,
         )
 
         for mapped_region in mapped_regions:
             offset = aligned(mapped_region.end, 1024 * 1024)
 
-            regions_with_offset = [
+            shifted_regions = [
                 AddressRegion(
                     base=region.base + offset,
                     size=region.size,
@@ -346,7 +348,7 @@ class MachoLoader(BaseLoader):
                 for region in regions
             ]
 
-            if not self._has_overlap(mapped_regions, regions_with_offset):
+            if not self._has_regions_overlap(mapped_regions, shifted_regions):
                 return offset
 
         return max([region.end for region in mapped_regions])
@@ -368,7 +370,7 @@ class MachoLoader(BaseLoader):
             module_base = self._find_load_base(binary)
 
         # Make module memory distribution more compact
-        module_base -= aligned(self._get_minium_seg_addr(binary), 1024)
+        module_base -= aligned(self._get_lowest_address(binary), 1024)
 
         map_regions = self._map_segments(binary, module_base)
         size = (map_regions[-1].end - module_base) if map_regions else 0

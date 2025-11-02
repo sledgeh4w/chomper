@@ -23,7 +23,7 @@ def test_unhandled_system_call_exception(emu_ios):
 
 def test_symbol_missing_exception(emu_ios):
     with pytest.raises(SymbolMissing):
-        emu_ios.find_symbol("_undefined")
+        emu_ios.get_symbol("_undefined")
 
 
 def test_objc_unrecognized_selector_exception(emu_ios, objc):

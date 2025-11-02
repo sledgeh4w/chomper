@@ -21,12 +21,10 @@ class ObjcRuntime:
 
     def selector(self, sel_name: str) -> int:
         """Get selector by name."""
-        name_buf = self.emu.create_string(sel_name)
+        with self.emu.mem_context() as ctx:
+            name_buf = ctx.create_string(sel_name)
 
-        try:
             return self.emu.call_symbol("_sel_registerName", name_buf)
-        finally:
-            self.emu.free(name_buf)
 
     def find_class(self, name: str) -> ObjcClass:
         """Find class by name.
@@ -37,16 +35,14 @@ class ObjcRuntime:
         Raises:
             ValueError: If class not found.
         """
-        name_buf = self.emu.create_string(name)
+        with self.emu.mem_context() as ctx:
+            name_buf = ctx.create_string(name)
 
-        try:
             class_value = self.emu.call_symbol("_objc_getClass", name_buf)
             if not class_value:
                 raise ValueError(f"ObjC class '{name}' not found")
 
             return ObjcClass(self, class_value)
-        finally:
-            self.emu.free(name_buf)
 
     def find_protocol(self, name: str) -> ObjcProtocol:
         """Find protocol by name.
@@ -57,16 +53,14 @@ class ObjcRuntime:
         Raises:
             ValueError: If protocol not found.
         """
-        name_buf = self.emu.create_string(name)
+        with self.emu.mem_context() as ctx:
+            name_buf = ctx.create_string(name)
 
-        try:
             protocol_value = self.emu.call_symbol("_objc_getProtocol", name_buf)
             if not protocol_value:
                 raise ValueError(f"ObjC protocol '{name}' not found")
 
             return ObjcProtocol(self, protocol_value)
-        finally:
-            self.emu.free(name_buf)
 
     def msg_send(
         self,
@@ -125,24 +119,20 @@ class ObjcRuntime:
             # typically because the selector is invalid.
             pass
 
-        buf_list = []
-
         new_args: List[int] = []
         new_va_list: List[int] = []
 
-        for old, new in zip((args, va_list or []), (new_args, new_va_list)):
-            for arg in old:
-                if isinstance(arg, str):
-                    buf = self.emu.create_string(arg)
-                    buf_list.append(buf)
+        with self.emu.mem_context() as ctx:
+            for old, new in zip((args, va_list or []), (new_args, new_va_list)):
+                for arg in old:
+                    if isinstance(arg, str):
+                        buf = ctx.create_string(arg)
+                        new.append(buf)
+                    elif isinstance(arg, ObjcType):
+                        new.append(arg.value)
+                    else:
+                        new.append(arg)
 
-                    new.append(buf)
-                elif isinstance(arg, ObjcType):
-                    new.append(arg.value)
-                else:
-                    new.append(arg)
-
-        try:
             native_return_type: ReturnType = "int"
 
             if return_type == "f":
@@ -165,9 +155,6 @@ class ObjcRuntime:
                 return 0
 
             return retval
-        finally:
-            for buf in buf_list:
-                self.emu.free(buf)
 
     def release(
         self,
@@ -195,44 +182,39 @@ class ObjcRuntime:
         Raises:
             TypeError: If object type is not supported.
         """
-        buf_list = []
+        with self.emu.mem_context() as ctx:
+            if isinstance(value, dict):
+                ns_obj = self.msg_send("NSMutableDictionary", "dictionary")
+                assert ns_obj
 
-        if isinstance(value, dict):
-            ns_obj = self.msg_send("NSMutableDictionary", "dictionary")
-            assert ns_obj
+                for key, value in value.items():
+                    ns_key = self._create_ns_object(key)
+                    ns_value = self._create_ns_object(value)
 
-            for key, value in value.items():
-                ns_key = self._create_ns_object(key)
-                ns_value = self._create_ns_object(value)
+                    self.msg_send(ns_obj, "setObject:forKey:", ns_value, ns_key)
+            elif isinstance(value, list):
+                ns_obj = self.msg_send("NSMutableArray", "array")
+                assert ns_obj
 
-                self.msg_send(ns_obj, "setObject:forKey:", ns_value, ns_key)
-        elif isinstance(value, list):
-            ns_obj = self.msg_send("NSMutableArray", "array")
-            assert ns_obj
+                for item in value:
+                    ns_item = self._create_ns_object(item)
+                    self.msg_send(ns_obj, "addObject:", ns_item)
+            elif isinstance(value, str):
+                ns_obj = self.msg_send("NSString", "stringWithUTF8String:", value)
+            elif isinstance(value, bytes):
+                if value:
+                    buffer = ctx.create_buffer(len(value))
+                    self.emu.write_bytes(buffer, value)
+                else:
+                    buffer = 0
 
-            for item in value:
-                ns_item = self._create_ns_object(item)
-                self.msg_send(ns_obj, "addObject:", ns_item)
-        elif isinstance(value, str):
-            ns_obj = self.msg_send("NSString", "stringWithUTF8String:", value)
-        elif isinstance(value, bytes):
-            if value:
-                buffer = self.emu.create_buffer(len(value))
-                self.emu.write_bytes(buffer, value)
-                buf_list.append(buffer)
+                ns_obj = self.msg_send(
+                    "NSData", "dataWithBytes:length:", buffer, len(value)
+                )
+            elif isinstance(value, int):
+                ns_obj = self.msg_send("NSNumber", "numberWithInteger:", value)
             else:
-                buffer = 0
-
-            ns_obj = self.msg_send(
-                "NSData", "dataWithBytes:length:", buffer, len(value)
-            )
-        elif isinstance(value, int):
-            ns_obj = self.msg_send("NSNumber", "numberWithInteger:", value)
-        else:
-            raise TypeError(f"Unsupported type: {type(value)}")
-
-        for buf in buf_list:
-            self.emu.free(buf)
+                raise TypeError(f"Unsupported type: {type(value)}")
 
         assert isinstance(ns_obj, ObjcObject)
         return ns_obj
@@ -258,90 +240,85 @@ class ObjcRuntime:
         Raises:
             TypeError: If object type is not supported.
         """
-        cf_allocator_system_default = self.emu.find_symbol(
+        cf_allocator_system_default = self.emu.get_symbol(
             "___kCFAllocatorSystemDefault"
         )
 
-        buf_list = []
         cf_strs = []
 
-        if isinstance(value, dict):
-            cf_copy_string_dictionary_key_callbacks = self.emu.find_symbol(
-                "_kCFCopyStringDictionaryKeyCallBacks"
-            )
-            cf_type_dictionary_value_callbacks = self.emu.find_symbol(
-                "_kCFTypeDictionaryValueCallBacks"
-            )
+        with self.emu.mem_context() as ctx:
+            if isinstance(value, dict):
+                cf_copy_string_dictionary_key_callbacks = self.emu.get_symbol(
+                    "_kCFCopyStringDictionaryKeyCallBacks"
+                )
+                cf_type_dictionary_value_callbacks = self.emu.get_symbol(
+                    "_kCFTypeDictionaryValueCallBacks"
+                )
 
-            cf_obj = self.emu.call_symbol(
-                "_CFDictionaryCreateMutable",
-                cf_allocator_system_default.address,
-                0,
-                cf_copy_string_dictionary_key_callbacks.address,
-                cf_type_dictionary_value_callbacks.address,
-            )
+                cf_obj = self.emu.call_symbol(
+                    "_CFDictionaryCreateMutable",
+                    cf_allocator_system_default.address,
+                    0,
+                    cf_copy_string_dictionary_key_callbacks.address,
+                    cf_type_dictionary_value_callbacks.address,
+                )
 
-            for key, value in value.items():
-                cf_key = self._create_cf_object(key)
-                cf_value = self._create_cf_object(value)
+                for key, value in value.items():
+                    cf_key = self._create_cf_object(key)
+                    cf_value = self._create_cf_object(value)
 
-                cf_strs.append(cf_key)
-                cf_strs.append(cf_value)
+                    cf_strs.append(cf_key)
+                    cf_strs.append(cf_value)
 
-                self.emu.call_symbol("_CFDictionaryAddValue", cf_obj, cf_key, cf_value)
-        elif isinstance(value, list):
-            cf_type_array_callbacks = self.emu.find_symbol("_kCFTypeArrayCallBacks")
+                    self.emu.call_symbol(
+                        "_CFDictionaryAddValue", cf_obj, cf_key, cf_value
+                    )
+            elif isinstance(value, list):
+                cf_type_array_callbacks = self.emu.get_symbol("_kCFTypeArrayCallBacks")
 
-            cf_obj = self.emu.call_symbol(
-                "_CFArrayCreateMutable",
-                cf_allocator_system_default.address,
-                0,
-                cf_type_array_callbacks.address,
-            )
+                cf_obj = self.emu.call_symbol(
+                    "_CFArrayCreateMutable",
+                    cf_allocator_system_default.address,
+                    0,
+                    cf_type_array_callbacks.address,
+                )
 
-            for item in value:
-                cf_item = self._create_cf_object(item)
-                self.emu.call_symbol("_CFArrayAppendValue", cf_obj, cf_item)
-        elif isinstance(value, str):
-            str_ptr = self.emu.create_string(value)
-            buf_list.append(str_ptr)
+                for item in value:
+                    cf_item = self._create_cf_object(item)
+                    self.emu.call_symbol("_CFArrayAppendValue", cf_obj, cf_item)
+            elif isinstance(value, str):
+                str_ptr = ctx.create_string(value)
+                cf_obj = self.emu.call_symbol(
+                    "_CFStringCreateWithCString",
+                    cf_allocator_system_default.address,
+                    str_ptr,
+                    0x8000100,
+                )
+            elif isinstance(value, bytes):
+                if value:
+                    buffer = ctx.create_buffer(len(value))
+                    self.emu.write_bytes(buffer, value)
+                else:
+                    buffer = 0
 
-            cf_obj = self.emu.call_symbol(
-                "_CFStringCreateWithCString",
-                cf_allocator_system_default.address,
-                str_ptr,
-                0x8000100,
-            )
-        elif isinstance(value, bytes):
-            if value:
-                buffer = self.emu.create_buffer(len(value))
-                self.emu.write_bytes(buffer, value)
-                buf_list.append(buffer)
+                cf_obj = self.emu.call_symbol(
+                    "_CFDataCreate",
+                    cf_allocator_system_default.address,
+                    buffer,
+                    len(value),
+                )
+            elif isinstance(value, int):
+                buffer = ctx.create_buffer(8)
+                self.emu.write_s64(buffer, value)
+
+                cf_obj = self.emu.call_symbol(
+                    "_CFNumberCreate",
+                    cf_allocator_system_default.address,
+                    9,
+                    buffer,
+                )
             else:
-                buffer = 0
-
-            cf_obj = self.emu.call_symbol(
-                "_CFDataCreate",
-                cf_allocator_system_default.address,
-                buffer,
-                len(value),
-            )
-        elif isinstance(value, int):
-            buffer = self.emu.create_buffer(8)
-            self.emu.write_s64(buffer, value)
-            buf_list.append(buffer)
-
-            cf_obj = self.emu.call_symbol(
-                "_CFNumberCreate",
-                cf_allocator_system_default.address,
-                9,
-                buffer,
-            )
-        else:
-            raise TypeError(f"Unsupported type: {type(value)}")
-
-        for buf in buf_list:
-            self.emu.free(buf)
+                raise TypeError(f"Unsupported type: {type(value)}")
 
         for cf_str in cf_strs:
             self.emu.call_symbol("_CFRelease", cf_str)

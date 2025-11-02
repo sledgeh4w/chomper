@@ -196,12 +196,12 @@ class IosOs(BaseOs):
 
     def get_errno(self) -> int:
         """Get the `errno`."""
-        errno = self.emu.find_symbol("_errno")
+        errno = self.emu.get_symbol("_errno")
         return self.emu.read_s32(errno.address)
 
     def set_errno(self, value: int):
         """Set the `errno`."""
-        errno = self.emu.find_symbol("_errno")
+        errno = self.emu.get_symbol("_errno")
         self.emu.write_s32(errno.address, value)
 
         errno_ptr = self.emu.read_pointer(TLS_ADDRESS + 0x8)
@@ -380,30 +380,30 @@ class IosOs(BaseOs):
         argc = self.emu.create_buffer(8)
         self.emu.write_int(argc, 0, 8)
 
-        nx_argc_pointer = self.emu.find_symbol("_NXArgc_pointer")
+        nx_argc_pointer = self.emu.get_symbol("_NXArgc_pointer")
         self.emu.write_pointer(nx_argc_pointer.address, argc)
 
-        nx_argv_pointer = self.emu.find_symbol("_NXArgv_pointer")
+        nx_argv_pointer = self.emu.get_symbol("_NXArgv_pointer")
         self.emu.write_pointer(nx_argv_pointer.address, self.emu.create_string(""))
 
         environ = self.emu.create_buffer(8)
         self.emu.write_pointer(environ, self._construct_environ(ENVIRON_VARIABLES))
 
-        environ_pointer = self.emu.find_symbol("_environ_pointer")
+        environ_pointer = self.emu.get_symbol("_environ_pointer")
         self.emu.write_pointer(environ_pointer.address, environ)
 
         progname = self.emu.create_buffer(8)
         self.emu.write_pointer(progname, self.emu.create_string(BUNDLE_EXECUTABLE))
 
-        progname_pointer = self.emu.find_symbol("___progname_pointer")
+        progname_pointer = self.emu.get_symbol("___progname_pointer")
         self.emu.write_pointer(progname_pointer.address, progname)
 
     def _init_lib_dyld(self):
         """Initialize `libdyld.dylib`."""
-        g_use_dyld3 = self.emu.find_symbol("_gUseDyld3")
+        g_use_dyld3 = self.emu.get_symbol("_gUseDyld3")
         self.emu.write_u8(g_use_dyld3.address, 1)
 
-        dyld_all_images = self.emu.find_symbol("__ZN5dyld310gAllImagesE")
+        dyld_all_images = self.emu.get_symbol("__ZN5dyld310gAllImagesE")
 
         # dyld3::closure::ContainerTypedBytes::findAttributePayload
         attribute_payload_ptr = self.emu.create_buffer(8)
@@ -420,13 +420,13 @@ class IosOs(BaseOs):
         self.emu.write_pointer(dyld_all_images.address + 0x50, platform_ptr)
 
         # environ
-        environ_pointer = self.emu.find_symbol("_environ_pointer")
+        environ_pointer = self.emu.get_symbol("_environ_pointer")
         environ_value = self.emu.read_pointer(environ_pointer.address)
 
         environ_buf = self.emu.create_buffer(8)
         self.emu.write_pointer(environ_buf, environ_value)
 
-        environ = self.emu.find_symbol("_environ")
+        environ = self.emu.get_symbol("_environ")
         self.emu.write_pointer(environ.address, environ_buf)
 
     def _init_lib_system_kernel(self):
@@ -438,14 +438,14 @@ class IosOs(BaseOs):
         self._init_program_vars()
 
         # ___xlocale_init
-        locale_key = self.emu.find_symbol("___locale_key")
+        locale_key = self.emu.get_symbol("___locale_key")
         if self.emu.read_s64(locale_key.address) == -1:
             self.emu.write_s64(locale_key.address, 10)
 
         self.emu.call_symbol("___atexit_init")
 
         # _init_clock_port
-        clock_port = self.emu.find_symbol("_clock_port")
+        clock_port = self.emu.get_symbol("_clock_port")
         self.emu.write_u32(clock_port.address, self.MACH_PORT_CLOCK)
 
     def _init_lib_system_pthread(self):
@@ -455,20 +455,20 @@ class IosOs(BaseOs):
         self.emu.write_pointer(main_thread + 0xB0, STACK_ADDRESS)
         self.emu.write_pointer(main_thread + 0xE0, STACK_ADDRESS + STACK_SIZE)
 
-        main_thread_ptr = self.emu.find_symbol("__main_thread_ptr")
+        main_thread_ptr = self.emu.get_symbol("__main_thread_ptr")
         self.emu.write_pointer(main_thread_ptr.address, main_thread)
 
         self.emu.write_pointer(main_thread, main_thread)
 
-        pthread_ptr_munge_token = self.emu.find_symbol("__pthread_ptr_munge_token")
+        pthread_ptr_munge_token = self.emu.get_symbol("__pthread_ptr_munge_token")
         self.emu.write_pointer(pthread_ptr_munge_token.address, 0)
 
-        pthread_supported_features = self.emu.find_symbol(
+        pthread_supported_features = self.emu.get_symbol(
             "___pthread_supported_features"
         )
         self.emu.write_u32(pthread_supported_features.address, 0x50)
 
-        mach_task_self = self.emu.find_symbol("_mach_task_self_")
+        mach_task_self = self.emu.get_symbol("_mach_task_self_")
         self.emu.write_u32(mach_task_self.address, self.MACH_PORT_TASK)
 
     def _init_lib_xpc(self):
@@ -477,19 +477,19 @@ class IosOs(BaseOs):
 
     def _init_lib_objc(self):
         """Initialize `libobjc.A.dylib`."""
-        prototypes = self.emu.find_symbol("__ZL10prototypes")
+        prototypes = self.emu.get_symbol("__ZL10prototypes")
         self.emu.write_u64(prototypes.address, 0)
 
-        gdb_objc_realized_classes = self.emu.find_symbol("_gdb_objc_realized_classes")
+        gdb_objc_realized_classes = self.emu.get_symbol("_gdb_objc_realized_classes")
         protocolsv_ret = self.emu.call_symbol("__ZL9protocolsv")
 
         self.emu.write_pointer(gdb_objc_realized_classes.address, protocolsv_ret)
 
-        opt = self.emu.find_symbol("__ZL3opt")
+        opt = self.emu.get_symbol("__ZL3opt")
         self.emu.write_pointer(opt.address, 0)
 
         # Disable pre-optimization
-        disable_preopt = self.emu.find_symbol("_DisablePreopt")
+        disable_preopt = self.emu.get_symbol("_DisablePreopt")
         self.emu.write_u8(disable_preopt.address, 1)
 
         self.emu.call_symbol("__objc_init")
@@ -507,18 +507,18 @@ class IosOs(BaseOs):
     def _init_system_symbols(self):
         """Initialize the values of system symbols."""
         # libsandbox.dylib
-        amkrtemp_sentinel = self.emu.find_symbol("__amkrtemp.sentinel")
+        amkrtemp_sentinel = self.emu.get_symbol("__amkrtemp.sentinel")
         self.emu.write_pointer(
             amkrtemp_sentinel.address,
             self.emu.create_string(""),
         )
 
         # CoreFoundation
-        is_cf_prefs_d = self.emu.find_symbol("_isCFPrefsD")
+        is_cf_prefs_d = self.emu.get_symbol("_isCFPrefsD")
         self.emu.write_u8(is_cf_prefs_d.address, 1)
 
         # BackBoardServices
-        bks_hid_sever_port = self.emu.find_symbol("_BKSHIDServerPort")
+        bks_hid_sever_port = self.emu.get_symbol("_BKSHIDServerPort")
         self.emu.write_u32(
             bks_hid_sever_port.address,
             self.MACH_PORT_BKS_HID_SERVER,
@@ -534,7 +534,7 @@ class IosOs(BaseOs):
         mach_header_ptr = module.dyld_info.image_header
         mach_header_ptrs = self.emu.create_buffer(self.emu.arch.addr_size)
 
-        mh_execute_header_pointer = self.emu.find_symbol("__mh_execute_header_pointer")
+        mh_execute_header_pointer = self.emu.get_symbol("__mh_execute_header_pointer")
 
         self.emu.write_pointer(mach_header_ptrs, mach_header_ptr)
         self.emu.write_pointer(mh_execute_header_pointer.address, mach_header_ptr)
@@ -546,10 +546,10 @@ class IosOs(BaseOs):
             self.emu.logger.warning("Initialize Objective-C failed.")
 
             # Release locks
-            runtime_lock = self.emu.find_symbol("_runtimeLock")
+            runtime_lock = self.emu.get_symbol("_runtimeLock")
             self.emu.write_u64(runtime_lock.address, 0)
 
-            lcl_rwlock = self.emu.find_symbol("_lcl_rwlock")
+            lcl_rwlock = self.emu.get_symbol("_lcl_rwlock")
             self.emu.write_u64(lcl_rwlock.address, 0)
 
     def search_module_binary(self, name: str) -> str:
@@ -689,11 +689,11 @@ class IosOs(BaseOs):
             progname = self.emu.create_buffer(8)
             self.emu.write_pointer(progname, progname_str)
 
-            progname_pointer = self.emu.find_symbol("___progname_pointer")
+            progname_pointer = self.emu.get_symbol("___progname_pointer")
             self.emu.write_pointer(progname_pointer.address, progname)
 
-            cf_progname = self.emu.find_symbol("___CFprogname")
-            cf_process_path = self.emu.find_symbol("___CFProcessPath")
+            cf_progname = self.emu.get_symbol("___CFprogname")
+            cf_process_path = self.emu.get_symbol("___CFProcessPath")
 
             self.emu.write_pointer(cf_progname.address, progname_str)
             self.emu.write_pointer(cf_process_path.address, process_path_str)
@@ -710,7 +710,7 @@ class IosOs(BaseOs):
 
     def fix_method_signature_rom_table(self):
         """Relocate references in `MethodSignatureROMTable`."""
-        table = self.emu.find_symbol("_MethodSignatureROMTable")
+        table = self.emu.get_symbol("_MethodSignatureROMTable")
 
         table_size = 7892
 
@@ -752,9 +752,9 @@ class IosOs(BaseOs):
         """Convert standard I/O file descriptors to FILE objects and assign them
         to target symbols.
         """
-        stdin_p = self.emu.find_symbol("___stdinp")
-        stdout_p = self.emu.find_symbol("___stdoutp")
-        stderr_p = self.emu.find_symbol("___stderrp")
+        stdin_p = self.emu.get_symbol("___stdinp")
+        stdout_p = self.emu.get_symbol("___stdoutp")
+        stderr_p = self.emu.get_symbol("___stderrp")
 
         if isinstance(self.stdin, int):
             stdin_fp = self._create_fp(self.stdin, "r")

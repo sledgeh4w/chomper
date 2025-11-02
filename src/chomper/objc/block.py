@@ -119,8 +119,9 @@ class ObjcBlock:
         self, invoke: int, desc: int, variables: Sequence[int]
     ) -> int:
         """Create `Block_layout` struct."""
+        global_block = self.emu.get_symbol("__NSConcreteGlobalBlock")
         st = BlockLayout(
-            isa=self.emu.find_symbol("__NSConcreteGlobalBlock").address,
+            isa=global_block.address,
             flags=0x50000000,
             reserved=0,
             invoke=invoke,

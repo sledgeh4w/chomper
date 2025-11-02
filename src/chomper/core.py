@@ -20,6 +20,7 @@ from unicorn import (
 
 from . import const
 from .arch import arm_arch, arm64_arch
+from .context import MemoryContextManager
 from .exceptions import EmulatorCrashed, SymbolMissing
 from .loader import Module, Symbol
 from .log import get_logger
@@ -204,12 +205,12 @@ class Chomper:
             b"\x4f\xf0\x80\x43"  # mov.w r3, #0x40000000
             b"\xe8\xee\x10\x3a"  # vmsr fpexc, r3
         )
-        addr = self.create_buffer(1024)
 
-        self.uc.mem_write(addr, inst_code)
-        self.uc.emu_start(addr | 1, addr + len(inst_code))
+        with self.mem_context() as ctx:
+            address = ctx.create_buffer(1024)
+            self.uc.mem_write(address, inst_code)
 
-        self.free(addr)
+            self.uc.emu_start(address | 1, address + len(inst_code))
 
     def _setup_emulator(self, enable_vfp: bool = True):
         """Setup emulator."""
@@ -251,26 +252,35 @@ class Chomper:
         # Pass type hints
         return 0
 
-    def find_module(self, name_or_addr: Union[str, int]) -> Optional[Module]:
-        """Find module by name or address."""
+    def find_module(self, name: str) -> Optional[Module]:
+        """Find module by name."""
         for module in self.modules:
-            if isinstance(name_or_addr, str):
-                if module.name == name_or_addr:
-                    return module
-            elif isinstance(name_or_addr, int):
-                if module.contains(name_or_addr):
-                    return module
-
+            if module.name == name:
+                return module
         return None
 
-    def find_symbol(self, symbol_name: str) -> Symbol:
-        """Find symbol from loaded modules.
+    def find_module_by_address(self, address: int) -> Optional[Module]:
+        """Find module by address."""
+        for module in self.modules:
+            if module.contains(address):
+                return module
+        return None
+
+    def find_symbol(self, name: str) -> Optional[Symbol]:
+        """Find symbol by name."""
+        try:
+            return self.get_symbol(name)
+        except SymbolMissing:
+            return None
+
+    def get_symbol(self, name: str) -> Symbol:
+        """Get symbol by name.
 
         Raises:
             SymbolMissingException: If symbol not found.
         """
-        if symbol_name in self._symbol_cache:
-            return self._symbol_cache[symbol_name]
+        if name in self._symbol_cache:
+            return self._symbol_cache[name]
 
         for module in self.modules:
             if module.name in self._cached_modules:
@@ -279,14 +289,14 @@ class Chomper:
             for symbol in module.symbols:
                 self._symbol_cache[symbol.name] = symbol
 
-                if symbol.name == symbol_name:
+                if symbol.name == name:
                     return symbol
 
-        raise SymbolMissing(f"{symbol_name} not found")
+        raise SymbolMissing(f"{name} not found")
 
     def debug_symbol(self, address: int) -> str:
-        """Format address to `libtest.so!0x1000` or `0x10000`."""
-        module = self.find_module(address)
+        """Format address to `libfoo.so!0x1000`."""
+        module = self.find_module_by_address(address)
 
         if module:
             offset = address - module.base
@@ -334,7 +344,7 @@ class Chomper:
 
     def add_hook(
         self,
-        symbol_or_addr: Union[int, str],
+        target: Union[int, str],
         callback: Optional[HookFuncCallable] = None,
         user_data: Optional[dict] = None,
         return_callback: Optional[HookFuncCallable] = None,
@@ -342,7 +352,7 @@ class Chomper:
         """Add hook to the emulator.
 
         Args:
-            symbol_or_addr: The symbol name or the address to hook. If this is ``str``,
+            target: The symbol name or the address to hook. If this is ``str``,
                 the function will look up symbol from loaded modules and use its
                 address to hook.
             callback: The callback function, same as callback of type ``UC_HOOK_CODE``
@@ -390,10 +400,10 @@ class Chomper:
 
             self.uc.reg_write(self.arch.reg_lr, user_data_["return_addr"])
 
-        if isinstance(symbol_or_addr, int):
-            hook_addr = symbol_or_addr
+        if isinstance(target, int):
+            hook_addr = target
         else:
-            symbol = self.find_symbol(symbol_or_addr)
+            symbol = self.get_symbol(target)
             hook_addr = symbol.address
 
         if self.arch == arm_arch:
@@ -448,7 +458,7 @@ class Chomper:
 
     def add_interceptor(
         self,
-        symbol_or_addr: Union[int, str],
+        target: Union[int, str],
         callback: HookFuncCallable,
         user_data: Optional[dict] = None,
     ) -> int:
@@ -469,7 +479,7 @@ class Chomper:
             if address == emu.uc.reg_read(emu.arch.reg_pc):
                 emu.uc.reg_write(emu.arch.reg_pc, emu.uc.reg_read(emu.arch.reg_lr))
 
-        return self.add_hook(symbol_or_addr, decorator, user_data)
+        return self.add_hook(target, decorator, user_data)
 
     def del_hook(self, handle: int):
         """Delete hook."""
@@ -924,7 +934,7 @@ class Chomper:
         """Call function with the symbol name."""
         self.logger.info(f'Call symbol "{symbol_name}"')
 
-        symbol = self.find_symbol(symbol_name)
+        symbol = self.get_symbol(symbol_name)
         address = symbol.address
 
         return self._start_emulate(
@@ -948,3 +958,16 @@ class Chomper:
             va_list=va_list,
             return_type=return_type,
         )
+
+    def mem_context(self) -> MemoryContextManager:
+        """Automatically release memory allocated through the context.
+
+        Examples:
+
+        ```python
+        with emu.mem_context() as ctx:
+            # This memory does not require manual release
+            ctx.create_buffer(64)
+        ```
+        """
+        return MemoryContextManager(self)

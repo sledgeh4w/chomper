@@ -46,13 +46,11 @@ class ObjcType:
         objc_type_class: Type[ObjcTypeT],
         *args,
     ) -> ObjcTypeT:
-        name_buf = self._emu.create_string(name)
+        with self._emu.mem_context() as ctx:
+            name_buf = ctx.create_string(name)
 
-        try:
             ivar_value = self._emu.call_symbol(get_func, self.value, name_buf, *args)
             return objc_type_class(self._runtime, ivar_value)
-        finally:
-            self._emu.free(name_buf)
 
     def _copy_list(
         self,
@@ -281,9 +279,10 @@ class ObjcMethod(ObjcType):
         argument_types = []
 
         dst_len = 256
-        dst = self._emu.create_buffer(dst_len)
 
-        try:
+        with self._emu.mem_context() as ctx:
+            dst = ctx.create_buffer(dst_len)
+
             for index in range(number_of_arguments):
                 self._emu.call_symbol(
                     "_method_getArgumentType", self.value, index, dst, dst_len
@@ -293,19 +292,16 @@ class ObjcMethod(ObjcType):
                 argument_types.append(argument_type)
 
             return tuple(argument_types)
-        finally:
-            self._emu.free(dst)
 
     @cached_property
     def return_type(self) -> str:
         dst_len = 256
-        dst = self._emu.create_buffer(dst_len)
 
-        try:
+        with self._emu.mem_context() as ctx:
+            dst = ctx.create_buffer(dst_len)
+
             self._emu.call_symbol("_method_getReturnType", self.value, dst, dst_len)
             return self._emu.read_string(dst)
-        finally:
-            self._emu.free(dst)
 
 
 class ObjcIvar(ObjcType):
