@@ -329,7 +329,7 @@ class MachoLoader(BaseLoader):
     def _find_load_base(self, binary: lief.MachO.Binary) -> int:
         """Find the lowest address to load a module."""
         mapped_regions = list(
-            chain.from_iterable((module.map_regions for module in self.emu.modules))
+            chain.from_iterable((module.regions for module in self.emu.modules))
         )
         regions = self._map_segments(
             binary,
@@ -372,8 +372,8 @@ class MachoLoader(BaseLoader):
         # Make module memory distribution more compact
         module_base -= aligned(self._get_lowest_address(binary), 1024)
 
-        map_regions = self._map_segments(binary, module_base)
-        size = (map_regions[-1].end - module_base) if map_regions else 0
+        regions = self._map_segments(binary, module_base)
+        size = (regions[-1].end - module_base) if regions else 0
 
         symbols = self._load_symbols(binary, module_base)
         symbols = self._process_symbol_aliases(symbols)
@@ -417,7 +417,7 @@ class MachoLoader(BaseLoader):
             base=module_base + image_base,
             size=size - image_base,
             symbols=symbols,
-            map_regions=map_regions,
+            regions=regions,
             init_array=init_array,
             dyld_info=dyld_info,
         )

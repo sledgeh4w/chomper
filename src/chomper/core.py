@@ -581,7 +581,7 @@ class Chomper:
 
     def add_inst_trace(self, module: Module):
         """Add instruction trace for the module."""
-        for region in module.map_regions:
+        for region in module.regions:
             self.uc.hook_add(
                 UC_HOOK_CODE,
                 self.trace_inst_callback,
