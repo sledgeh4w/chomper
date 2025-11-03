@@ -5,11 +5,11 @@
 ![PyPI - Python Version](https://img.shields.io/pypi/pyversions/chomper)
 [![GitHub license](https://img.shields.io/github/license/sledgeh4w/chomper)](https://github.com/sledgeh4w/chomper/blob/main/LICENSE)
 
-Chomper is a lightweight emulation framework based on [Unicorn](https://github.com/unicorn-engine/unicorn). It is mainly used to emulate security algorithms of iOS executables and libraries. In addition, it also provides limited support for Android native libraries.
+Chomper is a lightweight emulation framework based on [Unicorn](https://github.com/unicorn-engine/unicorn). It is mainly used to emulate security algorithms in iOS executables and libraries. In addition, it also provides limited support for Android native libraries.
 
 ## Features
 
-- Basic emulation for ELF and Mach-O
+- Emulation of ELF and Mach-O binaries
 - Support for a subset of iOS system libraries (from iOS 14.4.0)
 
 ## Requirements
@@ -19,20 +19,25 @@ Chomper is a lightweight emulation framework based on [Unicorn](https://github.c
 
 ## Installation
 
-Clone the repository to use the latest version (recommended):
+Use the latest version on GitHub:
 
 ```
-$ git clone https://github.com/sledgeh4w/chomper ; cd chomper
-$ pip install .
+$ pip install git+https://github.com/sledgeh4w/chomper.git
 ```
 
-Using the version on PyPI:
+Use the version on PyPI:
 
 ```
 $ pip install chomper
 ```
 
 ## Usage
+
+Prepare rootfs first.
+
+```
+$ git clone https://github.com/sledgeh4w/rootfs.git
+```
 
 Emulate iOS executables.
 
