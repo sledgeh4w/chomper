@@ -719,7 +719,7 @@ def handle_sys_sysctl(emu: Chomper):
         elif isinstance(result, str):
             emu.write_string(oldp, result)
         elif isinstance(result, int):
-            emu.write_u32(oldp, result)
+            emu.write_u64(oldp, result)
 
     if oldlenp:
         if isinstance(result, ctypes.Structure):
@@ -727,7 +727,7 @@ def handle_sys_sysctl(emu: Chomper):
         elif isinstance(result, str):
             emu.write_u32(oldlenp, len(result))
         elif isinstance(result, int):
-            emu.write_u32(oldlenp, 4)
+            emu.write_u32(oldlenp, 8)
 
     return 0
 
@@ -783,7 +783,7 @@ def handle_sys_sysctlbyname(emu: Chomper):
         elif isinstance(result, str):
             emu.write_string(oldp, result)
         elif isinstance(result, int):
-            emu.write_u32(oldp, result)
+            emu.write_u64(oldp, result)
 
     if oldlenp:
         if isinstance(result, ctypes.Structure):
@@ -791,7 +791,7 @@ def handle_sys_sysctlbyname(emu: Chomper):
         elif isinstance(result, str):
             emu.write_u32(oldlenp, len(result))
         elif isinstance(result, int):
-            emu.write_u32(oldlenp, 4)
+            emu.write_u32(oldlenp, 8)
 
     return 0
 
