@@ -602,11 +602,20 @@ class IosOs(BaseOs):
             module = self.emu.load_module(
                 module_file=module_file,
                 exec_objc_init=False,
+                exec_init_array=False,
             )
 
             # Fixup must be executed before initializing Objective-C
             fixer = SystemModuleFixer(self.emu, module)
             fixer.fixup_all()
+
+            # Execute initialization functions after fixup
+            if module.init_array:
+                init_array = [
+                    module.base - module.dyld_info.image_base + init_func
+                    for init_func in module.init_array
+                ]
+                self.emu.exec_init_array(init_array)
 
             # Initialize system modules
             if name == "libsystem_kernel.dylib":

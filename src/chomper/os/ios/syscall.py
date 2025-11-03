@@ -703,6 +703,7 @@ def handle_sys_fcntl(emu: Chomper):
 def handle_sys_sysctl(emu: Chomper):
     name = emu.get_arg(0)
     oldp = emu.get_arg(2)
+    oldlenp = emu.get_arg(3)
 
     ctl_type = emu.read_u32(name)
     ctl_ident = emu.read_u32(name + 4)
@@ -712,12 +713,21 @@ def handle_sys_sysctl(emu: Chomper):
         emu.logger.warning(f"Unhandled sysctl command: {ctl_type}, {ctl_ident}")
         return -1
 
-    if isinstance(result, ctypes.Structure):
-        emu.write_bytes(oldp, struct_to_bytes(result))
-    elif isinstance(result, str):
-        emu.write_string(oldp, result)
-    elif isinstance(result, int):
-        emu.write_u64(oldp, result)
+    if oldp:
+        if isinstance(result, ctypes.Structure):
+            emu.write_bytes(oldp, struct_to_bytes(result))
+        elif isinstance(result, str):
+            emu.write_string(oldp, result)
+        elif isinstance(result, int):
+            emu.write_u32(oldp, result)
+
+    if oldlenp:
+        if isinstance(result, ctypes.Structure):
+            emu.write_u32(oldlenp, ctypes.sizeof(result))
+        elif isinstance(result, str):
+            emu.write_u32(oldlenp, len(result))
+        elif isinstance(result, int):
+            emu.write_u32(oldlenp, 4)
 
     return 0
 
@@ -762,20 +772,26 @@ def handle_sys_sysctlbyname(emu: Chomper):
     oldp = emu.get_arg(2)
     oldlenp = emu.get_arg(3)
 
-    if not oldp or not oldlenp:
-        return 0
-
     result = sysctlbyname(name)
     if result is None:
         emu.logger.warning(f"Unhandled sysctl command: {name}")
         return -1
 
-    if isinstance(result, ctypes.Structure):
-        emu.write_bytes(oldp, struct_to_bytes(result))
-    elif isinstance(result, str):
-        emu.write_string(oldp, result)
-    elif isinstance(result, int):
-        emu.write_u64(oldp, result)
+    if oldp:
+        if isinstance(result, ctypes.Structure):
+            emu.write_bytes(oldp, struct_to_bytes(result))
+        elif isinstance(result, str):
+            emu.write_string(oldp, result)
+        elif isinstance(result, int):
+            emu.write_u32(oldp, result)
+
+    if oldlenp:
+        if isinstance(result, ctypes.Structure):
+            emu.write_u32(oldlenp, ctypes.sizeof(result))
+        elif isinstance(result, str):
+            emu.write_u32(oldlenp, len(result))
+        elif isinstance(result, int):
+            emu.write_u32(oldlenp, 4)
 
     return 0
 
@@ -1503,6 +1519,7 @@ def handle_mach_msg_trap(emu: Chomper):
 
             port_descriptor = MachMsgPortDescriptorT(
                 name=semaphore,
+                disposition=const.MACH_MSG_TYPE_MOVE_SEND,
                 type=const.MACH_MSG_PORT_DESCRIPTOR,
             )
 
@@ -1638,12 +1655,17 @@ def handle_mach_msg_trap(emu: Chomper):
                     msgh_descriptor_count=1,
                 )
 
+                port_descriptor = MachMsgPortDescriptorT(
+                    name=object_name,
+                    disposition=const.MACH_MSG_TYPE_MOVE_SEND,
+                    type=const.MACH_MSG_PORT_DESCRIPTOR,
+                )
+
                 emu.write_bytes(
                     msg_ptr,
                     struct_to_bytes(msg_header)
                     + struct_to_bytes(msg_body)
-                    + int_to_bytes(object_name, 8)
-                    + int_to_bytes(0x110000, 4)
+                    + struct_to_bytes(port_descriptor)
                     + int_to_bytes(0, 8)
                     + int_to_bytes(out_address, 8)
                     + int_to_bytes(size, 8)

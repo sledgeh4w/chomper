@@ -55,7 +55,9 @@ class Segment:
 class DyldInfo:
     image_base: int
     image_header: int
+
     lazy_bindings: List[Binding]
+
     shared_segments: List[Segment]
 
 
@@ -66,7 +68,7 @@ class Module:
         base: int,
         size: int,
         symbols: List[Symbol],
-        map_regions: List[AddressRegion],
+        regions: List[AddressRegion],
         init_array: List[int],
         dyld_info: Optional[DyldInfo] = None,
     ):
@@ -75,7 +77,7 @@ class Module:
         self._size = size
 
         self._symbols = symbols
-        self._map_regions = map_regions
+        self._regions = regions
         self._init_array = init_array
 
         self._dyld_info = dyld_info
@@ -101,8 +103,8 @@ class Module:
         return self._symbols
 
     @property
-    def map_regions(self) -> List[AddressRegion]:
-        return self._map_regions
+    def regions(self) -> List[AddressRegion]:
+        return self._regions
 
     @property
     def init_array(self) -> List[int]:
@@ -118,7 +120,7 @@ class Module:
         return self._dyld_info
 
     def contains(self, address: int) -> bool:
-        for region in self.map_regions:
+        for region in self.regions:
             if region.start <= address < region.end:
                 return True
         return False
