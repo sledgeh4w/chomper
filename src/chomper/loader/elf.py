@@ -157,8 +157,8 @@ class ELFLoader(BaseLoader):
             self.emu.logger.info(f'Load module "{module_name}"')
 
             # Map segments into memory
-            map_regions = self._map_segments(elffile, module_base)
-            size = (map_regions[-1].end - module_base) if map_regions else 0
+            regions = self._map_segments(elffile, module_base)
+            size = (regions[-1].end - module_base) if regions else 0
 
             symbols = self._load_symbols(elffile, module_base)
 
@@ -174,6 +174,6 @@ class ELFLoader(BaseLoader):
                 base=module_base,
                 size=size,
                 symbols=symbols,
-                map_regions=map_regions,
+                regions=regions,
                 init_array=init_array,
             )
