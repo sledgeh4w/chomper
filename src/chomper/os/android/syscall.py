@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-import os
 from functools import wraps
 from typing import Dict, Optional, TYPE_CHECKING
 
 from chomper.exceptions import SystemOperationFailed
 from chomper.typing import SyscallHandleCallable
-from chomper.os.base import SyscallError
+from chomper.os.posix import SyscallError
 from chomper.os.ios import syscall as ios_syscall
 
 from . import const
@@ -32,9 +31,9 @@ def get_syscall_handlers() -> Dict[int, SyscallHandleCallable]:
     return syscall_handlers.copy()
 
 
-def get_syscall_name(syscall_no: int) -> Optional[str]:
-    """Get name of the system call."""
-    return syscall_names.get(syscall_no)
+def get_syscall_names() -> Dict[int, str]:
+    """Get the system call name mapping."""
+    return syscall_names.copy()
 
 
 def register_syscall_handler(syscall_no: int, syscall_name: Optional[str] = None):
@@ -73,7 +72,7 @@ def register_syscall_handler(syscall_no: int, syscall_name: Optional[str] = None
     return wrapper
 
 
-def permission_denied():
+def raise_permission_denied():
     raise SystemOperationFailed("No permission", SyscallError.EPERM)
 
 
@@ -81,26 +80,14 @@ def permission_denied():
 def handle_nr_getcwd(emu: Chomper):
     buf = emu.get_arg(0)
 
-    emu.write_string(buf, emu.os.get_working_dir())
+    emu.write_string(buf, emu.os.getcwd())
 
     return 0
 
 
 @register_syscall_handler(const.NR_FCNTL, "NR_fcntl")
 def handle_nr_fcntl(emu: Chomper):
-    fd = emu.get_arg(0)
-    cmd = emu.get_arg(1)
-    # arg = emu.get_arg(2)
-
-    if cmd == const.F_GETFL:
-        if fd in (emu.os.stdin,):
-            return os.O_RDONLY
-        elif fd in (emu.os.stdout, emu.os.stderr):
-            return os.O_WRONLY
-    else:
-        emu.logger.warning(f"Unhandled fcntl command: {cmd}")
-
-    return 0
+    return ios_syscall.handle_sys_fcntl(emu)
 
 
 @register_syscall_handler(const.NR_IOCTL, "NR_ioctl")
@@ -293,7 +280,7 @@ def handle_nr_clock_nanosleep(emu: Chomper):
 
 @register_syscall_handler(const.NR_SETRESGID, "NR_setresgid")
 def handle_nr_setresgid(emu: Chomper):
-    permission_denied()
+    raise_permission_denied()
 
     return 0
 
@@ -303,7 +290,7 @@ def handle_nr_getpgid(emu: Chomper):
     pid = emu.get_arg(0)
 
     if pid != 0:
-        permission_denied()
+        raise_permission_denied()
 
     return 1
 

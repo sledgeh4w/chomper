@@ -1,7 +1,7 @@
 from typing import Any, Dict, Optional, Set
 
 
-class ResourceManager:
+class HandleManager:
     """Manage system resource handles.
 
     Args:

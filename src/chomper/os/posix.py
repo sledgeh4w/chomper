@@ -2,12 +2,11 @@ from __future__ import annotations
 
 import os
 import posixpath
-import random
 import socket
 import sys
 import shutil
 import time
-from abc import ABC, abstractmethod
+from abc import ABC
 from enum import Enum
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Type, TYPE_CHECKING
@@ -16,8 +15,8 @@ from chomper.exceptions import SystemOperationFailed
 from chomper.log import get_logger
 from chomper.utils import log_call, safe_join, to_signed
 
-from .device import DeviceFile, NullDevice, RandomDevice, UrandomDevice
-from .resource import ResourceManager
+from .device import DeviceFile
+from .handle import HandleManager
 
 if TYPE_CHECKING:
     from chomper.core import Chomper
@@ -42,7 +41,7 @@ class FdType(Enum):
 
 
 class PosixOs(ABC):
-    """The POSIX inter.
+    """Provide POSIX interface.
 
     Args:
         emu: The emulator instance.
@@ -54,15 +53,18 @@ class PosixOs(ABC):
     FD_START_VALUE = 1
     FD_MAX_NUM = 10000
 
-    AT_FDCWD: Optional[int] = None
+    AT_FDCWD: int
 
-    AF_UNIX: Optional[int] = None
-    AF_INET: Optional[int] = None
+    AF_UNIX = 1
+    AF_INET = 2
 
-    SOCK_STREAM: Optional[int] = None
+    SOCK_STREAM = 1
 
-    IPPROTO_IP: Optional[int] = None
-    IPPROTO_ICMP: Optional[int] = None
+    IPPROTO_IP = 0
+    IPPROTO_ICMP = 1
+
+    F_GETFL = 3
+    F_GETPATH = 50
 
     def __init__(self, emu: Chomper, rootfs_path: Optional[str] = None):
         self.emu = emu
@@ -70,32 +72,40 @@ class PosixOs(ABC):
 
         self.rootfs_path = rootfs_path
 
+        # Current working directory
         self._working_dir = "/"
 
+        # Forward path
         self._path_map: Dict[str, str] = {}
 
-        self._symbolic_links: Dict[str, str] = {}
-
-        self.pid = random.randint(10000, 20000)
-        self.uid = random.randint(10000, 20000)
-
-        self.tid = 1000
-
-        self._devices: Dict[str, Type[DeviceFile]] = {}
-
-        # File descriptors
-        self._fd_res = ResourceManager(
+        # File descriptor
+        self._file_manager = HandleManager(
             start_value=self.FD_START_VALUE,
             max_num=self.FD_MAX_NUM,
         )
 
-        if sys.stdin.isatty():
-            self.stdin = self._wrap_real_fd(sys.stdin.fileno())
-        else:
-            self.stdin = 0
+        # Device file
+        self._devices: Dict[str, Type[DeviceFile]] = {}
 
-        self.stdout = self._wrap_real_fd(sys.stdout.fileno())
-        self.stderr = self._wrap_real_fd(sys.stderr.fileno())
+        # Symbolic link
+        self._symbolic_links: Dict[str, str] = {}
+
+        # Standard I/O
+        if sys.stdin.isatty():
+            self._stdin_fd = self._new_fd(FdType.FILE, real_fd=sys.stdin.fileno())
+        else:
+            self._stdin_fd = 0
+
+        self._stdout_fd = self._new_fd(FdType.FILE, real_fd=sys.stdout.fileno())
+        self._stderr_fd = self._new_fd(FdType.FILE, real_fd=sys.stderr.fileno())
+
+    def get_errno(self) -> int:
+        """Get the `errno`."""
+        raise NotImplementedError("get_errno")
+
+    def set_errno(self, value: int):
+        """Set the `errno`."""
+        raise NotImplementedError("set_errno")
 
     def get_working_dir(self) -> str:
         """Get current working directory."""
@@ -181,63 +191,90 @@ class PosixOs(ABC):
         """Set a symbolic link to specified path."""
         self._symbolic_links[src_path] = dst_path
 
-    def _new_fd(self, fd_type: FdType, path: str = "") -> int:
+    def _new_fd(self, fd_type: FdType, **kwargs) -> int:
         """Create a new file descriptor."""
         if fd_type not in (value for value in FdType):
             return 0
 
-        fd = self._fd_res.new()
+        fd = self._file_manager.new()
         if not fd:
             return 0
 
-        self._fd_res.set_prop(fd, "type", fd_type)
-        self._fd_res.set_prop(fd, "path", path)
+        self._file_manager.set_prop(fd, "type", fd_type)
+
+        for key, value in kwargs.items():
+            self._file_manager.set_prop(fd, key, value)
 
         return fd
 
-    def _get_real_fd(self, fd: int) -> int:
-        real_fd = self._fd_res.get_prop(fd, "fd")
-        if not real_fd:
-            self._raise_bad_fd_exception(fd)
+    def _is_file_fd(self, fd: int) -> bool:
+        return self._file_manager.get_prop(fd, "type") == FdType.FILE
+
+    def _is_dir_fd(self, fd: int) -> bool:
+        return self._file_manager.get_prop(fd, "type") == FdType.DIR
+
+    def _is_dev_fd(self, fd: int) -> bool:
+        return self._file_manager.get_prop(fd, "type") == FdType.DEV
+
+    def _is_sock_fd(self, fd: int) -> bool:
+        return self._file_manager.get_prop(fd, "type") == FdType.SOCK
+
+    def _get_fd_real_fd(self, fd: int) -> int:
+        real_fd = self._file_manager.get_prop(fd, "real_fd")
 
         assert isinstance(real_fd, int)
 
         return real_fd
 
-    def _wrap_real_fd(self, fd: int) -> int:
-        file_fd = self._new_fd(FdType.FILE)
-        self._fd_res.set_prop(file_fd, "fd", fd)
-        return file_fd
+    def _get_fd_path(self, fd: int) -> str:
+        path = self._file_manager.get_prop(fd, "path")
 
-    def _is_dir_fd(self, fd: int) -> bool:
-        return self._fd_res.get_prop(fd, "type") == FdType.DIR
-
-    def get_dir_path(self, fd: int) -> str:
-        if not self._is_dir_fd(fd):
-            self._raise_bad_fd_exception(fd)
-
-        path = self._fd_res.get_prop(fd, "path")
         assert isinstance(path, str)
 
         return path
 
-    @staticmethod
-    def _construct_stat64(st: os.stat_result) -> bytes:
-        """Construct stat64 struct based on `stat_result`."""
-        return NotImplemented
+    def _get_fd_device(self, fd: int) -> DeviceFile:
+        device = self._file_manager.get_prop(fd, "device")
 
-    @staticmethod
-    def _construct_dev_stat64() -> bytes:
-        """Construct stat64 struct for device file."""
-        return NotImplemented
+        assert isinstance(device, DeviceFile)
 
-    @staticmethod
-    def _construct_statfs64() -> bytes:
-        """Construct statfs64 struct."""
-        return NotImplemented
+        return device
 
-    def _raise_bad_fd_exception(self, fd: int):
-        raise SystemOperationFailed(f"Bad file descriptor: {fd}", SyscallError.EBADF)
+    def _get_fd_sock(self, fd: int) -> socket.socket:
+        sock = self._file_manager.get_prop(fd, "sock")
+
+        assert isinstance(sock, socket.socket)
+
+        return sock
+
+    def _device_read(self, fd: int, size: int) -> bytes:
+        device = self._get_fd_device(fd)
+        if not device.readable():
+            raise SystemOperationFailed("Not support read", SyscallError.EBADF)
+
+        result = device.read(size)
+        if result is None:
+            return b""
+
+        return result
+
+    def _device_write(self, fd: int, data: bytes) -> int:
+        device = self._get_fd_device(fd)
+        if not device.writable():
+            raise SystemOperationFailed("Not support write", SyscallError.EBADF)
+
+        result = device.write(data)
+        if result is None:
+            return 0
+
+        return result
+
+    def _device_seek(self, fd: int, offset: int, whence: int) -> int:
+        device = self._get_fd_device(fd)
+        if not device.seekable():
+            raise SystemOperationFailed("Not support seek", SyscallError.EBADF)
+
+        return device.seek(offset, whence)
 
     def _check_fd(self, fd: int):
         """Check file descriptor.
@@ -245,15 +282,14 @@ class PosixOs(ABC):
         Raises:
             BadFileDescriptor: If bad file descriptor.
         """
-        if fd in (self.stdin, self.stdout, self.stderr):
-            return
-
-        if not self._fd_res.validate(fd):
-            self._raise_bad_fd_exception(fd)
+        if not self._file_manager.validate(fd):
+            raise SystemOperationFailed(
+                f"Bad file descriptor: {fd}", SyscallError.EBADF
+            )
 
     @staticmethod
-    def _prepare_flags(flags: int) -> int:
-        """Create flags that will be actually passed into functions of the os module.
+    def _resolve_flags(flags: int) -> int:
+        """Create flags that will be actually passed into the host machine.
 
         On Windows, the meaning of flags is different with Unix-like operating systems.
         """
@@ -285,11 +321,16 @@ class PosixOs(ABC):
         """Returns the full path constructed by combining with `dir_fd`."""
         if path.startswith("/"):
             return path
-        elif self.AT_FDCWD is not None and dir_fd == to_signed(self.AT_FDCWD, size=4):
+        elif dir_fd == to_signed(self.AT_FDCWD, size=4):
             return posixpath.join(self._working_dir, path)
         else:
-            dir_path = self.get_dir_path(dir_fd)
+            dir_path = self._get_fd_path(dir_fd)
             return posixpath.join(dir_path, path)
+
+    def _resolve_path(self, path: str) -> str:
+        if path.startswith("/"):
+            return path
+        return posixpath.join(self._working_dir, path)
 
     def mount_device(self, path: str, dev_cls: Type[DeviceFile]):
         """Mount device file to virtual file system."""
@@ -299,37 +340,52 @@ class PosixOs(ABC):
         """Unmount device file."""
         del self._devices[path]
 
-    @abstractmethod
-    def get_errno(self) -> int:
-        """Get the `errno`."""
-        pass
+    def _create_environ(self, text: str) -> int:
+        """Create the structure that contains environment variables."""
+        lines = text.split("\n")
 
-    @abstractmethod
-    def set_errno(self, value: int):
-        """Set the `errno`."""
-        pass
+        size = self.emu.arch.addr_size * (len(lines) + 1)
+        buffer = self.emu.create_buffer(size)
+
+        for index, line in enumerate(lines):
+            address = buffer + self.emu.arch.addr_size * index
+            self.emu.write_pointer(address, self.emu.create_string(line))
+
+        self.emu.write_pointer(buffer + size - self.emu.arch.addr_size, 0)
+
+        return buffer
+
+    def _create_stat(self, st: os.stat_result) -> bytes:
+        raise NotImplementedError("_create_stat")
+
+    def _create_device_stat(self) -> bytes:
+        raise NotImplementedError("_create_device_stat")
+
+    def _create_statfs(self) -> bytes:
+        raise NotImplementedError("_create_statfs")
 
     def _open(self, path: str, flags: int, mode: int) -> int:
         real_path = self._get_real_path(path)
-        flags = self._prepare_flags(flags)
+        flags = self._resolve_flags(flags)
         absolute_path = self._get_absolute_path(path)
 
         if os.path.isdir(real_path):
-            dir_fd = self._new_fd(FdType.DIR, absolute_path)
-            return dir_fd
+            return self._new_fd(FdType.DIR, path=absolute_path)
 
         if path in self._devices:
-            dev_fd = self._new_fd(FdType.DEV, absolute_path)
             device = self._devices[path]()
-            self._fd_res.set_prop(dev_fd, "device", device)
-            return dev_fd
+            return self._new_fd(
+                FdType.DEV,
+                path=absolute_path,
+                device=device,
+            )
 
-        fd = os.open(real_path, flags, mode)
-
-        file_fd = self._new_fd(FdType.FILE, absolute_path)
-        self._fd_res.set_prop(file_fd, "fd", fd)
-
-        return file_fd
+        real_fd = os.open(real_path, flags, mode)
+        return self._new_fd(
+            FdType.FILE,
+            path=absolute_path,
+            real_fd=real_fd,
+        )
 
     def _link(self, src_path: str, dst_path: str):
         self.set_symbolic_link(src_path, dst_path)
@@ -355,7 +411,7 @@ class PosixOs(ABC):
 
     def _stat(self, path: str) -> bytes:
         real_path = self._get_real_path(path)
-        return self._construct_stat64(os.stat(real_path))
+        return self._create_stat(os.stat(real_path))
 
     def _rename(self, old: str, new: str):
         old = self._get_real_path(old)
@@ -379,47 +435,6 @@ class PosixOs(ABC):
     def _chown(self, path: str, uid: int, gid: int):
         pass
 
-    def _get_fd_device(self, fd: int) -> DeviceFile:
-        device = self._fd_res.get_prop(fd, "device")
-        if not device:
-            self._raise_bad_fd_exception(fd)
-
-        assert isinstance(device, DeviceFile)
-
-        return device
-
-    def _is_dev_fd(self, fd: int) -> bool:
-        return self._fd_res.get_prop(fd, "type") == FdType.DEV
-
-    def _device_read(self, fd: int, size: int) -> bytes:
-        device = self._get_fd_device(fd)
-        if not device.readable():
-            raise SystemOperationFailed("Not support read", SyscallError.EBADF)
-
-        result = device.read(size)
-        if result is None:
-            return b""
-
-        return result
-
-    def _device_write(self, fd: int, data: bytes) -> int:
-        device = self._get_fd_device(fd)
-        if not device.writable():
-            raise SystemOperationFailed("Not support write", SyscallError.EBADF)
-
-        result = device.write(data)
-        if result is None:
-            return 0
-
-        return result
-
-    def _device_seek(self, fd: int, offset: int, whence: int) -> int:
-        device = self._get_fd_device(fd)
-        if not device.seekable():
-            raise SystemOperationFailed("Not support seek", SyscallError.EBADF)
-
-        return device.seek(offset, whence)
-
     @log_call
     def read(self, fd: int, size: int) -> bytes:
         self._check_fd(fd)
@@ -427,7 +442,7 @@ class PosixOs(ABC):
         if self._is_dev_fd(fd):
             return self._device_read(fd, size)
 
-        real_fd = self._get_real_fd(fd)
+        real_fd = self._get_fd_real_fd(fd)
         return os.read(real_fd, size)
 
     @log_call
@@ -439,7 +454,7 @@ class PosixOs(ABC):
         if self._is_dev_fd(fd):
             return self._device_write(fd, data)
 
-        real_fd = self._get_real_fd(fd)
+        real_fd = self._get_fd_real_fd(fd)
         return os.write(real_fd, data)
 
     @log_call
@@ -455,24 +470,22 @@ class PosixOs(ABC):
     def close(self, fd: int) -> int:
         self._check_fd(fd)
 
-        sock = self._fd_res.get_prop(fd, "sock")
-        if sock:
+        if self._is_sock_fd(fd):
+            sock = self._get_fd_sock(fd)
             sock.close()
 
-        real_fd = self._fd_res.get_prop(fd, "fd")
-        if real_fd:
+        if self._is_file_fd(fd):
+            real_fd = self._get_fd_real_fd(fd)
             os.close(real_fd)
 
-        self._fd_res.free(fd)
+        self._file_manager.free(fd)
 
         return 0
 
     @log_call
     def link(self, src_path: str, dst_path: str):
-        if not src_path.startswith("/"):
-            src_path = posixpath.join(self._working_dir, src_path)
-        if not dst_path.startswith("/"):
-            dst_path = posixpath.join(self._working_dir, dst_path)
+        src_path = self._resolve_path(src_path)
+        dst_path = self._resolve_path(dst_path)
 
         self._link(src_path, dst_path)
 
@@ -485,10 +498,8 @@ class PosixOs(ABC):
 
     @log_call
     def symlink(self, src_path: str, dst_path: str):
-        if not src_path.startswith("/"):
-            src_path = posixpath.join(self._working_dir, src_path)
-        if not dst_path.startswith("/"):
-            dst_path = posixpath.join(self._working_dir, dst_path)
+        src_path = self._resolve_path(src_path)
+        dst_path = self._resolve_path(dst_path)
 
         self._symlink(src_path, dst_path)
 
@@ -530,30 +541,29 @@ class PosixOs(ABC):
     def lseek(self, fd: int, offset: int, whence: int) -> int:
         self._check_fd(fd)
 
-        if self._fd_res.get_prop(fd, "type") == FdType.DEV:
+        if self._is_dev_fd(fd):
             return self._device_seek(fd, offset, whence)
 
-        real_fd = self._get_real_fd(fd)
+        real_fd = self._get_fd_real_fd(fd)
         return os.lseek(real_fd, offset, whence)
 
     @log_call
     def stat(self, path: str) -> bytes:
-        real_path = self._get_real_path(path)
-        return self._construct_stat64(os.stat(real_path))
+        return self._stat(path)
 
     @log_call
     def fstat(self, fd: int) -> bytes:
-        if self._is_dir_fd(fd):
-            path = self.get_dir_path(fd)
-            return self.stat(path)
-
         self._check_fd(fd)
 
-        if self._is_dev_fd(fd):
-            return self._construct_dev_stat64()
+        if self._is_dir_fd(fd):
+            path = self._get_fd_path(fd)
+            return self._stat(path)
 
-        real_fd = self._get_real_fd(fd)
-        return self._construct_stat64(os.fstat(real_fd))
+        if self._is_dev_fd(fd):
+            return self._create_device_stat()
+
+        real_fd = self._get_fd_real_fd(fd)
+        return self._create_stat(os.fstat(real_fd))
 
     @log_call
     def fstatat(self, dir_fd: int, path: str) -> bytes:
@@ -562,25 +572,24 @@ class PosixOs(ABC):
 
     @log_call
     def lstat(self, path: str) -> bytes:
-        real_path = self._get_real_path(path)
-        return self._construct_stat64(os.lstat(real_path))
+        return self._stat(path)
 
     @log_call
     def statfs(self, path: str) -> bytes:
         if path:
             pass
-        return self._construct_statfs64()
+        return self._create_statfs()
 
     @log_call
     def fstatfs(self, fd: int) -> bytes:
         if fd:
             pass
-        return self._construct_statfs64()
+        return self._create_statfs()
 
     @log_call
     def fsync(self, fd: int):
         self._check_fd(fd)
-        real_fd = self._get_real_fd(fd)
+        real_fd = self._get_fd_real_fd(fd)
 
         os.fsync(real_fd)
 
@@ -621,7 +630,7 @@ class PosixOs(ABC):
     @log_call
     def pread(self, fd: int, size: int, offset: int) -> bytes:
         self._check_fd(fd)
-        real_fd = self._get_real_fd(fd)
+        real_fd = self._get_fd_real_fd(fd)
 
         pos = os.lseek(real_fd, 0, os.SEEK_CUR)
         os.lseek(real_fd, offset, os.SEEK_SET)
@@ -641,7 +650,7 @@ class PosixOs(ABC):
         if self._is_dev_fd(fd):
             return self._device_write(fd, data)
 
-        real_fd = self._get_real_fd(fd)
+        real_fd = self._get_fd_real_fd(fd)
 
         pos = os.lseek(real_fd, 0, os.SEEK_CUR)
         os.lseek(real_fd, offset, os.SEEK_SET)
@@ -666,6 +675,10 @@ class PosixOs(ABC):
         self._chmod(path, mode)
 
     @log_call
+    def getcwd(self) -> str:
+        return self.get_working_dir()
+
+    @log_call
     def chdir(self, path: str):
         self._chdir(path)
 
@@ -674,7 +687,7 @@ class PosixOs(ABC):
         if self._is_dev_fd(fd):
             raise SystemOperationFailed(f"Not a directory: {fd}", SyscallError.ENOTDIR)
 
-        self._chdir(self.get_dir_path(fd))
+        self._chdir(self._get_fd_path(fd))
 
     @log_call
     def chown(self, path: str, uid: int, gid: int):
@@ -739,10 +752,7 @@ class PosixOs(ABC):
 
         sock = socket.socket(domain, sock_type, protocol)
 
-        sock_fd = self._new_fd(FdType.SOCK)
-        self._fd_res.set_prop(sock_fd, "sock", sock)
-
-        return sock_fd
+        return self._new_fd(FdType.SOCK, sock=sock)
 
     @log_call
     def connect(self, sock: int, address: int, address_len: int) -> int:
@@ -849,32 +859,18 @@ class PosixOs(ABC):
         self.emu.write_bytes(buffer, b"\x00" * length)
         return length
 
-    def _construct_environ(self, text: str) -> int:
-        """Construct the structure that contains environment variables."""
-        lines = text.split("\n")
+    @log_call
+    def fcntl(self, fd: int, cmd: int, arg: int) -> int:
+        if cmd == self.F_GETFL:
+            if fd in (self._stdin_fd,):
+                return os.O_RDONLY
+            elif fd in (self._stdout_fd, self._stderr_fd):
+                return os.O_WRONLY
+        elif cmd == self.F_GETPATH:
+            path = self._get_fd_path(fd)
+            if path:
+                self.emu.write_string(arg, path)
+        else:
+            self.emu.logger.warning(f"Unhandled fcntl command: {cmd}")
 
-        size = self.emu.arch.addr_size * (len(lines) + 1)
-        buffer = self.emu.create_buffer(size)
-
-        for index, line in enumerate(lines):
-            address = buffer + self.emu.arch.addr_size * index
-            self.emu.write_pointer(address, self.emu.create_string(line))
-
-        self.emu.write_pointer(buffer + size - self.emu.arch.addr_size, 0)
-
-        return buffer
-
-    def _setup_devices(self):
-        """Mount virtual device files."""
-        device_map = {
-            "/dev/null": NullDevice,
-            "/dev/random": RandomDevice,
-            "/dev/urandom": UrandomDevice,
-        }
-
-        for path, dev_cls in device_map.items():
-            self.mount_device(path, dev_cls)
-
-    def initialize(self):
-        """Initialize environment."""
-        pass
+        return 0

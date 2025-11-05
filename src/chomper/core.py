@@ -26,7 +26,7 @@ from .loader import Module, Symbol
 from .log import get_logger
 from .memory import MemoryManager
 from .objc import ObjcType
-from .os import AndroidOs, android_get_syscall_name, IosOs, ios_get_syscall_name
+from .os import AndroidOs, IosOs
 from .typing import (
     EndianType,
     ReturnType,
@@ -92,7 +92,9 @@ class Chomper:
         self.modules: List[Module] = []
 
         self.hooks: Dict[str, Callable] = {}
+
         self.syscall_handlers: Dict[int, Callable] = {}
+        self.syscall_names: Dict[int, str] = {}
 
         # Improve performance of `find_symbol`
         self._cached_modules: List[str] = []
@@ -108,8 +110,6 @@ class Chomper:
         self._setup_interrupt_handler()
 
         self._setup_os(os_type, rootfs_path=rootfs_path)
-
-        self.os.initialize()
 
     @property
     def android_os(self) -> AndroidOs:
@@ -138,6 +138,8 @@ class Chomper:
             self.os = IosOs(self, **kwargs)
         else:
             raise ValueError("Unsupported platform type")
+
+        self.os.initialize()
 
     @staticmethod
     def _create_uc(arch: int, mode: int) -> Uc:
@@ -556,10 +558,10 @@ class Chomper:
 
         if self.os_type == const.OS_IOS:
             syscall_no = to_signed(self.uc.reg_read(arm64_const.UC_ARM64_REG_W16), 4)
-            syscall_name = ios_get_syscall_name(syscall_no)
+            syscall_name = self.syscall_names.get(syscall_no)
         elif self.os_type == const.OS_ANDROID and self.arch == arm64_arch:
             syscall_no = to_signed(self.uc.reg_read(arm64_const.UC_ARM64_REG_W8), 4)
-            syscall_name = android_get_syscall_name(syscall_no)
+            syscall_name = self.syscall_names.get(syscall_no)
 
         if syscall_no:
             syscall_display = f"'{syscall_name}'" if syscall_name else hex(syscall_no)
@@ -629,8 +631,8 @@ class Chomper:
                 assembly instructions, so this will slow down the emulation.
             trace_symbol_calls: Output log when the symbols in this module are called.
         """
-        if isinstance(self.os, IosOs):
-            self.os.set_main_executable(module_file)
+        if self.os_type == const.OS_IOS:
+            self.ios_os.set_executable_file(module_file)
 
         if not self.modules:
             module_base = const.MODULE_ADDRESS
@@ -649,8 +651,8 @@ class Chomper:
         if trace_inst or self._trace_inst:
             self.add_inst_trace(module)
 
-        if exec_objc_init and isinstance(self.os, IosOs):
-            self.os.init_objc(module)
+        if exec_objc_init and self.os_type == const.OS_IOS:
+            self.ios_os.init_objc(module)
 
         if exec_init_array and module.init_array:
             self.exec_init_array(module.init_array)
@@ -970,4 +972,4 @@ class Chomper:
             ctx.create_buffer(64)
         ```
         """
-        return MemoryContextManager(self)
+        return MemoryContextManager(self)  # type: ignore
