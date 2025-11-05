@@ -19,31 +19,29 @@ Chomper is a lightweight emulation framework based on [Unicorn](https://github.c
 
 ## Installation
 
-Use the latest version on GitHub:
-
-```
-$ pip install git+https://github.com/sledgeh4w/chomper.git
-```
-
-Use the version on PyPI:
+Install the stable version from PyPI:
 
 ```
 $ pip install chomper
 ```
 
-## Usage
+Or install the latest version from GitHub:
 
-Prepare rootfs first.
+```
+$ pip install git+https://github.com/sledgeh4w/chomper.git
+```
+
+Clone rootfs repository:
 
 ```
 $ git clone https://github.com/sledgeh4w/rootfs.git
 ```
 
+## Usage
+
 Emulate iOS executables.
 
 ```python
-import uuid
-
 from chomper import Chomper
 from chomper.const import ARCH_ARM64, OS_IOS
 
@@ -54,23 +52,21 @@ emu = Chomper(
     rootfs_path="rootfs/ios",
 )
 
-# Load main program
-duapp = emu.load_module("examples/binaries/ios/com.siwuai.duapp/DUApp")
+# Load program
+discover = emu.load_module("examples/binaries/ios/com.xingin.discover/8.74/discover")
 
 s = "chomper"
 
 # Construct arguments
-a1 = emu.create_string("objc")
-a2 = emu.create_string(s)
-a3 = len(s)
-a4 = emu.create_string(str(uuid.uuid4()))
+a1 = emu.create_string(s)
+a2 = len(s)
+a3 = emu.create_buffer(120)
+a4 = 120
 a5 = emu.create_buffer(8)
-a6 = emu.create_buffer(8)
-a7 = emu.create_string("com.siwuai.duapp")
 
 # Call function
-emu.call_address(duapp.base + 0x9322118, a1, a2, a3, a4, a5, a6, a7)
-result = emu.read_string(emu.read_pointer(a5))
+emu.call_address(discover.base + 0x324ef10, a1, a2, a3, a4, a5)
+result = emu.read_string(a3)
 ```
 
 Working with Objective-C.
@@ -95,8 +91,8 @@ with objc.autorelease_pool():
     # Find class
     zsch_rsa_class = objc.find_class("ZSCHRSA")
 
-    # Construct NSString object
-    a1 = objc.create_ns_string("test")
+    # Create NSString object
+    a1 = objc.create_ns_string("chomper")
 
     # Call Objective-C method
     req_sign = zsch_rsa_class.call_method("getReqSign:", a1)
@@ -112,16 +108,16 @@ Emulate Android native libraries.
 from chomper import Chomper
 from chomper.const import ARCH_ARM64, OS_ANDROID
 
-emu = Chomper(arch=ARCH_ARM64, os_type=OS_ANDROID)
+emu = Chomper(
+    arch=ARCH_ARM64,
+    os_type=OS_ANDROID,
+    rootfs_path="rootfs/android",
+)
 
-# Load C standard and other libraries
-emu.load_module("rootfs/android/system/lib64/libc.so")
+# Load dependency libraries
 emu.load_module("rootfs/android/system/lib64/libz.so")
 
-libszstone = emu.load_module(
-    "examples/binaries/android/com.shizhuang.duapp/libszstone.so",
-    exec_init_array=True,
-)
+libszstone = emu.load_module("examples/binaries/android/com.shizhuang.duapp/libszstone.so")
 
 s = "chomper"
 

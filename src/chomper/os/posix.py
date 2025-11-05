@@ -31,7 +31,6 @@ class SyscallError(Enum):
     EEXIST = 5
     ENOTDIR = 6
 
-    # Used for nanosleep on iOS
     EXT1 = 1000
 
 
@@ -42,8 +41,8 @@ class FdType(Enum):
     SOCK = 4
 
 
-class BaseOs(ABC):
-    """Base OS class offering common system capabilities.
+class PosixOs(ABC):
+    """The POSIX inter.
 
     Args:
         emu: The emulator instance.
