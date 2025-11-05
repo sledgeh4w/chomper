@@ -49,10 +49,6 @@ NR_MUNMAP = 0xD7
 NR_MMAP = 0xDE
 NR_CLOCK_ADJTIME = 0x10A
 
-# Command values for fcntl
-
-F_GETFL = 3
-
 # Error codes
 
 EPERM = 1

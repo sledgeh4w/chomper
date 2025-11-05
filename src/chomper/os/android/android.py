@@ -1,5 +1,6 @@
 import ctypes
 import os
+import random
 import sys
 import time
 from typing import Optional
@@ -8,20 +9,20 @@ from chomper.arch import arm64_arch
 from chomper.const import TLS_ADDRESS
 from chomper.exceptions import SystemOperationFailed
 from chomper.loader import ELFLoader
-from chomper.os.base import BaseOs, SyscallError
+from chomper.os.device import NullDevice, RandomDevice, UrandomDevice
+from chomper.os.posix import PosixOs, SyscallError
 from chomper.utils import log_call, struct_to_bytes, to_unsigned
 
 from .hooks import get_hooks
 from .structs import Dirent, Stat64, Timespec
-from .syscall import get_syscall_handlers
+from .syscall import get_syscall_handlers, get_syscall_names
 
 
-# Environment variables
 ENVIRON_VARIABLES = """"""
 
 
-class AndroidOs(BaseOs):
-    """Provide Android runtime environment."""
+class AndroidOs(PosixOs):
+    """Provide Android environment."""
 
     AT_FDCWD = to_unsigned(-100, size=4)
 
@@ -29,6 +30,11 @@ class AndroidOs(BaseOs):
         super().__init__(*args, **kwargs)
 
         self.loader = ELFLoader(self.emu)
+
+        self.pid = random.randint(10000, 20000)
+        self.uid = random.randint(10000, 20000)
+
+        self.tid = self.pid
 
         # Used by `getdents`
         self._dir_read_offset = {}
@@ -42,8 +48,7 @@ class AndroidOs(BaseOs):
         self.emu.write_s32(TLS_ADDRESS + 0x10, value)
 
     @staticmethod
-    def _construct_stat64(st: os.stat_result) -> bytes:
-        """Construct stat64 struct based on `stat_result`."""
+    def _create_stat(st: os.stat_result) -> bytes:
         if sys.platform == "win32":
             block_size = 4096
 
@@ -78,8 +83,7 @@ class AndroidOs(BaseOs):
         return struct_to_bytes(st)
 
     @staticmethod
-    def _construct_dev_stat64() -> bytes:
-        """Construct stat64 struct for device file."""
+    def _create_device_stat() -> bytes:
         atim = Timespec.from_time_ns(0)
         mtim = Timespec.from_time_ns(0)
         ctim = Timespec.from_time_ns(0)
@@ -102,29 +106,12 @@ class AndroidOs(BaseOs):
 
         return struct_to_bytes(st)
 
-    @staticmethod
-    def _construct_statfs64() -> bytes:
-        """Construct statfs64 struct."""
-        return NotImplemented
-
-    @staticmethod
-    def _construct_dirent(entry: os.DirEntry) -> bytes:
-        """Construct dirent struct based on `DirEntry`."""
-        st = Dirent(
-            d_ino=entry.inode(),
-            d_seekoff=0,
-            d_reclen=ctypes.sizeof(Dirent),
-            d_type=(4 if entry.is_dir() else 0),
-            d_name=entry.name.encode("utf-8"),
-        )
-        return struct_to_bytes(st)
-
     @log_call
     def getdents(self, fd: int) -> Optional[bytes]:
         if not self._is_dir_fd(fd):
             raise SystemOperationFailed(f"Not a directory: {fd}", SyscallError.ENOTDIR)
 
-        path = self.get_dir_path(fd)
+        path = self._get_fd_path(fd)
         real_path = self._get_real_path(path)
 
         if fd in self._dir_read_offset:
@@ -142,7 +129,14 @@ class AndroidOs(BaseOs):
         self._dir_read_offset[fd] = offset + 1
 
         # On 64-bit architectures, dirent and linux_dirent64 are the same.
-        return self._construct_dirent(dir_entry)
+        st = Dirent(
+            d_ino=dir_entry.inode(),
+            d_seekoff=0,
+            d_reclen=ctypes.sizeof(Dirent),
+            d_type=(4 if dir_entry.is_dir() else 0),
+            d_name=dir_entry.name.encode("utf-8"),
+        )
+        return struct_to_bytes(st)
 
     @log_call
     def clock_gettime(self) -> bytes:
@@ -167,6 +161,7 @@ class AndroidOs(BaseOs):
         # Only compatible with arm64 now
         if self.emu.arch == arm64_arch:
             self.emu.syscall_handlers.update(get_syscall_handlers())
+            self.emu.syscall_names.update(get_syscall_names())
 
     def _setup_tls(self):
         """Initialize thread local storage (TLS)."""
@@ -185,8 +180,7 @@ class AndroidOs(BaseOs):
         return bool(self.emu.find_module("libc.so"))
 
     def _enable_libc(self):
-        """Load libc, if `rootfs_path` is specified and libc exists in the `/system/lib`
-        or `/system/lib64` directory."""
+        """Attempt to load libc."""
         if not self.rootfs_path:
             return
 
@@ -204,10 +198,10 @@ class AndroidOs(BaseOs):
 
     def _create_fp(self, fd: int, mode: str, unbuffered: bool = False) -> int:
         """Wrap file descriptor to file object by calling `fdopen`."""
-        mode_p = self.emu.create_string(mode)
+        with self.emu.mem_context() as ctx:
+            mode_ptr = ctx.create_string(mode)
 
-        try:
-            fp = self.emu.call_symbol("fdopen", fd, mode_p)
+            fp = self.emu.call_symbol("fdopen", fd, mode_ptr)
             flags = self.emu.read_u32(fp + 16)
 
             if unbuffered:
@@ -215,34 +209,43 @@ class AndroidOs(BaseOs):
 
             self.emu.write_u32(fp + 16, flags)
             return fp
-        finally:
-            self.emu.free(mode_p)
 
     def _setup_standard_io(self):
         """Convert standard I/O file descriptors to FILE objects and assign them
         to target symbols.
         """
-        stdin_p = self.emu.get_symbol("stdin")
-        stdout_p = self.emu.get_symbol("stdout")
-        stderr_p = self.emu.get_symbol("stderr")
+        stdin = self.emu.get_symbol("stdin")
+        stdout = self.emu.get_symbol("stdout")
+        stderr = self.emu.get_symbol("stderr")
 
-        if isinstance(self.stdin, int):
-            stdin_fp = self._create_fp(self.stdin, "r")
-            self.emu.write_pointer(stdin_p.address, stdin_fp)
+        if self._stdin_fd:
+            stdin_fp = self._create_fp(self._stdin_fd, "r")
+            self.emu.write_pointer(stdin.address, stdin_fp)
 
-        stdout_fp = self._create_fp(self.stdout, "w", unbuffered=True)
-        self.emu.write_pointer(stdout_p.address, stdout_fp)
+        stdout_fp = self._create_fp(self._stdout_fd, "w", unbuffered=True)
+        self.emu.write_pointer(stdout.address, stdout_fp)
 
-        stderr_fp = self._create_fp(self.stderr, "w", unbuffered=True)
-        self.emu.write_pointer(stderr_p.address, stderr_fp)
+        stderr_fp = self._create_fp(self._stderr_fd, "w", unbuffered=True)
+        self.emu.write_pointer(stderr.address, stderr_fp)
 
     def _setup_environ(self):
         """Initialize global variable `environ`."""
-        environ = self.emu.create_buffer(8)
-        self.emu.write_pointer(environ, self._construct_environ(ENVIRON_VARIABLES))
+        environ_buf = self.emu.create_buffer(8)
+        self.emu.write_pointer(environ_buf, self._create_environ(ENVIRON_VARIABLES))
 
-        environ_pointer = self.emu.get_symbol("environ")
-        self.emu.write_pointer(environ_pointer.address, environ)
+        environ = self.emu.get_symbol("environ")
+        self.emu.write_pointer(environ.address, environ_buf)
+
+    def _setup_devices(self):
+        """Mount virtual device files."""
+        device_map = {
+            "/dev/null": NullDevice,
+            "/dev/random": RandomDevice,
+            "/dev/urandom": UrandomDevice,
+        }
+
+        for path, dev_cls in device_map.items():
+            self.mount_device(path, dev_cls)
 
     def initialize(self):
         self._setup_hooks()
