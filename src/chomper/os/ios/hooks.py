@@ -1,16 +1,12 @@
-import binascii
 import os
 import re
-import uuid
 from functools import wraps
-from io import BytesIO
 from typing import Callable, Dict, Optional
 
 from unicorn import Uc
 
 from chomper.exceptions import EmulatorCrashed, ObjCUnrecognizedSelector
 from chomper.objc import ObjcRuntime, ObjcObject
-from chomper.plist17lib import _BinaryPlist17Parser, _BinaryPlist17Writer
 from chomper.typing import HookContext
 
 
@@ -208,7 +204,7 @@ def hook_dlopen(uc: Uc, address: int, size: int, user_data: HookContext):
 
     path = emu.read_string(emu.get_arg(0))
 
-    module_base = emu.ios_os.load_module_private(path)
+    module_base = emu.ios_os.dlopen(path)
     if module_base is None:
         raise EmulatorCrashed(f"doesn't support dlopen: '{path}'")
 
@@ -224,7 +220,7 @@ def hook_sl_dlopen_audited(uc: Uc, address: int, size: int, user_data: HookConte
 
     path = emu.read_string(emu.read_pointer(emu.get_arg(0)))
 
-    module_base = emu.ios_os.load_module_private(path)
+    module_base = emu.ios_os.dlopen(path)
     if module_base is None:
         raise EmulatorCrashed(f"doesn't support _sl_dlopen_audited: '{path}'")
 
@@ -310,11 +306,11 @@ def hook_ns_get_executable_path(
     buf = emu.get_arg(0)
     buf_size = emu.get_arg(1)
 
-    executable_path = emu.ios_os.program_path
-    emu.write_u32(buf_size, len(executable_path))
+    path = emu.ios_os.executable_path
+    emu.write_u32(buf_size, len(path))
 
     if buf:
-        emu.write_string(buf, executable_path)
+        emu.write_string(buf, path)
 
     return 0
 
@@ -394,7 +390,7 @@ def hook_cf_bundle_create_info_dict_from_main_executable(
 ):
     emu = user_data["emu"]
 
-    executable_dir = os.path.dirname(emu.ios_os.executable_path)
+    executable_dir = os.path.dirname(emu.ios_os.get_executable_file())
     info_path = os.path.join(executable_dir, "Info.plist")
 
     if not os.path.exists(info_path):
@@ -516,79 +512,6 @@ def hook_bootstrap_look_up3(uc: Uc, address: int, size: int, user_data: HookCont
     return 0
 
 
-def _add_type_info(obj):
-    data = {}
-    if isinstance(obj, int):
-        data.update(
-            {
-                "type": "int",
-                "value": obj,
-            }
-        )
-    elif isinstance(obj, str):
-        data.update(
-            {
-                "type": "string_ascii",
-                "value": obj,
-            }
-        )
-    elif isinstance(obj, (bytes, bytearray)):
-        data.update(
-            {
-                "type": "data.hexstring",
-                "value": binascii.b2a_hex(obj).decode("utf-8"),
-            }
-        )
-    elif isinstance(obj, (list, tuple)):
-        data.update(
-            {
-                "type": "array",
-                "value": [_add_type_info(item) for item in obj],
-            }
-        )
-    elif isinstance(obj, dict):
-        data.update(
-            {
-                "type": "dict",
-                "value": {key: _add_type_info(value) for key, value in obj.items()},
-            }
-        )
-    elif obj is None:
-        data.update(
-            {
-                "type": "null",
-                "value": obj,
-            }
-        )
-    else:
-        raise ValueError(f"Unsupported type: {type(obj)}")
-    return data
-
-
-def _create_xpc_replay(emu, obj):
-    write_io = BytesIO()
-    plist_writer = _BinaryPlist17Writer(write_io)
-    plist_writer.write(_add_type_info(obj), with_type_info=True)
-    reply_data = write_io.getvalue()
-
-    with emu.mem_context() as ctx:
-        key_root = ctx.create_string("root")
-
-        reply_buf = ctx.create_buffer(len(reply_data))
-        emu.write_bytes(reply_buf, reply_data)
-
-        reply = emu.call_symbol("_xpc_dictionary_create_empty")
-        emu.call_symbol(
-            "_xpc_dictionary_set_data",
-            reply,
-            key_root,
-            reply_buf,
-            len(reply_data),
-        )
-
-    return reply
-
-
 @register_hook("_xpc_connection_send_message_with_reply_sync")
 def hook_xpc_connection_send_message_with_reply_sync(
     uc: Uc, address: int, size: int, user_data: HookContext
@@ -598,114 +521,7 @@ def hook_xpc_connection_send_message_with_reply_sync(
     connection = emu.get_arg(0)
     message = emu.get_arg(1)
 
-    name = None
-    name_ptr = emu.call_symbol("_xpc_connection_get_name", connection)
-    if name_ptr:
-        name = emu.read_string(name_ptr)
-
-    # Parse message
-    message_desc_ptr = emu.call_symbol("_xpc_copy_description", message)
-    message_desc = emu.read_string(message_desc_ptr)
-
-    emu.logger.info(
-        "Received an xpc message to %s: %s",
-        f"'{name}'" if name else hex(connection),
-        message_desc,
-    )
-
-    with emu.mem_context() as ctx:
-        # Parse object
-        key_root = ctx.create_string("root")
-        length_out = ctx.create_buffer(4)
-
-        root_ptr = emu.call_symbol(
-            "_xpc_dictionary_get_data",
-            message,
-            key_root,
-            length_out,
-        )
-        sel_name = None
-
-        if root_ptr:
-            root_data = emu.read_bytes(root_ptr, emu.read_u32(length_out))
-            plist_parser = _BinaryPlist17Parser(dict_type=dict)
-
-            root_obj = plist_parser.parse(BytesIO(root_data))
-            if root_obj:
-                sel_name = root_obj[0]
-
-            emu.logger.info("object = %s", root_obj)
-
-    reply_obj = None
-
-    if name == "com.apple.lsd.advertisingidentifiers":
-        if sel_name == "getIdentifierOfType:completionHandler:":
-            uuid_obj = uuid.uuid4()
-            uuid_bytes = uuid_obj.bytes
-
-            reply_obj = [
-                None,
-                'v16@?0@"NSUUID"8',
-                [
-                    {
-                        "$class": "NSUUID",
-                        "NS.uuidbytes": uuid_bytes,
-                    },
-                ],
-            ]
-    elif name == "com.apple.bird.token":
-        if sel_name == "currentAccountCopyTokenWithBundleID:version:reply:":
-            reply_obj = [
-                None,
-                'v24@?0@"NSData"8@"NSError"16',
-                [
-                    bytes(128),  # type: ignore
-                    None,  # type: ignore
-                ],
-            ]
-    elif name == "com.apple.lsd.mapdb":
-        if sel_name == "getBundleProxyForCurrentProcessWithCompletionHandler:":
-            reply_obj = [
-                None,
-                'v24@?0@"LSBundleProxy"8@"NSError"16',
-                [
-                    {
-                        "$class": "LSBundleProxy",
-                    },
-                    None,  # type: ignore
-                ],
-            ]
-    elif name == "com.apple.mobilegestalt.xpc":
-        if sel_name == "getServerAnswerForQuestion:reply:":
-            reply_obj = [
-                None,
-                'v16@?0@"NSDictionary"8',
-                [
-                    None,  # type: ignore
-                ],
-            ]
-    elif name == "com.apple.commcenter.coretelephony.xpc":
-        if sel_name == "getDescriptorsForDomain:completion:":
-            reply_obj = [
-                None,
-                'v24@?0@"CTServiceDescriptorContainer"8@"NSError"16',
-                [
-                    {
-                        "$class": "CTServiceDescriptorContainer",
-                    },
-                    None,  # type: ignore
-                ],
-            ]
-    else:
-        from_addr = emu.debug_symbol(emu.uc.reg_read(emu.arch.reg_lr))
-        emu.logger.warning(
-            f"Ignored an 'xpc_connection_send_message_with_reply_sync' "
-            f"call from {from_addr}."
-        )
-
-    reply = _create_xpc_replay(emu, reply_obj) if reply_obj else 0
-
-    return reply
+    return emu.ios_os.xpc_send_message(connection, message)
 
 
 @register_hook("+[NSObject(NSObject) doesNotRecognizeSelector:]")

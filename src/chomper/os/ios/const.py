@@ -213,11 +213,6 @@ HW_AVAILCPU = 25
 HW_TARGET = 26
 HW_PRODUCT = 27
 
-# Command values for fcntl
-
-F_GETFL = 3
-F_GETPATH = 50
-
 # Error codes
 
 EPERM = 1

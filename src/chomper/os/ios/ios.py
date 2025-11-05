@@ -1,6 +1,7 @@
 import ctypes
 import os
 import plistlib
+import random
 import sys
 import time
 import uuid
@@ -9,14 +10,18 @@ from typing import List, Optional
 from chomper.const import STACK_ADDRESS, STACK_SIZE, TLS_ADDRESS
 from chomper.exceptions import EmulatorCrashed, SystemOperationFailed
 from chomper.loader import MachoLoader, Module
-from chomper.os.base import BaseOs, SyscallError
-from chomper.os.resource import ResourceManager
+from chomper.os.device import NullDevice, RandomDevice, UrandomDevice
+from chomper.os.posix import PosixOs, SyscallError
+from chomper.os.handle import HandleManager
 from chomper.utils import log_call, struct_to_bytes, to_unsigned
 
 from .fixup import SystemModuleFixer
 from .hooks import get_hooks
+from .mach import MachMsgHandler
 from .structs import Dirent, Stat64, Statfs64, Timespec
-from .syscall import get_syscall_handlers
+from .syscall import get_syscall_handlers, get_syscall_names
+from .xpc import XpcMessageHandler
+
 
 ENVIRON_VARIABLES = r"""SHELL=/bin/sh
 PWD=/var/root
@@ -129,18 +134,10 @@ PREFERENCES = {
 }
 
 
-class IosOs(BaseOs):
-    """Provide iOS runtime environment."""
+class IosOs(PosixOs):
+    """Provide iOS environment."""
 
     AT_FDCWD = to_unsigned(-2, size=4)
-
-    AF_UNIX = 1
-    AF_INET = 2
-
-    SOCK_STREAM = 1
-
-    IPPROTO_IP = 0
-    IPPROTO_ICMP = 1
 
     MACH_PORT_NULL = 0
     MACH_PORT_HOST = 1
@@ -165,13 +162,18 @@ class IosOs(BaseOs):
 
         self.loader = MachoLoader(self.emu)
 
-        self.program_path = (
+        self.pid = random.randint(1000, 2000)
+        self.uid = 501
+
+        self.tid = random.randint(10000, 20000)
+
+        self.executable_path = (
             f"/private/var/containers/Bundle/Application"
             f"/{BUNDLE_UUID}"
             f"/{BUNDLE_IDENTIFIER}"
             f"/{BUNDLE_EXECUTABLE}"
         )
-        self.executable_path = ""
+        self._executable_file = ""
 
         self.preferences = PREFERENCES.copy()
 
@@ -180,7 +182,7 @@ class IosOs(BaseOs):
         self._semaphore_queue = {}
 
         # Mach port
-        self._mach_port_res = ResourceManager(
+        self._mach_port_manager = HandleManager(
             start_value=self.MACH_PORT_START_VALUE,
             max_num=self.MACH_PORT_MAX_NUM,
         )
@@ -193,6 +195,12 @@ class IosOs(BaseOs):
             ),
             "com.apple.backboard.hid.services": self.MACH_PORT_BKS_HID_SERVER,
         }
+
+        # Mach msg
+        self._mach_msg_handler = MachMsgHandler(self.emu)
+
+        # Xpc message
+        self._xpc_message_handler = XpcMessageHandler(self.emu)
 
     def get_errno(self) -> int:
         """Get the `errno`."""
@@ -207,9 +215,7 @@ class IosOs(BaseOs):
         errno_ptr = self.emu.read_pointer(TLS_ADDRESS + 0x8)
         self.emu.write_s32(errno_ptr, value)
 
-    @staticmethod
-    def _construct_stat64(st: os.stat_result) -> bytes:
-        """Construct stat64 struct based on `stat_result`."""
+    def _create_stat(self, st: os.stat_result) -> bytes:
         if sys.platform == "win32":
             block_size = 4096
 
@@ -249,9 +255,7 @@ class IosOs(BaseOs):
 
         return struct_to_bytes(st)
 
-    @staticmethod
-    def _construct_dev_stat64() -> bytes:
-        """Construct stat64 struct for device file."""
+    def _create_device_stat(self) -> bytes:
         atimespec = Timespec.from_time_ns(0)
         mtimespec = Timespec.from_time_ns(0)
         ctimespec = Timespec.from_time_ns(0)
@@ -275,9 +279,7 @@ class IosOs(BaseOs):
 
         return struct_to_bytes(st)
 
-    @staticmethod
-    def _construct_statfs64() -> bytes:
-        """Construct statfs64 struct."""
+    def _create_statfs(self) -> bytes:
         st = Statfs64(
             f_bsize=4096,
             f_iosize=1048576,
@@ -297,25 +299,12 @@ class IosOs(BaseOs):
         )
         return struct_to_bytes(st)
 
-    @staticmethod
-    def _construct_dirent(entry: os.DirEntry) -> bytes:
-        """Construct dirent struct based on `DirEntry`."""
-        st = Dirent(
-            d_ino=entry.inode(),
-            d_seekoff=0,
-            d_reclen=ctypes.sizeof(Dirent),
-            d_namlen=len(entry.name),
-            d_type=(4 if entry.is_dir() else 0),
-            d_name=entry.name.encode("utf-8"),
-        )
-        return struct_to_bytes(st)
-
     @log_call
     def getdirentries(self, fd: int, offset: int) -> Optional[bytes]:
         if not self._is_dir_fd(fd):
             raise SystemOperationFailed(f"Not a directory: {fd}", SyscallError.ENOTDIR)
 
-        path = self.get_dir_path(fd)
+        path = self._get_fd_path(fd)
         real_path = self._get_real_path(path)
 
         dir_entries = list(os.scandir(real_path))
@@ -324,7 +313,15 @@ class IosOs(BaseOs):
 
         dir_entry = dir_entries[offset]
 
-        return self._construct_dirent(dir_entry)
+        st = Dirent(
+            d_ino=dir_entry.inode(),
+            d_seekoff=0,
+            d_reclen=ctypes.sizeof(Dirent),
+            d_namlen=len(dir_entry.name),
+            d_type=(4 if dir_entry.is_dir() else 0),
+            d_name=dir_entry.name.encode("utf-8"),
+        )
+        return struct_to_bytes(st)
 
     def _setup_hooks(self):
         """Initialize hooks."""
@@ -333,23 +330,33 @@ class IosOs(BaseOs):
     def _setup_syscall_handlers(self):
         """Initialize system call handlers."""
         self.emu.syscall_handlers.update(get_syscall_handlers())
+        self.emu.syscall_names.update(get_syscall_names())
 
     def _setup_tls(self):
         """Initialize thread local storage (TLS)."""
-        errno_ptr = self.emu.create_buffer(0x8)
+        errno_p = self.emu.create_buffer(0x8)
 
         self.emu.write_pointer(TLS_ADDRESS - 0xE0, TLS_ADDRESS - 0xE0)
 
         self.emu.write_u64(TLS_ADDRESS - 0x8, self.tid)
 
-        self.emu.write_pointer(TLS_ADDRESS + 0x8, errno_ptr)
+        self.emu.write_pointer(TLS_ADDRESS + 0x8, errno_p)
         self.emu.write_u32(TLS_ADDRESS + 0x18, 5)
 
-    def _setup_kernel_mmio(self):
-        """Initialize MMIO used by system libraries."""
+    def _setup_devices(self):
+        """Mount virtual device files."""
+        device_map = {
+            "/dev/null": NullDevice,
+            "/dev/random": RandomDevice,
+            "/dev/urandom": UrandomDevice,
+        }
 
+        for path, dev_cls in device_map.items():
+            self.mount_device(path, dev_cls)
+
+    def _setup_mmio(self):
         def read_cb(uc, offset, size_, read_ud):
-            # arch type
+            # Arch type
             if offset == 0x23:
                 return 0x2
             # vm_page_shift
@@ -361,7 +368,7 @@ class IosOs(BaseOs):
             # whether to trace
             elif offset == 0x100:
                 return 0x0
-            # unknown, appear at _os_trace_init_slow
+            # Unknown, appear at _os_trace_init_slow
             elif offset == 0x104:
                 return 0x100
 
@@ -387,7 +394,7 @@ class IosOs(BaseOs):
         self.emu.write_pointer(nx_argv_pointer.address, self.emu.create_string(""))
 
         environ = self.emu.create_buffer(8)
-        self.emu.write_pointer(environ, self._construct_environ(ENVIRON_VARIABLES))
+        self.emu.write_pointer(environ, self._create_environ(ENVIRON_VARIABLES))
 
         environ_pointer = self.emu.get_symbol("_environ_pointer")
         self.emu.write_pointer(environ_pointer.address, environ)
@@ -496,7 +503,7 @@ class IosOs(BaseOs):
 
     def _init_core_foundation(self):
         """Initialize `CoreFoundation`."""
-        self.fix_method_signature_rom_table()
+        self._fix_method_signature_rom_table()
 
         self.emu.call_symbol("___CFInitialize")
 
@@ -505,7 +512,6 @@ class IosOs(BaseOs):
         self.emu.call_symbol("__NSInitializePlatform")
 
     def _init_system_symbols(self):
-        """Initialize the values of system symbols."""
         # libsandbox.dylib
         amkrtemp_sentinel = self.emu.get_symbol("__amkrtemp.sentinel")
         self.emu.write_pointer(
@@ -645,7 +651,7 @@ class IosOs(BaseOs):
 
     def _setup_bundle_dir(self):
         """Set bundle directory as current working directory."""
-        bundle_path = os.path.dirname(self.program_path)
+        bundle_path = os.path.dirname(self.executable_path)
         container_path = os.path.dirname(bundle_path)
 
         self.set_working_dir(bundle_path)
@@ -664,7 +670,7 @@ class IosOs(BaseOs):
         self.forward_path(container_path, local_container_path)
         self.forward_path(bundle_path, local_bundle_path)
 
-    def set_main_executable(self, path: str):
+    def set_executable_file(self, path: str):
         """Set program path and name to global variables while forwarding
         the file access to executable.
 
@@ -672,12 +678,12 @@ class IosOs(BaseOs):
         the executable, the runtime automatically extracts its `CFBundleIdentifier`
         and `CFBundleExecutable` values.
         """
-        self.executable_path = path
+        self._executable_file = path
 
-        bundle_path = os.path.dirname(self.program_path)
+        bundle_path = os.path.dirname(self.executable_path)
         container_path = os.path.dirname(bundle_path)
 
-        executable_dir = os.path.dirname(self.executable_path)
+        executable_dir = os.path.dirname(self._executable_file)
         info_path = os.path.join(executable_dir, "Info.plist")
 
         if os.path.exists(info_path):
@@ -688,12 +694,12 @@ class IosOs(BaseOs):
             bundle_executable = info_data["CFBundleExecutable"]
 
             bundle_path = f"{container_path}/{bundle_identifier}"
-            self.program_path = f"{bundle_path}/{bundle_executable}"
+            self.executable_path = f"{bundle_path}/{bundle_executable}"
 
             self._setup_bundle_dir()
 
-            progname_str = self.emu.create_string(self.program_path.split("/")[-1])
-            process_path_str = self.emu.create_string(self.program_path)
+            progname_str = self.emu.create_string(self.executable_path.split("/")[-1])
+            process_path_str = self.emu.create_string(self.executable_path)
 
             progname = self.emu.create_buffer(8)
             self.emu.write_pointer(progname, progname_str)
@@ -709,15 +715,18 @@ class IosOs(BaseOs):
 
         # Set path forwarding to executable and Info.plist
         self.forward_path(
-            src_path=self.program_path,
-            dst_path=self.executable_path,
+            src_path=self.executable_path,
+            dst_path=self._executable_file,
         )
         self.forward_path(
             src_path=f"{bundle_path}/Info.plist",
             dst_path=info_path,
         )
 
-    def fix_method_signature_rom_table(self):
+    def get_executable_file(self) -> str:
+        return self._executable_file
+
+    def _fix_method_signature_rom_table(self):
         """Relocate references in `MethodSignatureROMTable`."""
         table = self.emu.get_symbol("_MethodSignatureROMTable")
 
@@ -743,10 +752,10 @@ class IosOs(BaseOs):
         Returns:
             File object pointer.
         """
-        mode_p = self.emu.create_string(mode)
+        with self.emu.mem_context() as ctx:
+            mode_ptr = ctx.create_string(mode)
 
-        try:
-            fp = self.emu.call_symbol("_fdopen", fd, mode_p)
+            fp = self.emu.call_symbol("_fdopen", fd, mode_ptr)
             flags = self.emu.read_u32(fp + 16)
 
             if unbuffered:
@@ -754,29 +763,27 @@ class IosOs(BaseOs):
 
             self.emu.write_u32(fp + 16, flags)
             return fp
-        finally:
-            self.emu.free(mode_p)
 
     def _setup_standard_io(self):
         """Convert standard I/O file descriptors to FILE objects and assign them
         to target symbols.
         """
-        stdin_p = self.emu.get_symbol("___stdinp")
-        stdout_p = self.emu.get_symbol("___stdoutp")
-        stderr_p = self.emu.get_symbol("___stderrp")
+        stdin = self.emu.get_symbol("___stdinp")
+        stdout = self.emu.get_symbol("___stdoutp")
+        stderr = self.emu.get_symbol("___stderrp")
 
-        if isinstance(self.stdin, int):
-            stdin_fp = self._create_fp(self.stdin, "r")
-            self.emu.write_pointer(stdin_p.address, stdin_fp)
+        if isinstance(self._stdin_fd, int):
+            stdin_fp = self._create_fp(self._stdin_fd, "r")
+            self.emu.write_pointer(stdin.address, stdin_fp)
 
-        stdout_fp = self._create_fp(self.stdout, "w", unbuffered=True)
-        self.emu.write_pointer(stdout_p.address, stdout_fp)
+        stdout_fp = self._create_fp(self._stdout_fd, "w", unbuffered=True)
+        self.emu.write_pointer(stdout.address, stdout_fp)
 
-        stderr_fp = self._create_fp(self.stderr, "w", unbuffered=True)
-        self.emu.write_pointer(stderr_p.address, stderr_fp)
+        stderr_fp = self._create_fp(self._stderr_fd, "w", unbuffered=True)
+        self.emu.write_pointer(stderr.address, stderr_fp)
 
-    def load_module_private(self, path: str) -> Optional[int]:
-        """Provide module loading capabilities to `dlopen` and `_sl_dlopen_audited`.
+    def dlopen(self, path: str) -> Optional[int]:
+        """Used for `dlopen` and `_sl_dlopen_audited`.
 
         Presently supports system module loading only.
 
@@ -861,14 +868,14 @@ class IosOs(BaseOs):
 
     def _new_mach_port(self) -> int:
         """Create a new mach port."""
-        mach_port = self._mach_port_res.new()
+        mach_port = self._mach_port_manager.new()
         return mach_port if mach_port else 0
 
     def mach_port_construct(self) -> int:
         return self._new_mach_port()
 
     def mach_port_destruct(self, mach_port: int):
-        self._mach_port_res.free(mach_port)
+        self._mach_port_manager.free(mach_port)
 
     def bootstrap_look_up(self, name: str) -> int:
         """Find registered mach service.
@@ -881,13 +888,19 @@ class IosOs(BaseOs):
 
         return 0
 
+    def mach_msg(self, msg: int, option: int) -> int:
+        return self._mach_msg_handler.handle_msg(msg, option)
+
+    def xpc_send_message(self, connection: int, message: int) -> int:
+        return self._xpc_message_handler.handle_message(connection, message)
+
     def initialize(self):
         self._setup_hooks()
         self._setup_syscall_handlers()
         self._setup_tls()
         self._setup_devices()
 
-        self._setup_kernel_mmio()
+        self._setup_mmio()
 
         self._setup_symbolic_links()
         self._setup_bundle_dir()

@@ -7,30 +7,15 @@ import time
 from functools import wraps
 from typing import Dict, Optional, TYPE_CHECKING
 
-import plistlib
-from unicorn import arm64_const, UcError
+from unicorn import arm64_const
 
 from chomper.exceptions import SystemOperationFailed, ProgramTerminated
-from chomper.os.base import SyscallError
+from chomper.os.posix import SyscallError
 from chomper.typing import SyscallHandleCallable
-from chomper.utils import (
-    to_signed,
-    int_to_bytes,
-    struct_to_bytes,
-    float_to_bytes,
-    read_struct,
-)
+from chomper.utils import to_signed, struct_to_bytes
 
 from . import const
-from .structs import (
-    Rusage,
-    MachMsgHeaderT,
-    MachMsgBodyT,
-    MachMsgPortDescriptorT,
-    MachMsgOolDescriptorT,
-    MachTimespec,
-    VmRegionBasicInfo64,
-)
+from .structs import Rusage
 from .sysctl import sysctl, sysctlbyname
 
 if TYPE_CHECKING:
@@ -56,9 +41,9 @@ def get_syscall_handlers() -> Dict[int, SyscallHandleCallable]:
     return syscall_handlers.copy()
 
 
-def get_syscall_name(syscall_no: int) -> Optional[str]:
-    """Get name of the system call."""
-    return syscall_names.get(syscall_no)
+def get_syscall_names() -> Dict[int, str]:
+    """Get the system call name mapping."""
+    return syscall_names.copy()
 
 
 def register_syscall_handler(syscall_no: int, syscall_name: Optional[str] = None):
@@ -104,7 +89,7 @@ def register_syscall_handler(syscall_no: int, syscall_name: Optional[str] = None
     return wrapper
 
 
-def permission_denied():
+def raise_permission_denied():
     raise SystemOperationFailed("No permission", SyscallError.EPERM)
 
 
@@ -272,14 +257,14 @@ def handle_sys_access(emu: Chomper):
 
 @register_syscall_handler(const.SYS_CHFLAGS, "SYS_chflags")
 def handle_sys_chflags(emu: Chomper):
-    permission_denied()
+    raise_permission_denied()
 
     return 0
 
 
 @register_syscall_handler(const.SYS_FCHFLAGS, "SYS_fchflags")
 def handle_sys_fchflags(emu: Chomper):
-    permission_denied()
+    raise_permission_denied()
 
     return 0
 
@@ -529,7 +514,7 @@ def handle_sys_rmdir(emu: Chomper):
 
 @register_syscall_handler(const.SYS_ADJTIME, "SYS_adjtime")
 def handle_sys_adjtime(emu: Chomper):
-    permission_denied()
+    raise_permission_denied()
 
     return 0
 
@@ -684,19 +669,7 @@ def handle_sys_fcntl(emu: Chomper):
     cmd = emu.get_arg(1)
     arg = emu.get_arg(2)
 
-    if cmd == const.F_GETFL:
-        if fd in (emu.os.stdin,):
-            return os.O_RDONLY
-        elif fd in (emu.os.stdout, emu.os.stderr):
-            return os.O_WRONLY
-    elif cmd == const.F_GETPATH:
-        path = emu.os.get_dir_path(fd)
-        if path:
-            emu.write_string(arg, path)
-    else:
-        emu.logger.warning(f"Unhandled fcntl command: {cmd}")
-
-    return 0
+    return emu.os.fcntl(fd, cmd, arg)
 
 
 @register_syscall_handler(const.SYS_SYSCTL, "SYS_sysctl")
@@ -803,7 +776,7 @@ def handle_sys_gettid(emu: Chomper):
 
 @register_syscall_handler(const.SYS_IDENTITYSVC, "SYS_identitysvc")
 def handle_sys_identitysvc(emu: Chomper):
-    permission_denied()
+    raise_permission_denied()
 
     return 0
 
@@ -838,12 +811,12 @@ def handle_sys_proc_info(emu: Chomper):
     buffer = emu.get_arg(4)
 
     if pid != emu.ios_os.pid:
-        permission_denied()
+        raise_permission_denied()
 
     if flavor == 3:
-        emu.write_string(buffer, emu.ios_os.program_path.split("/")[-1])
+        emu.write_string(buffer, emu.ios_os.executable_path.split("/")[-1])
     elif flavor == 11:
-        emu.write_string(buffer, emu.ios_os.program_path)
+        emu.write_string(buffer, emu.ios_os.executable_path)
 
     return 0
 
@@ -1378,432 +1351,10 @@ def handle_host_self_trap(emu: Chomper):
 
 @register_syscall_handler(const.MACH_MSG_TRAP, "MACH_MSG_TRAP")
 def handle_mach_msg_trap(emu: Chomper):
-    msg_ptr = emu.get_arg(0)
-    msg = read_struct(emu, msg_ptr, MachMsgHeaderT)
-
-    msg_id = msg.msgh_id
-    remote_port = msg.msgh_remote_port
-
+    msg = emu.get_arg(0)
     option = emu.get_arg(1)
 
-    emu.logger.info(
-        "Received a mach msg: msg_id=%s, remote_port=%s, option=%s",
-        msg_id,
-        remote_port,
-        hex(option),
-    )
-
-    if remote_port == emu.ios_os.MACH_PORT_HOST:
-        if msg_id == 412:  # host_get_special_port
-            # node = emu.read_s32(msg_ptr + 0x20)
-            which_port = emu.read_s32(msg_ptr + 0x24)
-
-            msg_header = MachMsgHeaderT(
-                msgh_bits=const.MACH_MSGH_BITS_COMPLEX,
-                msgh_size=40,
-                msgh_remote_port=0,
-                msgh_local_port=0,
-                msgh_voucher_port=0,
-                msgh_id=512,
-            )
-
-            msg_body = MachMsgBodyT(
-                msgh_descriptor_count=1,
-            )
-
-            if which_port == const.HOST_PORT:
-                port = emu.ios_os.MACH_PORT_HOST
-            else:
-                port = emu.ios_os.MACH_PORT_NULL
-
-            port_descriptor = MachMsgPortDescriptorT(
-                name=port,
-                disposition=const.MACH_MSG_TYPE_MOVE_SEND,
-                type=const.MACH_MSG_PORT_DESCRIPTOR,
-            )
-
-            emu.write_bytes(
-                msg_ptr,
-                struct_to_bytes(msg_header)
-                + struct_to_bytes(msg_body)
-                + struct_to_bytes(port_descriptor),
-            )
-
-            return const.KERN_SUCCESS
-    elif remote_port == emu.ios_os.MACH_PORT_TASK:
-        if msg_id == 3405:  # task_info
-            flavor = emu.read_s32(msg_ptr + 0x20)
-            task_info_out_cnt = emu.read_s32(msg_ptr + 0x24)
-
-            emu.logger.info(f"flavor={flavor}, task_info_out_cnt={task_info_out_cnt}")
-
-            if flavor == const.TASK_AUDIT_TOKEN:
-                msg_header = MachMsgHeaderT(
-                    msgh_bits=0,
-                    msgh_size=72,
-                    msgh_remote_port=0,
-                    msgh_local_port=0,
-                    msgh_voucher_port=0,
-                    msgh_id=3505,
-                )
-
-                msg_body = MachMsgBodyT(
-                    msgh_descriptor_count=0,
-                )
-
-                audit_token = [0, 0, 0, 0, 0, emu.ios_os.pid, 0, 1]
-
-                emu.write_bytes(
-                    msg_ptr,
-                    struct_to_bytes(msg_header)
-                    + struct_to_bytes(msg_body)
-                    + int_to_bytes(0, 8)
-                    + int_to_bytes(task_info_out_cnt, 4)
-                    + b"".join([int_to_bytes(value, 4) for value in audit_token]),
-                )
-
-                return const.KERN_SUCCESS
-        elif msg_id == 3409:  # task_get_special_port
-            which_port = emu.read_s32(msg_ptr + 0x20)
-
-            msg_header = MachMsgHeaderT(
-                msgh_bits=const.MACH_MSGH_BITS_COMPLEX,
-                msgh_size=40,
-                msgh_remote_port=0,
-                msgh_local_port=0,
-                msgh_voucher_port=0,
-                msgh_id=3509,
-            )
-
-            msg_body = MachMsgBodyT(
-                msgh_descriptor_count=1,
-            )
-
-            if which_port == const.TASK_BOOTSTRAP_PORT:
-                port = emu.ios_os.MACH_PORT_BOOTSTRAP
-            else:
-                port = emu.ios_os.MACH_PORT_NULL
-
-            port_descriptor = MachMsgPortDescriptorT(
-                name=port,
-                disposition=const.MACH_MSG_TYPE_MOVE_SEND,
-                type=const.MACH_MSG_PORT_DESCRIPTOR,
-            )
-
-            emu.write_bytes(
-                msg_ptr,
-                struct_to_bytes(msg_header)
-                + struct_to_bytes(msg_body)
-                + struct_to_bytes(port_descriptor),
-            )
-
-            return const.KERN_SUCCESS
-        elif msg_id == 3418:  # semaphore_create
-            # policy = emu.read_s32(msg_ptr + 0x20)
-            value = emu.read_s32(msg_ptr + 0x24)
-
-            semaphore = emu.ios_os.semaphore_create(value)
-
-            msg_header = MachMsgHeaderT(
-                msgh_bits=const.MACH_MSGH_BITS_COMPLEX,
-                msgh_size=40,
-                msgh_remote_port=0,
-                msgh_local_port=0,
-                msgh_voucher_port=0,
-                msgh_id=3518,
-            )
-
-            msg_body = MachMsgBodyT(
-                msgh_descriptor_count=1,
-            )
-
-            port_descriptor = MachMsgPortDescriptorT(
-                name=semaphore,
-                disposition=const.MACH_MSG_TYPE_MOVE_SEND,
-                type=const.MACH_MSG_PORT_DESCRIPTOR,
-            )
-
-            emu.write_bytes(
-                msg_ptr,
-                struct_to_bytes(msg_header)
-                + struct_to_bytes(msg_body)
-                + struct_to_bytes(port_descriptor),
-            )
-
-            return const.KERN_SUCCESS
-        elif msg_id == 4808:  # vm_read_overwrite
-            address = emu.read_u64(msg_ptr + 0x20)
-            size = emu.read_u32(msg_ptr + 0x28)
-            data = emu.read_u64(msg_ptr + 0x30)
-
-            emu.logger.info(f"address={hex(address)}, size={size}, data={hex(data)}")
-
-            try:
-                read_data = emu.read_bytes(address, size)
-                out_size = len(read_data)
-                emu.write_bytes(data, read_data)
-            except UcError:
-                emu.logger.warning("vm_read_overwrite failed: invalid address")
-                return const.KERN_INVALID_ADDRESS
-
-            msg_header = MachMsgHeaderT(
-                msgh_bits=0,
-                msgh_size=44,
-                msgh_remote_port=0,
-                msgh_local_port=0,
-                msgh_voucher_port=0,
-                msgh_id=4908,
-            )
-
-            msg_body = MachMsgBodyT(
-                msgh_descriptor_count=0,
-            )
-
-            emu.write_bytes(
-                msg_ptr,
-                struct_to_bytes(msg_header)
-                + struct_to_bytes(msg_body)
-                + int_to_bytes(0, 8)
-                + int_to_bytes(out_size, 8),
-            )
-
-            return const.KERN_SUCCESS
-        elif msg_id == 4813:  # _kernelrpc_vm_remap
-            target_address = emu.read_u64(msg_ptr + 0x30)
-            size = emu.read_u32(msg_ptr + 0x38)
-            mask = emu.read_u64(msg_ptr + 0x40)
-            flags = emu.read_u32(msg_ptr + 0x48)
-            src_address = emu.read_u64(msg_ptr + 0x4C)
-            copy = emu.read_u32(msg_ptr + 0x54)
-
-            emu.logger.info(
-                f"target_address={hex(target_address)}, size={size}, mask={mask}, "
-                f"flags={hex(flags)}, src_address={hex(src_address)}, copy={copy}"
-            )
-
-            if not target_address:
-                target_address = emu.create_buffer(size)
-
-            read_data = emu.read_bytes(src_address, size)
-            emu.write_bytes(target_address, read_data)
-
-            msg_header = MachMsgHeaderT(
-                msgh_bits=0,
-                msgh_size=52,
-                msgh_remote_port=0,
-                msgh_local_port=0,
-                msgh_voucher_port=0,
-                msgh_id=4913,
-            )
-
-            msg_body = MachMsgBodyT(
-                msgh_descriptor_count=0,
-            )
-
-            emu.write_bytes(
-                msg_ptr,
-                struct_to_bytes(msg_header)
-                + struct_to_bytes(msg_body)
-                + int_to_bytes(0, 8)
-                + int_to_bytes(target_address, 8)
-                + int_to_bytes(0, 4)
-                + int_to_bytes(0, 4),
-            )
-
-            return const.KERN_SUCCESS
-        elif msg_id == 4816:  # vm_region_64
-            address = emu.read_u64(msg_ptr + 0x20)
-            flavor = emu.read_s32(msg_ptr + 0x28)
-            count = emu.read_u32(msg_ptr + 0x2C)
-
-            emu.logger.info(f"address={hex(address)}, flavor={flavor}, count={count}")
-
-            if flavor == const.VM_REGION_BASIC_INFO_64:
-                for start, end, prop in emu.uc.mem_regions():
-                    if start <= address < end:
-                        out_address = start
-                        size = end - start
-                        break
-                else:
-                    emu.logger.warning("vm_region_64 failed: invalid address")
-                    return const.KERN_INVALID_ADDRESS
-
-                out_count = ctypes.sizeof(VmRegionBasicInfo64) // 4
-                object_name = 0
-
-                info = VmRegionBasicInfo64(
-                    protection=const.VM_PROT_DEFAULT,
-                    max_protection=const.VM_PROT_DEFAULT,
-                    inheritance=0,
-                    shared=0,
-                    reserved=0,
-                    offset=0,
-                    behavior=0,
-                    user_wired_count=0,
-                )
-
-                msg_header = MachMsgHeaderT(
-                    msgh_bits=const.MACH_MSGH_BITS_COMPLEX,
-                    msgh_size=(68 + out_count * 4),
-                    msgh_remote_port=0,
-                    msgh_local_port=0,
-                    msgh_voucher_port=0,
-                    msgh_id=4916,
-                )
-
-                msg_body = MachMsgBodyT(
-                    msgh_descriptor_count=1,
-                )
-
-                port_descriptor = MachMsgPortDescriptorT(
-                    name=object_name,
-                    disposition=const.MACH_MSG_TYPE_MOVE_SEND,
-                    type=const.MACH_MSG_PORT_DESCRIPTOR,
-                )
-
-                emu.write_bytes(
-                    msg_ptr,
-                    struct_to_bytes(msg_header)
-                    + struct_to_bytes(msg_body)
-                    + struct_to_bytes(port_descriptor)
-                    + int_to_bytes(0, 8)
-                    + int_to_bytes(out_address, 8)
-                    + int_to_bytes(size, 8)
-                    + int_to_bytes(out_count, 4)
-                    + struct_to_bytes(info),
-                )
-
-                return const.KERN_SUCCESS
-        elif msg_id == 8000:  # task_restartable_ranges_register
-            return const.KERN_RESOURCE_SHORTAGE
-    elif remote_port == emu.ios_os.MACH_PORT_BOOTSTRAP:
-        if msg_id == 1073741824:  # _xpc_pipe_mach_msg
-            msg_header = MachMsgHeaderT(
-                msgh_bits=0,
-                msgh_size=0,
-                msgh_remote_port=0,
-                msgh_local_port=0,
-                msgh_voucher_port=0,
-                msgh_id=0x20000000,
-            )
-
-            msg_body = MachMsgBodyT(
-                msgh_descriptor_count=0,
-            )
-
-            emu.write_bytes(
-                msg_ptr, struct_to_bytes(msg_header) + struct_to_bytes(msg_body)
-            )
-
-            return const.KERN_SUCCESS
-    elif remote_port == emu.ios_os.MACH_PORT_CLOCK:
-        if msg_id == 1000:  # clock_get_time
-            msg_header = MachMsgHeaderT(
-                msgh_bits=0,
-                msgh_size=44,
-                msgh_remote_port=0,
-                msgh_local_port=0,
-                msgh_voucher_port=0,
-                msgh_id=1100,
-            )
-
-            msg_body = MachMsgBodyT(
-                msgh_descriptor_count=1,
-            )
-
-            time_ns = time.time_ns()
-            cur_time = MachTimespec.from_time_ns(time_ns)
-
-            emu.write_bytes(
-                msg_ptr,
-                struct_to_bytes(msg_header)
-                + struct_to_bytes(msg_body)
-                + int_to_bytes(0, 8)
-                + struct_to_bytes(cur_time),
-            )
-
-            return const.KERN_SUCCESS
-    elif remote_port == emu.ios_os.MACH_PORT_NOTIFICATION_CENTER:
-        return const.KERN_SUCCESS
-    elif remote_port == emu.ios_os.MACH_PORT_CA_RENDER_SERVER:
-        if msg_id == 40231:  # _CASGetDisplays
-            displays_prop = [
-                {
-                    "kCADisplayId": 1,
-                    "kCADisplayName": "LCD",
-                    "kCADisplayDeviceName": "primary",
-                }
-            ]
-            displays_data = plistlib.dumps(displays_prop, fmt=plistlib.FMT_BINARY)
-
-            displays_buf = emu.create_buffer(len(displays_data))
-            emu.write_bytes(displays_buf, displays_data)
-
-            msg_header = MachMsgHeaderT(
-                msgh_bits=const.MACH_MSGH_BITS_COMPLEX,
-                msgh_size=56,
-                msgh_remote_port=0,
-                msgh_local_port=0,
-                msgh_voucher_port=0,
-                msgh_id=40331,
-            )
-
-            msg_body = MachMsgBodyT(
-                msgh_descriptor_count=1,
-            )
-
-            ool_descriptor = MachMsgOolDescriptorT(
-                address=displays_buf,
-                deallocate=0,
-                copy=0,
-                disposition=0,
-                type=const.MACH_MSG_OOL_DESCRIPTOR,
-                size=len(displays_data),
-            )
-
-            emu.write_bytes(
-                msg_ptr,
-                struct_to_bytes(msg_header)
-                + struct_to_bytes(msg_body)
-                + struct_to_bytes(ool_descriptor)
-                + int_to_bytes(0, 8)
-                + int_to_bytes(len(displays_data), 4),
-            )
-
-            return const.KERN_SUCCESS
-    elif remote_port == emu.ios_os.MACH_PORT_BKS_HID_SERVER:
-        if msg_id == 6000050:  # _BKSHIDGetCurrentDisplayBrightness
-            msg_header = MachMsgHeaderT(
-                msgh_bits=0,
-                msgh_size=40,
-                msgh_remote_port=0,
-                msgh_local_port=0,
-                msgh_voucher_port=0,
-                msgh_id=6000150,
-            )
-
-            msg_body = MachMsgBodyT(
-                msgh_descriptor_count=1,
-            )
-
-            brightness = 0.4
-
-            emu.write_bytes(
-                msg_ptr,
-                struct_to_bytes(msg_header)
-                + struct_to_bytes(msg_body)
-                + int_to_bytes(0, 8)
-                + float_to_bytes(brightness),
-            )
-
-            return const.KERN_SUCCESS
-
-    # xpc message to com.apple.commcenter.cupolicy.xpc
-    if msg_id == 268435456:
-        return const.KERN_SUCCESS
-
-    emu.logger.warning("Unhandled mach msg, returning KERN_RESOURCE_SHORTAGE")
-    return const.KERN_RESOURCE_SHORTAGE
+    return emu.ios_os.mach_msg(msg, option)
 
 
 @register_syscall_handler(const.SEMAPHORE_SIGNAL_TRAP, "SEMAPHORE_SIGNAL_TRAP")

@@ -1,1 +1,1 @@
-from .os import AndroidOs
+from .android import AndroidOs
