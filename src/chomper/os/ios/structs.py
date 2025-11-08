@@ -145,6 +145,63 @@ class SockaddrIn(ctypes.Structure):
     ]
 
 
+class ProcBsdinfo(ctypes.Structure):
+    _fields_ = [
+        ("pbi_flags", ctypes.c_uint32),
+        ("pbi_status", ctypes.c_uint32),
+        ("pbi_xstatus", ctypes.c_uint32),
+        ("pbi_pid", ctypes.c_uint32),
+        ("pbi_ppid", ctypes.c_uint32),
+        ("pbi_uid", ctypes.c_uint32),
+        ("pbi_gid", ctypes.c_uint32),
+        ("pbi_ruid", ctypes.c_uint32),
+        ("pbi_rgid", ctypes.c_uint32),
+        ("pbi_svuid", ctypes.c_uint32),
+        ("pbi_svgid", ctypes.c_uint32),
+        ("rfu_1", ctypes.c_uint32),
+        ("pbi_comm", ctypes.c_char * 16),
+        ("pbi_name", ctypes.c_char * 32),
+        ("pbi_nfiles", ctypes.c_uint32),
+        ("pbi_pgid", ctypes.c_uint32),
+        ("pbi_pjobc", ctypes.c_uint32),
+        ("e_tdev", ctypes.c_uint32),
+        ("e_tpgid", ctypes.c_uint32),
+        ("pbi_nice", ctypes.c_int32),
+        ("pbi_start_tvsec", ctypes.c_uint64),
+        ("pbi_start_tvusec", ctypes.c_uint64),
+    ]
+
+
+class ProcBsdshortinfo(ctypes.Structure):
+    _fields_ = [
+        ("pbsi_pid", ctypes.c_uint32),
+        ("pbsi_ppid", ctypes.c_uint32),
+        ("pbsi_pgid", ctypes.c_uint32),
+        ("pbsi_status", ctypes.c_uint32),
+        ("pbsi_comm", ctypes.c_char * 16),
+        ("pbsi_flags", ctypes.c_uint32),
+        ("pbsi_uid", ctypes.c_uint32),
+        ("pbsi_gid", ctypes.c_uint32),
+        ("pbsi_ruid", ctypes.c_uint32),
+        ("pbsi_rgid", ctypes.c_uint32),
+        ("pbsi_svuid", ctypes.c_uint32),
+        ("pbsi_svgid", ctypes.c_uint32),
+        ("pbsi_rfu", ctypes.c_uint32),
+    ]
+
+
+class ProcUniqidentifierinfo(ctypes.Structure):
+    _fields_ = [
+        ("p_uuid", ctypes.c_uint8 * 16),
+        ("p_uniqueid", ctypes.c_uint64),
+        ("p_puniqueid", ctypes.c_uint64),
+        ("p_idversion", ctypes.c_int32),
+        ("p_orig_ppidversion", ctypes.c_int32),
+        ("p_reserve2", ctypes.c_uint64),
+        ("p_reserve3", ctypes.c_uint64),
+    ]
+
+
 class MachMsgHeaderT(ctypes.Structure):
     _fields_ = [
         ("msgh_bits", ctypes.c_uint32),
@@ -238,4 +295,49 @@ class VmRegionBasicInfo64(ctypes.Structure):
         ("offset", ctypes.c_uint64),
         ("behavior", ctypes.c_int32),
         ("user_wired_count", ctypes.c_uint16),
+    ]
+
+
+class HostBasicInfo(ctypes.Structure):
+    _fields_ = [
+        ("max_cpus", ctypes.c_int32),
+        ("avail_cpus", ctypes.c_int32),
+        ("memory_size", ctypes.c_uint32),
+        ("cpu_type", ctypes.c_int32),
+        ("cpu_subtype", ctypes.c_int32),
+        ("cpu_threadtype", ctypes.c_int32),
+        ("physical_cpu", ctypes.c_int32),
+        ("physical_cpu_max", ctypes.c_int32),
+        ("logical_cpu", ctypes.c_int32),
+        ("logical_cpu_max", ctypes.c_int32),
+        ("max_mem", ctypes.c_uint64),
+    ]
+
+
+class VmStatistics64(ctypes.Structure):
+    _fields_ = [
+        ("free_count", ctypes.c_uint32),
+        ("active_count", ctypes.c_uint32),
+        ("inactive_count", ctypes.c_uint32),
+        ("wire_count", ctypes.c_uint32),
+        ("zero_fill_count", ctypes.c_uint64),
+        ("reactivations", ctypes.c_uint64),
+        ("pageins", ctypes.c_uint64),
+        ("pageouts", ctypes.c_uint64),
+        ("faults", ctypes.c_uint64),
+        ("cow_faults", ctypes.c_uint64),
+        ("lookups", ctypes.c_uint64),
+        ("hits", ctypes.c_uint64),
+        ("purges", ctypes.c_uint64),
+        ("purgeable_count", ctypes.c_uint32),
+        ("speculative_count", ctypes.c_uint32),
+        ("decompressions", ctypes.c_uint64),
+        ("compressions", ctypes.c_uint64),
+        ("swapins", ctypes.c_uint64),
+        ("swapouts", ctypes.c_uint64),
+        ("compressor_page_count", ctypes.c_uint32),
+        ("throttled_count", ctypes.c_uint32),
+        ("external_page_count", ctypes.c_uint32),
+        ("internal_page_count", ctypes.c_uint32),
+        ("total_uncompressed_pages_in_compressor", ctypes.c_uint64),
     ]

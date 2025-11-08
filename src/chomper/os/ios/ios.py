@@ -146,6 +146,8 @@ class IosOs(PosixOs):
     MACH_PORT_BOOTSTRAP = 4
     MACH_PORT_REPLY = 5
     MACH_PORT_CLOCK = 6
+    MACH_PORT_IO_MASTER = 7
+    MACH_PORT_DEBUG_CONTROL = 8
 
     MACH_PORT_TIMER = 256
 
@@ -162,8 +164,11 @@ class IosOs(PosixOs):
 
         self.loader = MachoLoader(self.emu)
 
-        self.pid = random.randint(1000, 2000)
+        # mobile user
         self.uid = 501
+        self.gid = self.uid
+
+        self.pid = random.randint(1000, 2000)
 
         self.tid = random.randint(10000, 20000)
 
@@ -173,7 +178,7 @@ class IosOs(PosixOs):
             f"/{BUNDLE_IDENTIFIER}"
             f"/{BUNDLE_EXECUTABLE}"
         )
-        self._executable_file = ""
+        self.executable_file = ""
 
         self.preferences = PREFERENCES.copy()
 
@@ -197,7 +202,7 @@ class IosOs(PosixOs):
         }
 
         # Mach msg
-        self._mach_msg_handler = MachMsgHandler(self.emu)
+        self._mach_msg_handler = MachMsgHandler(self.emu, self._mach_port_manager)
 
         # Xpc message
         self._xpc_message_handler = XpcMessageHandler(self.emu)
@@ -215,7 +220,8 @@ class IosOs(PosixOs):
         errno_ptr = self.emu.read_pointer(TLS_ADDRESS + 0x8)
         self.emu.write_s32(errno_ptr, value)
 
-    def _create_stat(self, st: os.stat_result) -> bytes:
+    @staticmethod
+    def _create_stat(st: os.stat_result) -> bytes:
         if sys.platform == "win32":
             block_size = 4096
 
@@ -255,7 +261,8 @@ class IosOs(PosixOs):
 
         return struct_to_bytes(st)
 
-    def _create_device_stat(self) -> bytes:
+    @staticmethod
+    def _create_device_stat() -> bytes:
         atimespec = Timespec.from_time_ns(0)
         mtimespec = Timespec.from_time_ns(0)
         ctimespec = Timespec.from_time_ns(0)
@@ -279,7 +286,8 @@ class IosOs(PosixOs):
 
         return struct_to_bytes(st)
 
-    def _create_statfs(self) -> bytes:
+    @staticmethod
+    def _create_statfs() -> bytes:
         st = Statfs64(
             f_bsize=4096,
             f_iosize=1048576,
@@ -334,13 +342,13 @@ class IosOs(PosixOs):
 
     def _setup_tls(self):
         """Initialize thread local storage (TLS)."""
-        errno_p = self.emu.create_buffer(0x8)
+        errno_ptr = self.emu.create_buffer(0x8)
 
         self.emu.write_pointer(TLS_ADDRESS - 0xE0, TLS_ADDRESS - 0xE0)
 
         self.emu.write_u64(TLS_ADDRESS - 0x8, self.tid)
 
-        self.emu.write_pointer(TLS_ADDRESS + 0x8, errno_p)
+        self.emu.write_pointer(TLS_ADDRESS + 0x8, errno_ptr)
         self.emu.write_u32(TLS_ADDRESS + 0x18, 5)
 
     def _setup_devices(self):
@@ -382,31 +390,7 @@ class IosOs(PosixOs):
 
         self.emu.uc.mmio_map(address, size, read_cb, None, write_cb, None)
 
-    def _init_program_vars(self):
-        """Initialize program variables, works like `__program_vars_init`."""
-        argc = self.emu.create_buffer(8)
-        self.emu.write_int(argc, 0, 8)
-
-        nx_argc_pointer = self.emu.get_symbol("_NXArgc_pointer")
-        self.emu.write_pointer(nx_argc_pointer.address, argc)
-
-        nx_argv_pointer = self.emu.get_symbol("_NXArgv_pointer")
-        self.emu.write_pointer(nx_argv_pointer.address, self.emu.create_string(""))
-
-        environ = self.emu.create_buffer(8)
-        self.emu.write_pointer(environ, self._create_environ(ENVIRON_VARIABLES))
-
-        environ_pointer = self.emu.get_symbol("_environ_pointer")
-        self.emu.write_pointer(environ_pointer.address, environ)
-
-        progname = self.emu.create_buffer(8)
-        self.emu.write_pointer(progname, self.emu.create_string(BUNDLE_EXECUTABLE))
-
-        progname_pointer = self.emu.get_symbol("___progname_pointer")
-        self.emu.write_pointer(progname_pointer.address, progname)
-
     def _init_lib_dyld(self):
-        """Initialize `libdyld.dylib`."""
         g_use_dyld3 = self.emu.get_symbol("_gUseDyld3")
         self.emu.write_u8(g_use_dyld3.address, 1)
 
@@ -437,12 +421,30 @@ class IosOs(PosixOs):
         self.emu.write_pointer(environ.address, environ_buf)
 
     def _init_lib_system_kernel(self):
-        """Initialize `libsystem_kernel.dylib`."""
         self.emu.call_symbol("_mach_init_doit")
 
     def _init_lib_system_c(self):
-        """Initialize `libsystem_c.dylib`."""
-        self._init_program_vars()
+        # __program_vars_init
+        argc = self.emu.create_buffer(8)
+        self.emu.write_int(argc, 0, 8)
+
+        nx_argc_pointer = self.emu.get_symbol("_NXArgc_pointer")
+        self.emu.write_pointer(nx_argc_pointer.address, argc)
+
+        nx_argv_pointer = self.emu.get_symbol("_NXArgv_pointer")
+        self.emu.write_pointer(nx_argv_pointer.address, self.emu.create_string(""))
+
+        environ = self.emu.create_buffer(8)
+        self.emu.write_pointer(environ, self._create_environ(ENVIRON_VARIABLES))
+
+        environ_pointer = self.emu.get_symbol("_environ_pointer")
+        self.emu.write_pointer(environ_pointer.address, environ)
+
+        progname = self.emu.create_buffer(8)
+        self.emu.write_pointer(progname, self.emu.create_string(BUNDLE_EXECUTABLE))
+
+        progname_pointer = self.emu.get_symbol("___progname_pointer")
+        self.emu.write_pointer(progname_pointer.address, progname)
 
         # ___xlocale_init
         locale_key = self.emu.get_symbol("___locale_key")
@@ -456,7 +458,6 @@ class IosOs(PosixOs):
         self.emu.write_u32(clock_port.address, self.MACH_PORT_CLOCK)
 
     def _init_lib_system_pthread(self):
-        """Initialize `libsystem_pthread.dylib`."""
         main_thread = self.emu.create_buffer(256)
 
         self.emu.write_pointer(main_thread + 0xB0, STACK_ADDRESS)
@@ -478,12 +479,13 @@ class IosOs(PosixOs):
         mach_task_self = self.emu.get_symbol("_mach_task_self_")
         self.emu.write_u32(mach_task_self.address, self.MACH_PORT_TASK)
 
+    def _init_lib_system_trace(self):
+        self.emu.call_symbol("__libtrace_init")
+
     def _init_lib_xpc(self):
-        """Initialize `libxpc.dylib`."""
         self.emu.call_symbol("__libxpc_initializer")
 
     def _init_lib_objc(self):
-        """Initialize `libobjc.A.dylib`."""
         prototypes = self.emu.get_symbol("__ZL10prototypes")
         self.emu.write_u64(prototypes.address, 0)
 
@@ -502,33 +504,39 @@ class IosOs(PosixOs):
         self.emu.call_symbol("__objc_init")
 
     def _init_core_foundation(self):
-        """Initialize `CoreFoundation`."""
         self._fix_method_signature_rom_table()
 
         self.emu.call_symbol("___CFInitialize")
 
     def _init_foundation(self):
-        """Initialize `Foundation`."""
         self.emu.call_symbol("__NSInitializePlatform")
 
     def _init_system_symbols(self):
         # libsandbox.dylib
         amkrtemp_sentinel = self.emu.get_symbol("__amkrtemp.sentinel")
-        self.emu.write_pointer(
-            amkrtemp_sentinel.address,
-            self.emu.create_string(""),
-        )
+        if amkrtemp_sentinel:
+            self.emu.write_pointer(
+                amkrtemp_sentinel.address,
+                self.emu.create_string(""),
+            )
 
         # CoreFoundation
         is_cf_prefs_d = self.emu.get_symbol("_isCFPrefsD")
-        self.emu.write_u8(is_cf_prefs_d.address, 1)
+        if is_cf_prefs_d:
+            self.emu.write_u8(is_cf_prefs_d.address, 1)
 
         # BackBoardServices
         bks_hid_sever_port = self.emu.get_symbol("_BKSHIDServerPort")
-        self.emu.write_u32(
-            bks_hid_sever_port.address,
-            self.MACH_PORT_BKS_HID_SERVER,
-        )
+        if bks_hid_sever_port:
+            self.emu.write_u32(
+                bks_hid_sever_port.address,
+                self.MACH_PORT_BKS_HID_SERVER,
+            )
+
+        # MobileKeyBag
+        g_user_unlocked_since_boot = self.emu.get_symbol("_gUserUnlockedSinceBoot")
+        if g_user_unlocked_since_boot:
+            self.emu.write_u8(g_user_unlocked_since_boot.address, 1)
 
     def init_objc(self, module: Module):
         """Initialize Objective-C for the module by calling `map_images`
@@ -632,6 +640,8 @@ class IosOs(PosixOs):
                 self._init_lib_dyld()
             elif name == "libsystem_pthread.dylib":
                 self._init_lib_system_pthread()
+            elif name == "libsystem_trace.dylib":
+                self._init_lib_system_trace()
             elif name == "libobjc.A.dylib":
                 self._init_lib_objc()
 
@@ -678,12 +688,12 @@ class IosOs(PosixOs):
         the executable, the runtime automatically extracts its `CFBundleIdentifier`
         and `CFBundleExecutable` values.
         """
-        self._executable_file = path
+        self.executable_file = path
 
         bundle_path = os.path.dirname(self.executable_path)
         container_path = os.path.dirname(bundle_path)
 
-        executable_dir = os.path.dirname(self._executable_file)
+        executable_dir = os.path.dirname(self.executable_file)
         info_path = os.path.join(executable_dir, "Info.plist")
 
         if os.path.exists(info_path):
@@ -716,7 +726,7 @@ class IosOs(PosixOs):
         # Set path forwarding to executable and Info.plist
         self.forward_path(
             src_path=self.executable_path,
-            dst_path=self._executable_file,
+            dst_path=self.executable_file,
         )
         self.forward_path(
             src_path=f"{bundle_path}/Info.plist",
@@ -724,7 +734,7 @@ class IosOs(PosixOs):
         )
 
     def get_executable_file(self) -> str:
-        return self._executable_file
+        return self.executable_file
 
     def _fix_method_signature_rom_table(self):
         """Relocate references in `MethodSignatureROMTable`."""
@@ -866,14 +876,12 @@ class IosOs(PosixOs):
         else:
             self._semaphore_map[semaphore] += 1
 
-    def _new_mach_port(self) -> int:
-        """Create a new mach port."""
+    @log_call
+    def mach_port_construct(self) -> int:
         mach_port = self._mach_port_manager.new()
         return mach_port if mach_port else 0
 
-    def mach_port_construct(self) -> int:
-        return self._new_mach_port()
-
+    @log_call
     def mach_port_destruct(self, mach_port: int):
         self._mach_port_manager.free(mach_port)
 
@@ -888,8 +896,26 @@ class IosOs(PosixOs):
 
         return 0
 
-    def mach_msg(self, msg: int, option: int) -> int:
-        return self._mach_msg_handler.handle_msg(msg, option)
+    def mach_msg(
+        self,
+        msg: int,
+        option: int,
+        send_size: int,
+        rcv_size: int,
+        rcv_name: int,
+        timeout: int,
+        notify: int,
+    ) -> int:
+        """Respond to `mach_msg`."""
+        return self._mach_msg_handler.handle_msg(
+            msg,
+            option,
+            send_size,
+            rcv_size,
+            rcv_name,
+            timeout,
+            notify,
+        )
 
     def xpc_send_message(self, connection: int, message: int) -> int:
         return self._xpc_message_handler.handle_message(connection, message)
