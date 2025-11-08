@@ -31,8 +31,10 @@ class AndroidOs(PosixOs):
 
         self.loader = ELFLoader(self.emu)
 
-        self.pid = random.randint(10000, 20000)
         self.uid = random.randint(10000, 20000)
+        self.gid = self.uid
+
+        self.pid = random.randint(1000, 2000)
 
         self.tid = self.pid
 

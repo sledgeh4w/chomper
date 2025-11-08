@@ -24,7 +24,7 @@ class MachoLoader(BaseLoader):
             "____chkstk_darwin": "___chkstk_darwin",
         }
 
-        platform_funcs = [
+        platform_symbols = [
             "_bzero",
             "_memccpy",
             "_memchr",
@@ -46,8 +46,8 @@ class MachoLoader(BaseLoader):
             "_strstr",
         ]
 
-        for func in platform_funcs:
-            symbol_aliases[f"__platform{func}"] = func
+        for symbol in platform_symbols:
+            symbol_aliases[f"__platform{symbol}"] = symbol
 
         self._symbol_aliases.update(symbol_aliases)
 

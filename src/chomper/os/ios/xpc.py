@@ -1,15 +1,20 @@
+from __future__ import annotations
+
 import binascii
 import uuid
 from io import BytesIO
-from typing import Any, Optional
+from typing import Any, Optional, TYPE_CHECKING
 
 from chomper.plist17lib import _BinaryPlist17Parser, _BinaryPlist17Writer
+
+if TYPE_CHECKING:
+    from chomper.core import Chomper
 
 
 class XpcMessageHandler:
     """Receive and reply XPC messages."""
 
-    def __init__(self, emu):
+    def __init__(self, emu: Chomper):
         self.emu = emu
 
     def get_connection_name(self, connection: int) -> Optional[str]:

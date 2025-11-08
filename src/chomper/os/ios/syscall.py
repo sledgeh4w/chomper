@@ -15,7 +15,7 @@ from chomper.typing import SyscallHandleCallable
 from chomper.utils import to_signed, struct_to_bytes
 
 from . import const
-from .structs import Rusage
+from .structs import Rusage, ProcBsdinfo, ProcBsdshortinfo, ProcUniqidentifierinfo
 from .sysctl import sysctl, sysctlbyname
 
 if TYPE_CHECKING:
@@ -359,7 +359,7 @@ def handle_sys_madvise(emu: Chomper):
 
 @register_syscall_handler(const.SYS_GETEGID, "SYS_getegid")
 def handle_sys_getegid(emu: Chomper):
-    return 1
+    return emu.os.gid
 
 
 @register_syscall_handler(const.SYS_GETTIMEOFDAY, "SYS_gettimeofday")
@@ -635,6 +635,15 @@ def handle_sys_connect(emu):
     return emu.os.connect(sock, address, address_len)
 
 
+@register_syscall_handler(const.SYS_BIND, "SYS_bind")
+def handle_sys_bind(emu):
+    sock = emu.get_arg(0)
+    address = emu.get_arg(1)
+    address_len = emu.get_arg(2)
+
+    return emu.os.bind(sock, address, address_len)
+
+
 @register_syscall_handler(const.SYS_SETSOCKOPT, "SYS_setsockopt")
 def handle_sys_setsockopt(emu):
     sock = emu.get_arg(0)
@@ -670,6 +679,18 @@ def handle_sys_fcntl(emu: Chomper):
     arg = emu.get_arg(2)
 
     return emu.os.fcntl(fd, cmd, arg)
+
+
+@register_syscall_handler(const.SYS_SELECT, "SYS_select")
+@register_syscall_handler(const.SYS_SELECT_NOCANCEL, "SYS_select_nocancel")
+def handle_sys_select(emu: Chomper):
+    nfds = emu.get_arg(0)
+    readfds = emu.get_arg(1)
+    writefds = emu.get_arg(2)
+    errorfds = emu.get_arg(3)
+    timeout = emu.get_arg(4)
+
+    return emu.os.select(nfds, readfds, writefds, errorfds, timeout)
 
 
 @register_syscall_handler(const.SYS_SYSCTL, "SYS_sysctl")
@@ -813,12 +834,36 @@ def handle_sys_proc_info(emu: Chomper):
     if pid != emu.ios_os.pid:
         raise_permission_denied()
 
-    if flavor == 3:
-        emu.write_string(buffer, emu.ios_os.executable_path.split("/")[-1])
-    elif flavor == 11:
-        emu.write_string(buffer, emu.ios_os.executable_path)
+    emu.logger.info(f"pid={pid}, flavor={flavor}")
 
-    return 0
+    if flavor == const.PROC_PIDTBSDINFO:
+        bsd_info = ProcBsdinfo(
+            pbi_pid=emu.ios_os.pid,
+            pbi_ppid=1,
+            pbi_uid=emu.ios_os.uid,
+            pbi_gid=emu.ios_os.gid,
+        )
+        result = struct_to_bytes(bsd_info)
+    elif flavor == const.PROC_PIDPATHINFO:
+        emu.write_string(buffer, emu.ios_os.executable_path)
+        result = emu.ios_os.executable_path.encode("utf-8")
+    elif flavor == const.PROC_PIDT_SHORTBSDINFO:
+        bsd_short_info = ProcBsdshortinfo(
+            pbsi_pid=emu.ios_os.pid,
+            pbsi_ppid=1,
+            pbsi_uid=emu.ios_os.uid,
+            pbsi_gid=emu.ios_os.gid,
+        )
+        result = struct_to_bytes(bsd_short_info)
+    elif flavor == const.PROC_PIDUNIQIDENTIFIERINFO:
+        uniq_identifier_info = ProcUniqidentifierinfo()
+        result = struct_to_bytes(uniq_identifier_info)
+    else:
+        emu.logger.warning("Unhandled proc_info call")
+        return 0
+
+    emu.write_bytes(buffer, result)
+    return len(result)
 
 
 @register_syscall_handler(const.SYS_STAT64, "SYS_stat64")
@@ -1353,8 +1398,21 @@ def handle_host_self_trap(emu: Chomper):
 def handle_mach_msg_trap(emu: Chomper):
     msg = emu.get_arg(0)
     option = emu.get_arg(1)
+    send_size = emu.get_arg(2)
+    rcv_size = emu.get_arg(3)
+    rcv_name = emu.get_arg(4)
+    timeout = emu.get_arg(5)
+    notify = emu.get_arg(6)
 
-    return emu.ios_os.mach_msg(msg, option)
+    return emu.ios_os.mach_msg(
+        msg,
+        option,
+        send_size,
+        rcv_size,
+        rcv_name,
+        timeout,
+        notify,
+    )
 
 
 @register_syscall_handler(const.SEMAPHORE_SIGNAL_TRAP, "SEMAPHORE_SIGNAL_TRAP")
@@ -1375,6 +1433,15 @@ def handle_semaphore_wait_trap(emu: Chomper):
     const.KERNELRPC_MACH_PORT_GUARD_TRAP, "KERNELRPC_MACH_PORT_GUARD_TRAP"
 )
 def handle_kernelrpc_mach_port_guard_trap(emu: Chomper):
+    return 0
+
+
+@register_syscall_handler(const.MAP_FD_TRAP, "MAP_FD_TRAP")
+def handle_map_fd_trap(emu: Chomper):
+    activity_id = emu.get_arg(2)
+
+    emu.write_u64(activity_id, random.getrandbits(64))
+
     return 0
 
 
