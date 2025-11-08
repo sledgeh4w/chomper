@@ -247,6 +247,13 @@ class PosixOs(ABC):
 
         return sock
 
+    def _get_fd_family(self, fd: int) -> int:
+        family = self._file_manager.get_prop(fd, "family")
+
+        assert isinstance(family, int)
+
+        return family
+
     def _device_read(self, fd: int, size: int) -> bytes:
         device = self._get_fd_device(fd)
         if not device.readable():
@@ -355,13 +362,16 @@ class PosixOs(ABC):
 
         return buffer
 
-    def _create_stat(self, st: os.stat_result) -> bytes:
+    @staticmethod
+    def _create_stat(st: os.stat_result) -> bytes:
         raise NotImplementedError("_create_stat")
 
-    def _create_device_stat(self) -> bytes:
+    @staticmethod
+    def _create_device_stat() -> bytes:
         raise NotImplementedError("_create_device_stat")
 
-    def _create_statfs(self) -> bytes:
+    @staticmethod
+    def _create_statfs() -> bytes:
         raise NotImplementedError("_create_statfs")
 
     def _open(self, path: str, flags: int, mode: int) -> int:
@@ -471,8 +481,10 @@ class PosixOs(ABC):
         self._check_fd(fd)
 
         if self._is_sock_fd(fd):
-            sock = self._get_fd_sock(fd)
-            sock.close()
+            family = self._get_fd_family(fd)
+            if family == self.AF_INET:
+                sock = self._get_fd_sock(fd)
+                sock.close()
 
         if self._is_file_fd(fd):
             real_fd = self._get_fd_real_fd(fd)
@@ -589,8 +601,11 @@ class PosixOs(ABC):
     @log_call
     def fsync(self, fd: int):
         self._check_fd(fd)
-        real_fd = self._get_fd_real_fd(fd)
 
+        if self._is_dir_fd(fd):
+            return
+
+        real_fd = self._get_fd_real_fd(fd)
         os.fsync(real_fd)
 
     @log_call
@@ -763,11 +778,21 @@ class PosixOs(ABC):
         if family == self.AF_UNIX:
             path = self.emu.read_string(address + 2)
             if path == "/var/run/mDNSResponder":
+                if self._file_manager.validate(sock):
+                    self._file_manager.set_prop(sock, "family", self.AF_UNIX)
+                    self._file_manager.set_prop(sock, "path", path)
                 return 0
         elif family == self.AF_INET:
             pass
         else:
             self.logger.warning("Unsupported protocol family: %s", family)
+            return -1
+
+        return -1
+
+    @log_call
+    def bind(self, sock: int, address: int, address_len: int):
+        if not self.FEATURE_SOCKET_ENABLE:
             return -1
 
         return -1
@@ -780,7 +805,10 @@ class PosixOs(ABC):
             return None
 
         read_fd = self._new_fd(FdType.SOCK)
+        self._file_manager.set_prop(read_fd, "family", domain)
+
         write_fd = self._new_fd(FdType.SOCK)
+        self._file_manager.set_prop(write_fd, "family", domain)
 
         return read_fd, write_fd
 
@@ -858,6 +886,43 @@ class PosixOs(ABC):
 
         self.emu.write_bytes(buffer, b"\x00" * length)
         return length
+
+    def _fd_set_count(self, fd_set: int) -> int:
+        """Get the number of members in `fd_set`."""
+        raw_bytes = self.emu.read_bytes(fd_set, 128)
+        count = 0
+
+        for byte in raw_bytes:
+            count += bin(byte).count("1")
+
+        return count
+
+    @log_call
+    def select(
+        self,
+        nfds: int,
+        readfds: int,
+        writefds: int,
+        errorfds: int,
+        timeout: int,
+    ) -> int:
+        if not self.FEATURE_SOCKET_ENABLE:
+            return -1
+
+        count = 0
+
+        # Make all descriptors ready
+
+        if readfds:
+            count += self._fd_set_count(readfds)
+
+        if writefds:
+            count += self._fd_set_count(writefds)
+
+        if errorfds:
+            count += self._fd_set_count(errorfds)
+
+        return count
 
     @log_call
     def fcntl(self, fd: int, cmd: int, arg: int) -> int:

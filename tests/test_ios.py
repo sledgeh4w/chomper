@@ -435,22 +435,31 @@ def test_mach_ports(emu_ios):
             == emu_ios.ios_os.MACH_PORT_BOOTSTRAP
         )
 
-        result = emu_ios.call_symbol(
+        emu_ios.call_symbol(
             "_host_get_special_port",
             emu_ios.ios_os.MACH_PORT_HOST,
             0,
             const.HOST_PORT,
             port_buf,
         )
-        assert result == 0 and emu_ios.read_u32(port_buf)
+        assert emu_ios.read_u32(port_buf) == emu_ios.ios_os.MACH_PORT_HOST
 
-        result = emu_ios.call_symbol(
+        emu_ios.call_symbol(
             "_task_get_special_port",
             emu_ios.ios_os.MACH_PORT_TASK,
             const.TASK_BOOTSTRAP_PORT,
             port_buf,
         )
-        assert result == 0 and emu_ios.read_u32(port_buf)
+        assert emu_ios.read_u32(port_buf) == emu_ios.ios_os.MACH_PORT_BOOTSTRAP
+
+        io_master_buf = ctx.create_buffer(4)
+        emu_ios.call_symbol(
+            "_host_get_io_master", emu_ios.ios_os.MACH_PORT_HOST, io_master_buf
+        )
+        assert emu_ios.read_u32(io_master_buf) == emu_ios.ios_os.MACH_PORT_IO_MASTER
+
+        port = emu_ios.call_symbol("__os_trace_create_debug_control_port")
+        assert port
 
 
 def test_xpc_connection(emu_ios):
