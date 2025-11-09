@@ -1,10 +1,11 @@
 import os
 from itertools import chain
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Optional
 
 import lief
 from lief.MachO import ARM64_RELOCATION, RelocationFixup
 
+from chomper import const
 from chomper.utils import aligned
 
 from .base import BaseLoader, Module, DyldInfo, Symbol, Binding, Segment, AddressRegion
@@ -355,8 +356,8 @@ class MachoLoader(BaseLoader):
 
     def load(
         self,
-        module_base: int,
         module_file: str,
+        module_base: Optional[int] = None,
         trace_symbol_calls: bool = False,
     ) -> Module:
         """Load Mach-O executable file from path."""
@@ -365,12 +366,17 @@ class MachoLoader(BaseLoader):
 
         binary: lief.MachO.Binary = lief.parse(module_file)  # type: ignore
 
-        if self.emu.modules:
-            # Make the segments of different modules are interleaved
-            module_base = self._find_load_base(binary)
+        if module_base is None:
+            if self.emu.modules:
+                # Make the segments of different modules are interleaved
+                module_base = self._find_load_base(binary)
+            else:
+                module_base = const.MODULE_ADDRESS
 
-        # Make module memory distribution more compact
-        module_base -= aligned(self._get_lowest_address(binary), 1024)
+            # Make module memory distribution more compact
+            module_base -= aligned(self._get_lowest_address(binary), 1024)
+        else:
+            module_base -= binary.imagebase
 
         regions = self._map_segments(binary, module_base)
         size = (regions[-1].end - module_base) if regions else 0

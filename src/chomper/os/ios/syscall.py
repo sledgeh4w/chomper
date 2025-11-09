@@ -817,6 +817,11 @@ def handle_sys_issetugid(emu: Chomper):
     return 0
 
 
+@register_syscall_handler(const.SYS_PTHREAD_SIGMASK, "SYS_pthread_sigmask")
+def handle_sys_pthread_sigmask(emu: Chomper):
+    return 0
+
+
 @register_syscall_handler(const.SYS_SEMWAIT_SIGNAL, "SYS_semwait_signal")
 @register_syscall_handler(
     const.SYS_SEMWAIT_SIGNAL_NOCANCEL, "SYS_semwait_signal_nocancel"
@@ -1172,6 +1177,11 @@ def handle_sys_mkdirat(emu: Chomper):
 
     emu.os.mkdirat(dir_fd, path, mode)
 
+    return 0
+
+
+@register_syscall_handler(const.SYS_BSDTHREAD_CTL, "SYS_bsdthread_ctl")
+def handle_sys_bsdthread_ctl(emu: Chomper):
     return 0
 
 

@@ -186,8 +186,8 @@ class BaseLoader(ABC):
     @abstractmethod
     def load(
         self,
-        module_base: int,
         module_file: str,
+        module_base: Optional[int] = None,
         trace_symbol_calls: bool = False,
     ) -> Module:
         """Load executable file."""
