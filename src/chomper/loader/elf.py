@@ -1,11 +1,12 @@
 import os
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 from elftools.elf.dynamic import DynamicSegment
 from elftools.elf.elffile import ELFFile
 from elftools.elf.enums import ENUM_RELOC_TYPE_AARCH64, ENUM_RELOC_TYPE_ARM
 from elftools.elf.relocation import Relocation
 
+from chomper import const
 from chomper.utils import aligned, to_unsigned
 
 from .base import BaseLoader, Module, Symbol, SymbolType, AddressRegion
@@ -147,14 +148,21 @@ class ELFLoader(BaseLoader):
 
     def load(
         self,
-        module_base: int,
         module_file: str,
+        module_base: Optional[int] = None,
         trace_symbol_calls: bool = False,
     ) -> Module:
         """Load ELF library file from path."""
         with ELFFile.load_from_path(module_file) as elffile:
             module_name = os.path.basename(module_file)
             self.emu.logger.info(f'Load module "{module_name}"')
+
+            if module_base is None:
+                if self.emu.modules:
+                    prev = self.emu.modules[-1]
+                    module_base = aligned(prev.base + prev.size, 1024 * 1024)
+                else:
+                    module_base = const.MODULE_ADDRESS
 
             # Map segments into memory
             regions = self._map_segments(elffile, module_base)

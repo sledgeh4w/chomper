@@ -39,7 +39,7 @@ class ObjcBlock:
         invoke: Invoke address. If this is function, an interceptor will be added
             and called back to the specified function.
         variables: Variables captured by the Block.
-        user_data: If ``invoke`` is function, this will be passed to the interceptor.
+        user_data: If `invoke` is function, this will be passed to the interceptor.
     """
 
     def __init__(

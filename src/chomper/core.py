@@ -34,7 +34,7 @@ from .typing import (
     HookFuncCallable,
     HookMemCallable,
 )
-from .utils import aligned, to_signed, bytes_to_float, float_to_bytes
+from .utils import to_signed, bytes_to_float, float_to_bytes
 
 try:
     from capstone import CS_ARCH_AARCH64
@@ -354,13 +354,13 @@ class Chomper:
         """Add hook to the emulator.
 
         Args:
-            target: The symbol name or the address to hook. If this is ``str``,
+            target: The symbol name or the address to hook. If it is `str`,
                 the function will look up symbol from loaded modules and use its
                 address to hook.
-            callback: The callback function, same as callback of type ``UC_HOOK_CODE``
+            callback: The callback function, same as callback of type `UC_HOOK_CODE`
                 in unicorn.
-            user_data: A ``dict`` that contains the data you want to pass to the
-                callback function. The ``Chomper`` instance will also be passed in
+            user_data: A `dict` that contains the data you want to pass to the
+                callback function. The `Chomper` instance will also be passed in
                 as an emulator field.
             return_callback: If a function is hooked, the callback will be triggered
                 upon its return.
@@ -614,6 +614,7 @@ class Chomper:
     def load_module(
         self,
         module_file: str,
+        module_base: Optional[int] = None,
         exec_init_array: bool = True,
         exec_objc_init: bool = True,
         trace_inst: bool = False,
@@ -623,6 +624,8 @@ class Chomper:
 
         Args:
             module_file: The path of file to be loaded.
+            module_base: The address for loading the module. If it is `None`,
+                the loader will automatically select the address.
             exec_init_array: Execute initialization functions recorded in the section
                 `.init_array` after the module loaded.
             exec_objc_init: Execute `_objc_init` function after the module loaded.
@@ -633,12 +636,6 @@ class Chomper:
         """
         if self.os_type == const.OS_IOS:
             self.ios_os.set_executable_file(module_file)
-
-        if not self.modules:
-            module_base = const.MODULE_ADDRESS
-        else:
-            prev = self.modules[-1]
-            module_base = aligned(prev.base + prev.size, 1024 * 1024)
 
         module = self.os.loader.load(
             module_base=module_base,
@@ -667,7 +664,7 @@ class Chomper:
         are stored in the register X0-X7, and the rest are stored on the stack.
 
         Returns:
-            A ``tuple`` contains a ``bool`` and an ``int``, the first member means
+            A `tuple` contains a `bool` and an `int`, the first member means
             whether the returned is a register and the second is the actual register
             or address.
         """
