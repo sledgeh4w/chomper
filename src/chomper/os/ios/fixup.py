@@ -467,6 +467,7 @@ class SystemModuleFixer:
         """Fixup references to const."""
         sections = self.get_sections(
             [
+                ("__DATA", "__common"),
                 ("__DATA", "__data"),
                 ("__DATA", "__objc_arraydata"),
                 ("__DATA", "__objc_arrayobj"),
