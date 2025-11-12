@@ -8,6 +8,9 @@ from unicorn import Uc
 from chomper.exceptions import EmulatorCrashed, ObjCUnrecognizedSelector
 from chomper.objc import ObjcRuntime, ObjcObject
 from chomper.typing import HookContext
+from chomper.utils import struct_to_bytes
+
+from .structs import DlInfo
 
 
 hooks: Dict[str, Callable] = {}
@@ -209,6 +212,31 @@ def hook_dlopen(uc: Uc, address: int, size: int, user_data: HookContext):
         raise EmulatorCrashed(f"doesn't support dlopen: '{path}'")
 
     return module_base
+
+
+@register_hook("_dladdr")
+def hook_dladdr(uc: Uc, address: int, size: int, user_data: HookContext):
+    emu = user_data["emu"]
+
+    addr = emu.get_arg(0)
+    info = emu.get_arg(1)
+
+    for module in emu.modules:
+        if module.contains(addr):
+            dl_info = DlInfo(
+                dli_fname=emu.create_const_string(module.name),
+                dli_fbase=module.base,
+            )
+
+            for symbol in module.symbols:
+                if symbol.address == addr:
+                    dl_info.dli_sname = emu.create_const_string(symbol.name)
+                    dl_info.dli_saddr = symbol.address
+
+            emu.write_bytes(info, struct_to_bytes(dl_info))
+            return 1
+
+    return 0
 
 
 @register_hook("__sl_dlopen_audited")
