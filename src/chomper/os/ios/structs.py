@@ -202,7 +202,7 @@ class ProcUniqidentifierinfo(ctypes.Structure):
     ]
 
 
-class MachMsgHeaderT(ctypes.Structure):
+class MachMsgHeader(ctypes.Structure):
     _fields_ = [
         ("msgh_bits", ctypes.c_uint32),
         ("msgh_size", ctypes.c_uint32),
@@ -213,13 +213,13 @@ class MachMsgHeaderT(ctypes.Structure):
     ]
 
 
-class MachMsgBodyT(ctypes.Structure):
+class MachMsgBody(ctypes.Structure):
     _fields_ = [
         ("msgh_descriptor_count", ctypes.c_uint32),
     ]
 
 
-class MachMsgTypeDescriptorT(ctypes.Structure):
+class MachMsgTypeDescriptor(ctypes.Structure):
     _fields_ = [
         ("pad1", ctypes.c_uint32),
         ("pad1", ctypes.c_uint32),
@@ -228,7 +228,7 @@ class MachMsgTypeDescriptorT(ctypes.Structure):
     ]
 
 
-class MachMsgPortDescriptorT(ctypes.Structure):
+class MachMsgPortDescriptor(ctypes.Structure):
     _fields_ = [
         ("name", ctypes.c_uint32),
         ("pad1", ctypes.c_uint32),
@@ -238,7 +238,7 @@ class MachMsgPortDescriptorT(ctypes.Structure):
     ]
 
 
-class MachMsgOolDescriptorT(ctypes.Structure):
+class MachMsgOolDescriptor(ctypes.Structure):
     _fields_ = [
         ("address", ctypes.c_uint64),
         ("deallocate", ctypes.c_uint8),
@@ -249,7 +249,7 @@ class MachMsgOolDescriptorT(ctypes.Structure):
     ]
 
 
-class MachMsgOolPortsDescriptorT(ctypes.Structure):
+class MachMsgOolPortsDescriptor(ctypes.Structure):
     _fields_ = [
         ("address", ctypes.c_uint64),
         ("deallocate", ctypes.c_uint8),
@@ -260,7 +260,7 @@ class MachMsgOolPortsDescriptorT(ctypes.Structure):
     ]
 
 
-class MachMsgGuardedPortDescriptorT(ctypes.Structure):
+class MachMsgGuardedPortDescriptor(ctypes.Structure):
     _fields_ = [
         ("context", ctypes.c_uint64),
         ("flags", ctypes.c_uint16),
@@ -314,6 +314,26 @@ class HostBasicInfo(ctypes.Structure):
     ]
 
 
+class VmStatistics(ctypes.Structure):
+    _fields_ = [
+        ("free_count", ctypes.c_uint32),
+        ("active_count", ctypes.c_uint32),
+        ("inactive_count", ctypes.c_uint32),
+        ("wire_count", ctypes.c_uint32),
+        ("zero_fill_count", ctypes.c_uint32),
+        ("reactivations", ctypes.c_uint32),
+        ("pageins", ctypes.c_uint32),
+        ("pageouts", ctypes.c_uint32),
+        ("faults", ctypes.c_uint32),
+        ("cow_faults", ctypes.c_uint32),
+        ("lookups", ctypes.c_uint32),
+        ("hits", ctypes.c_uint32),
+        ("purgeable_count", ctypes.c_uint32),
+        ("purges", ctypes.c_uint32),
+        ("speculative_count", ctypes.c_uint32),
+    ]
+
+
 class VmStatistics64(ctypes.Structure):
     _fields_ = [
         ("free_count", ctypes.c_uint32),
@@ -340,4 +360,13 @@ class VmStatistics64(ctypes.Structure):
         ("external_page_count", ctypes.c_uint32),
         ("internal_page_count", ctypes.c_uint32),
         ("total_uncompressed_pages_in_compressor", ctypes.c_uint64),
+    ]
+
+
+class DlInfo(ctypes.Structure):
+    _fields_ = [
+        ("dli_fname", ctypes.c_uint64),
+        ("dli_fbase", ctypes.c_uint64),
+        ("dli_sname", ctypes.c_uint64),
+        ("dli_saddr", ctypes.c_uint64),
     ]

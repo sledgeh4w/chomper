@@ -13,12 +13,13 @@ from chomper.utils import read_struct, struct_to_bytes, int_to_bytes, float_to_b
 from . import const
 from .structs import (
     HostBasicInfo,
-    MachMsgHeaderT,
-    MachMsgBodyT,
-    MachMsgPortDescriptorT,
-    MachMsgOolDescriptorT,
+    MachMsgHeader,
+    MachMsgBody,
+    MachMsgPortDescriptor,
+    MachMsgOolDescriptor,
     MachTimespec,
     VmRegionBasicInfo64,
+    VmStatistics,
     VmStatistics64,
 )
 
@@ -42,8 +43,8 @@ class MachMsgHandler:
     def write_msg(
         self,
         msg: int,
-        msg_header: MachMsgHeaderT,
-        msg_body: MachMsgBodyT,
+        msg_header: MachMsgHeader,
+        msg_body: MachMsgBody,
         *args,
     ):
         self.emu.write_bytes(
@@ -51,8 +52,8 @@ class MachMsgHandler:
             struct_to_bytes(msg_header) + struct_to_bytes(msg_body) + b"".join(args),
         )
 
-    def write_reply_port_msg(self, msg: int, msgh: MachMsgHeaderT, port: int):
-        msg_header = MachMsgHeaderT(
+    def write_reply_port_msg(self, msg: int, msgh: MachMsgHeader, port: int):
+        msg_header = MachMsgHeader(
             msgh_bits=const.MACH_MSGH_BITS_COMPLEX,
             msgh_size=40,
             msgh_remote_port=0,
@@ -61,11 +62,11 @@ class MachMsgHandler:
             msgh_id=(msgh.msgh_id + 100),
         )
 
-        msg_body = MachMsgBodyT(
+        msg_body = MachMsgBody(
             msgh_descriptor_count=1,
         )
 
-        port_descriptor = MachMsgPortDescriptorT(
+        port_descriptor = MachMsgPortDescriptor(
             name=port,
             disposition=const.MACH_MSG_TYPE_MOVE_SEND,
             type=const.MACH_MSG_PORT_DESCRIPTOR,
@@ -88,7 +89,7 @@ class MachMsgHandler:
         timeout: int,
         notify: int,
     ) -> int:
-        msgh = read_struct(self.emu, msg, MachMsgHeaderT)
+        msgh = read_struct(self.emu, msg, MachMsgHeader)
 
         msgh_id = msgh.msgh_id
         remote_port = msgh.msgh_remote_port
@@ -132,7 +133,7 @@ class MachMsgHandler:
 
         return result
 
-    def handle_send_and_rcv_msg(self, msg: int, msgh: MachMsgHeaderT) -> int:
+    def handle_send_and_rcv_msg(self, msg: int, msgh: MachMsgHeader) -> int:
         """Handle mach msg with both `MACH_SEND_MSG` and `MACH_RCV_MSG` flags."""
         msgh_id = msgh.msgh_id
         remote_port = msgh.msgh_remote_port
@@ -144,6 +145,8 @@ class MachMsgHandler:
                 result = self._handle_host_info(msg, msgh)
             elif msgh_id == 205:
                 result = self._handle_host_get_io_master(msg, msgh)
+            elif msgh_id == 216:
+                result = self._handle_host_statistics(msg, msgh)
             elif msgh_id == 219:
                 result = self._handle_host_statistics64(msg, msgh)
             elif msgh_id == 412:
@@ -181,6 +184,9 @@ class MachMsgHandler:
         elif remote_port == self.emu.ios_os.MACH_PORT_BKS_HID_SERVER:
             if msgh_id == 6000050:
                 result = self._handle_bks_hid_get_current_display_brightness(msg, msgh)
+        elif remote_port == self.emu.ios_os.MACH_PORT_CONFIGD:
+            if msgh_id == 20010:
+                result = self._handle_configget(msg, msgh)
 
         if result is None:
             self.emu.logger.warning(
@@ -190,14 +196,14 @@ class MachMsgHandler:
 
         return result
 
-    def _handle_host_info(self, msg: int, msgh: MachMsgHeaderT) -> int:
+    def _handle_host_info(self, msg: int, msgh: MachMsgHeader) -> int:
         flavor = self.emu.read_s32(msg + 0x20)
         count = self.emu.read_s32(msg + 0x24)
 
         self.emu.logger.info(f"flavor={flavor}, count={count}")
 
         if flavor == const.HOST_BASIC_INFO:
-            msg_header = MachMsgHeaderT(
+            msg_header = MachMsgHeader(
                 msgh_bits=0,
                 msgh_size=40 + ctypes.sizeof(HostBasicInfo),
                 msgh_remote_port=0,
@@ -206,7 +212,7 @@ class MachMsgHandler:
                 msgh_id=(msgh.msgh_id + 100),
             )
 
-            msg_body = MachMsgBodyT(
+            msg_body = MachMsgBody(
                 msgh_descriptor_count=0,
             )
 
@@ -229,21 +235,60 @@ class MachMsgHandler:
 
         return const.KERN_RESOURCE_SHORTAGE
 
-    def _handle_host_get_io_master(self, msg: int, msgh: MachMsgHeaderT) -> int:
+    def _handle_host_get_io_master(self, msg: int, msgh: MachMsgHeader) -> int:
         port = self.emu.ios_os.MACH_PORT_IO_MASTER
 
         self.write_reply_port_msg(msg, msgh, port)
 
         return const.KERN_SUCCESS
 
-    def _handle_host_statistics64(self, msg: int, msgh: MachMsgHeaderT) -> int:
+    def _handle_host_statistics(self, msg: int, msgh: MachMsgHeader) -> int:
+        flavor = self.emu.read_s32(msg + 0x20)
+        count = self.emu.read_s32(msg + 0x24)
+
+        self.emu.logger.info(f"flavor={flavor}, count={count}")
+
+        if flavor == const.HOST_VM_INFO:
+            msg_header = MachMsgHeader(
+                msgh_bits=0,
+                msgh_size=40 + ctypes.sizeof(VmStatistics),
+                msgh_remote_port=0,
+                msgh_local_port=0,
+                msgh_voucher_port=0,
+                msgh_id=(msgh.msgh_id + 100),
+            )
+
+            msg_body = MachMsgBody(
+                msgh_descriptor_count=0,
+            )
+
+            info = VmStatistics(
+                # TODO: Fill values
+            )
+
+            self.write_msg(
+                msg,
+                msg_header,
+                msg_body,
+                int_to_bytes(0, 8),
+                int_to_bytes(count, 4),
+                struct_to_bytes(info),
+            )
+
+            return const.KERN_SUCCESS
+        else:
+            self.emu.logger.warning(f"Unhandled host_statistics: flavor={flavor}")
+
+        return const.KERN_RESOURCE_SHORTAGE
+
+    def _handle_host_statistics64(self, msg: int, msgh: MachMsgHeader) -> int:
         flavor = self.emu.read_s32(msg + 0x20)
         count = self.emu.read_s32(msg + 0x24)
 
         self.emu.logger.info(f"flavor={flavor}, count={count}")
 
         if flavor == const.HOST_VM_INFO64:
-            msg_header = MachMsgHeaderT(
+            msg_header = MachMsgHeader(
                 msgh_bits=0,
                 msgh_size=40 + ctypes.sizeof(VmStatistics64),
                 msgh_remote_port=0,
@@ -252,7 +297,7 @@ class MachMsgHandler:
                 msgh_id=(msgh.msgh_id + 100),
             )
 
-            msg_body = MachMsgBodyT(
+            msg_body = MachMsgBody(
                 msgh_descriptor_count=0,
             )
 
@@ -275,7 +320,7 @@ class MachMsgHandler:
 
         return const.KERN_RESOURCE_SHORTAGE
 
-    def _handle_host_get_special_port(self, msg: int, msgh: MachMsgHeaderT) -> int:
+    def _handle_host_get_special_port(self, msg: int, msgh: MachMsgHeader) -> int:
         which_port = self.emu.read_s32(msg + 0x24)
 
         if which_port == const.HOST_PORT:
@@ -290,14 +335,14 @@ class MachMsgHandler:
 
         return const.KERN_SUCCESS
 
-    def _handle_task_info(self, msg: int, msgh: MachMsgHeaderT) -> int:
+    def _handle_task_info(self, msg: int, msgh: MachMsgHeader) -> int:
         flavor = self.emu.read_s32(msg + 0x20)
         count = self.emu.read_s32(msg + 0x24)
 
         self.emu.logger.info(f"flavor={flavor}, count={count}")
 
         if flavor == const.TASK_AUDIT_TOKEN:
-            msg_header = MachMsgHeaderT(
+            msg_header = MachMsgHeader(
                 msgh_bits=0,
                 msgh_size=72,
                 msgh_remote_port=0,
@@ -306,7 +351,7 @@ class MachMsgHandler:
                 msgh_id=(msgh.msgh_id + 100),
             )
 
-            msg_body = MachMsgBodyT(
+            msg_body = MachMsgBody(
                 msgh_descriptor_count=0,
             )
 
@@ -327,7 +372,7 @@ class MachMsgHandler:
 
         return const.KERN_RESOURCE_SHORTAGE
 
-    def _handle_task_get_special_port(self, msg: int, msgh: MachMsgHeaderT) -> int:
+    def _handle_task_get_special_port(self, msg: int, msgh: MachMsgHeader) -> int:
         which_port = self.emu.read_s32(msg + 0x20)
 
         task_port_map = self._get_task_port_map()
@@ -344,7 +389,7 @@ class MachMsgHandler:
 
         return const.KERN_SUCCESS
 
-    def _handle_task_set_special_port(self, msg: int, msgh: MachMsgHeaderT) -> int:
+    def _handle_task_set_special_port(self, msg: int, msgh: MachMsgHeader) -> int:
         special_port = self.emu.read_s32(msg + 0x24)
         which_port = self.emu.read_s32(msg + 0x30)
 
@@ -357,7 +402,7 @@ class MachMsgHandler:
                 port = task_port_map[which_port]
                 self.mach_port_manager.set_prop(special_port, "port", port)
 
-        msg_header = MachMsgHeaderT(
+        msg_header = MachMsgHeader(
             msgh_bits=0,
             msgh_size=36,
             msgh_remote_port=0,
@@ -366,7 +411,7 @@ class MachMsgHandler:
             msgh_id=(msgh.msgh_id + 100),
         )
 
-        msg_body = MachMsgBodyT(
+        msg_body = MachMsgBody(
             msgh_descriptor_count=0,
         )
 
@@ -379,7 +424,7 @@ class MachMsgHandler:
 
         return const.KERN_SUCCESS
 
-    def _handle_semaphore_create(self, msg: int, msgh: MachMsgHeaderT) -> int:
+    def _handle_semaphore_create(self, msg: int, msgh: MachMsgHeader) -> int:
         # policy = self.emu.read_s32(msg_ptr + 0x20)
         value = self.emu.read_s32(msg + 0x24)
         semaphore = self.emu.ios_os.semaphore_create(value)
@@ -388,7 +433,7 @@ class MachMsgHandler:
 
         return const.KERN_SUCCESS
 
-    def _handle_vm_read_overwrite(self, msg: int, msgh: MachMsgHeaderT) -> int:
+    def _handle_vm_read_overwrite(self, msg: int, msgh: MachMsgHeader) -> int:
         address = self.emu.read_u64(msg + 0x20)
         size = self.emu.read_u32(msg + 0x28)
         data = self.emu.read_u64(msg + 0x30)
@@ -403,7 +448,7 @@ class MachMsgHandler:
             self.emu.logger.warning("vm_read_overwrite failed: invalid address")
             return const.KERN_INVALID_ADDRESS
 
-        msg_header = MachMsgHeaderT(
+        msg_header = MachMsgHeader(
             msgh_bits=0,
             msgh_size=44,
             msgh_remote_port=0,
@@ -412,7 +457,7 @@ class MachMsgHandler:
             msgh_id=(msgh.msgh_id + 100),
         )
 
-        msg_body = MachMsgBodyT(
+        msg_body = MachMsgBody(
             msgh_descriptor_count=0,
         )
 
@@ -426,7 +471,7 @@ class MachMsgHandler:
 
         return const.KERN_SUCCESS
 
-    def _handle_kernelrpc_vm_remap(self, msg: int, msgh: MachMsgHeaderT) -> int:
+    def _handle_kernelrpc_vm_remap(self, msg: int, msgh: MachMsgHeader) -> int:
         target_address = self.emu.read_u64(msg + 0x30)
         size = self.emu.read_u32(msg + 0x38)
         mask = self.emu.read_u64(msg + 0x40)
@@ -445,7 +490,7 @@ class MachMsgHandler:
         read_data = self.emu.read_bytes(src_address, size)
         self.emu.write_bytes(target_address, read_data)
 
-        msg_header = MachMsgHeaderT(
+        msg_header = MachMsgHeader(
             msgh_bits=0,
             msgh_size=52,
             msgh_remote_port=0,
@@ -454,7 +499,7 @@ class MachMsgHandler:
             msgh_id=(msgh.msgh_id + 100),
         )
 
-        msg_body = MachMsgBodyT(
+        msg_body = MachMsgBody(
             msgh_descriptor_count=0,
         )
 
@@ -470,7 +515,7 @@ class MachMsgHandler:
 
         return const.KERN_SUCCESS
 
-    def _handle_vm_region_64(self, msg: int, msgh: MachMsgHeaderT) -> int:
+    def _handle_vm_region_64(self, msg: int, msgh: MachMsgHeader) -> int:
         address = self.emu.read_u64(msg + 0x20)
         flavor = self.emu.read_s32(msg + 0x28)
         count = self.emu.read_u32(msg + 0x2C)
@@ -501,7 +546,7 @@ class MachMsgHandler:
                 user_wired_count=0,
             )
 
-            msg_header = MachMsgHeaderT(
+            msg_header = MachMsgHeader(
                 msgh_bits=const.MACH_MSGH_BITS_COMPLEX,
                 msgh_size=(68 + out_count * 4),
                 msgh_remote_port=0,
@@ -510,11 +555,11 @@ class MachMsgHandler:
                 msgh_id=(msgh.msgh_id + 100),
             )
 
-            msg_body = MachMsgBodyT(
+            msg_body = MachMsgBody(
                 msgh_descriptor_count=1,
             )
 
-            port_descriptor = MachMsgPortDescriptorT(
+            port_descriptor = MachMsgPortDescriptor(
                 name=object_name,
                 disposition=const.MACH_MSG_TYPE_MOVE_SEND,
                 type=const.MACH_MSG_PORT_DESCRIPTOR,
@@ -538,8 +583,8 @@ class MachMsgHandler:
 
         return const.KERN_RESOURCE_SHORTAGE
 
-    def _handle_xpc_pipe_mach_msg(self, msg: int, msgh: MachMsgHeaderT) -> int:
-        msg_header = MachMsgHeaderT(
+    def _handle_xpc_pipe_mach_msg(self, msg: int, msgh: MachMsgHeader) -> int:
+        msg_header = MachMsgHeader(
             msgh_bits=0,
             msgh_size=0,
             msgh_remote_port=0,
@@ -548,7 +593,7 @@ class MachMsgHandler:
             msgh_id=0x20000000,
         )
 
-        msg_body = MachMsgBodyT(
+        msg_body = MachMsgBody(
             msgh_descriptor_count=0,
         )
 
@@ -556,8 +601,8 @@ class MachMsgHandler:
 
         return const.KERN_SUCCESS
 
-    def _handle_clock_get_time(self, msg: int, msgh: MachMsgHeaderT) -> int:
-        msg_header = MachMsgHeaderT(
+    def _handle_clock_get_time(self, msg: int, msgh: MachMsgHeader) -> int:
+        msg_header = MachMsgHeader(
             msgh_bits=0,
             msgh_size=44,
             msgh_remote_port=0,
@@ -566,7 +611,7 @@ class MachMsgHandler:
             msgh_id=(msgh.msgh_id + 100),
         )
 
-        msg_body = MachMsgBodyT(
+        msg_body = MachMsgBody(
             msgh_descriptor_count=1,
         )
 
@@ -583,20 +628,21 @@ class MachMsgHandler:
 
         return const.KERN_SUCCESS
 
-    def _handle_cas_get_displays(self, msg: int, msgh: MachMsgHeaderT) -> int:
-        displays_prop = [
+    def _handle_cas_get_displays(self, msg: int, msgh: MachMsgHeader) -> int:
+        displays = [
             {
                 "kCADisplayId": 1,
                 "kCADisplayName": "LCD",
                 "kCADisplayDeviceName": "primary",
             }
         ]
-        displays_data = plistlib.dumps(displays_prop, fmt=plistlib.FMT_BINARY)
+
+        displays_data = plistlib.dumps(displays, fmt=plistlib.FMT_BINARY)
 
         displays_buf = self.emu.create_buffer(len(displays_data))
         self.emu.write_bytes(displays_buf, displays_data)
 
-        msg_header = MachMsgHeaderT(
+        msg_header = MachMsgHeader(
             msgh_bits=const.MACH_MSGH_BITS_COMPLEX,
             msgh_size=56,
             msgh_remote_port=0,
@@ -605,11 +651,11 @@ class MachMsgHandler:
             msgh_id=(msgh.msgh_id + 100),
         )
 
-        msg_body = MachMsgBodyT(
+        msg_body = MachMsgBody(
             msgh_descriptor_count=1,
         )
 
-        ool_descriptor = MachMsgOolDescriptorT(
+        ool_descriptor = MachMsgOolDescriptor(
             address=displays_buf,
             deallocate=0,
             copy=0,
@@ -629,8 +675,8 @@ class MachMsgHandler:
 
         return const.KERN_SUCCESS
 
-    def _handle_ca_display_display_update(self, msg: int, msgh: MachMsgHeaderT) -> int:
-        msg_header = MachMsgHeaderT(
+    def _handle_ca_display_display_update(self, msg: int, msgh: MachMsgHeader) -> int:
+        msg_header = MachMsgHeader(
             msgh_bits=const.MACH_MSGH_BITS_COMPLEX,
             msgh_size=276,
             msgh_remote_port=0,
@@ -639,11 +685,11 @@ class MachMsgHandler:
             msgh_id=(msgh.msgh_id + 100),
         )
 
-        msg_body = MachMsgBodyT(
+        msg_body = MachMsgBody(
             msgh_descriptor_count=2,
         )
 
-        ool_descriptor = MachMsgOolDescriptorT(
+        ool_descriptor = MachMsgOolDescriptor(
             address=0,
             deallocate=0,
             copy=0,
@@ -652,7 +698,7 @@ class MachMsgHandler:
             size=0,
         )
 
-        port_descriptor = MachMsgPortDescriptorT(
+        port_descriptor = MachMsgPortDescriptor(
             name=0,
             disposition=const.MACH_MSG_TYPE_MOVE_SEND,
             type=const.MACH_MSG_PORT_DESCRIPTOR,
@@ -673,9 +719,9 @@ class MachMsgHandler:
     def _handle_bks_hid_get_current_display_brightness(
         self,
         msg: int,
-        msgh: MachMsgHeaderT,
+        msgh: MachMsgHeader,
     ) -> int:
-        msg_header = MachMsgHeaderT(
+        msg_header = MachMsgHeader(
             msgh_bits=0,
             msgh_size=40,
             msgh_remote_port=0,
@@ -684,7 +730,7 @@ class MachMsgHandler:
             msgh_id=(msgh.msgh_id + 100),
         )
 
-        msg_body = MachMsgBodyT(
+        msg_body = MachMsgBody(
             msgh_descriptor_count=1,
         )
 
@@ -696,6 +742,73 @@ class MachMsgHandler:
             msg_body,
             int_to_bytes(0, 8),
             float_to_bytes(brightness),
+        )
+
+        return const.KERN_SUCCESS
+
+    def _handle_configget(self, msg: int, msgh: MachMsgHeader) -> int:
+        key_ptr = self.emu.read_u64(msg + 0x1C)
+        key = self.emu.read_string(key_ptr)
+
+        self.emu.logger.info(f"key='{key}'")
+
+        if key == "State:/Network/Global/Proxies":
+            config = {
+                "ExceptionsList": [
+                    "*.local",
+                    "169.254/16",
+                ],
+                "FTPPassive": 1,
+                "__SCOPED__": {
+                    "en0": {
+                        "ExceptionsList": [
+                            "*.local",
+                            "169.254/16",
+                        ],
+                        "FTPPassive": 1,
+                    }
+                },
+            }
+        else:
+            self.emu.logger.warning(f"Unhandled configget: key='{key}'")
+            return const.KERN_RESOURCE_SHORTAGE
+
+        config_data = plistlib.dumps(config, fmt=plistlib.FMT_BINARY)
+
+        config_buf = self.emu.create_buffer(len(config_data))
+        self.emu.write_bytes(config_buf, config_data)
+
+        msg_header = MachMsgHeader(
+            msgh_bits=const.MACH_MSGH_BITS_COMPLEX,
+            msgh_size=64,
+            msgh_remote_port=0,
+            msgh_local_port=0,
+            msgh_voucher_port=0,
+            msgh_id=(msgh.msgh_id + 100),
+        )
+
+        msg_body = MachMsgBody(
+            msgh_descriptor_count=1,
+        )
+
+        ool_descriptor = MachMsgOolDescriptor(
+            address=config_buf,
+            deallocate=0,
+            copy=0,
+            disposition=0,
+            type=const.MACH_MSG_OOL_DESCRIPTOR,
+            size=len(config_data),
+        )
+
+        self.write_msg(
+            msg,
+            msg_header,
+            msg_body,
+            struct_to_bytes(ool_descriptor),
+            int_to_bytes(0, 8),
+            int_to_bytes(len(config_data), 4),
+            int_to_bytes(0, 4),
+            int_to_bytes(0, 4),
         )
 
         return const.KERN_SUCCESS

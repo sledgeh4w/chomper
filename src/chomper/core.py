@@ -100,6 +100,8 @@ class Chomper:
         self._cached_modules: List[str] = []
         self._symbol_cache: Dict[str, Symbol] = {}
 
+        self._constant_strings: Dict[str, int] = {}
+
         self.memory_manager = MemoryManager(
             uc=self.uc,
             address=const.HEAP_ADDRESS,
@@ -734,6 +736,19 @@ class Chomper:
         """Create a buffer that is initialized to the string."""
         address = self.memory_manager.alloc(len(string) + 1)
         self.write_string(address, string)
+
+        return address
+
+    def create_const_string(self, string: str) -> int:
+        """Create a constant string.
+
+        Return the address of the existing string if it has been created before.
+        """
+        if string in self._constant_strings:
+            return self._constant_strings[string]
+
+        address = self.create_string(string)
+        self._constant_strings[string] = address
 
         return address
 
