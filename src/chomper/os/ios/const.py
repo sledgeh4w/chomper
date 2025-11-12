@@ -279,6 +279,8 @@ MACH_MSG_TYPE_MOVE_SEND = 17
 
 HOST_BASIC_INFO = 1
 
+HOST_VM_INFO = 2
+
 HOST_VM_INFO64 = 4
 
 # mach/host_special_ports.h

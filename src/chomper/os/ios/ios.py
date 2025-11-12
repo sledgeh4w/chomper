@@ -155,6 +155,7 @@ class IosOs(PosixOs):
     MACH_PORT_CA_RENDER_SERVER = 4097
     MACH_PORT_ADVERTISING_IDENTIFIERS = 4098
     MACH_PORT_BKS_HID_SERVER = 4099
+    MACH_PORT_CONFIGD = 4100
 
     MACH_PORT_START_VALUE = 65536
     MACH_PORT_MAX_NUM = 10000
@@ -192,14 +193,7 @@ class IosOs(PosixOs):
             max_num=self.MACH_PORT_MAX_NUM,
         )
 
-        self._mach_services = {
-            "com.apple.system.notification_center": self.MACH_PORT_NOTIFICATION_CENTER,
-            "com.apple.CARenderServer": self.MACH_PORT_CA_RENDER_SERVER,
-            "com.apple.lsd.advertisingidentifiers": (
-                self.MACH_PORT_ADVERTISING_IDENTIFIERS
-            ),
-            "com.apple.backboard.hid.services": self.MACH_PORT_BKS_HID_SERVER,
-        }
+        self._mach_services = {}
 
         # Mach msg
         self._mach_msg_handler = MachMsgHandler(self.emu, self._mach_port_manager)
@@ -885,6 +879,19 @@ class IosOs(PosixOs):
     def mach_port_destruct(self, mach_port: int):
         self._mach_port_manager.free(mach_port)
 
+    def _setup_mach_service(self):
+        services = {
+            "com.apple.system.notification_center": self.MACH_PORT_NOTIFICATION_CENTER,
+            "com.apple.CARenderServer": self.MACH_PORT_CA_RENDER_SERVER,
+            "com.apple.lsd.advertisingidentifiers": (
+                self.MACH_PORT_ADVERTISING_IDENTIFIERS
+            ),
+            "com.apple.backboard.hid.services": self.MACH_PORT_BKS_HID_SERVER,
+            "com.apple.SystemConfiguration.configd": self.MACH_PORT_CONFIGD,
+        }
+
+        self._mach_services.update(services)
+
     def bootstrap_look_up(self, name: str) -> int:
         """Find registered mach service.
 
@@ -930,6 +937,8 @@ class IosOs(PosixOs):
 
         self._setup_symbolic_links()
         self._setup_bundle_dir()
+
+        self._setup_mach_service()
 
         # Setup system modules
         self.resolve_modules(SYSTEM_MODULES)
