@@ -549,7 +549,7 @@ def hook_xpc_connection_send_message_with_reply_sync(
     connection = emu.get_arg(0)
     message = emu.get_arg(1)
 
-    return emu.ios_os.xpc_send_message(connection, message)
+    return emu.ios_os.xpc_connection_send_message(connection, message)
 
 
 @register_hook("+[NSObject(NSObject) doesNotRecognizeSelector:]")

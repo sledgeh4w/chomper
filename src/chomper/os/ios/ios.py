@@ -924,8 +924,9 @@ class IosOs(PosixOs):
             notify,
         )
 
-    def xpc_send_message(self, connection: int, message: int) -> int:
-        return self._xpc_message_handler.handle_message(connection, message)
+    def xpc_connection_send_message(self, connection: int, message: int) -> int:
+        """Respond to `xpc_connection_send_message_with_reply_sync`."""
+        return self._xpc_message_handler.handle_connection_message(connection, message)
 
     def initialize(self):
         self._setup_hooks()
