@@ -594,10 +594,18 @@ class MachMsgHandler:
         )
 
         msg_body = MachMsgBody(
-            msgh_descriptor_count=0,
+            msgh_descriptor_count=0x40585043,
         )
 
-        self.write_msg(msg, msg_header, msg_body)
+        audit_token = [0, 0, 0, 0, 0, self.emu.ios_os.pid, 0, 1]
+
+        self.write_msg(
+            msg,
+            msg_header,
+            msg_body,
+            int_to_bytes(0, 4),
+            b"".join([int_to_bytes(value, 4) for value in audit_token]),
+        )
 
         return const.KERN_SUCCESS
 

@@ -17,10 +17,10 @@ class XpcMessageHandler:
     def __init__(self, emu: Chomper):
         self.emu = emu
 
-    def get_connection_name(self, connection: int) -> Optional[str]:
+    def get_connection_name(self, connection: int) -> str:
         name_ptr = self.emu.call_symbol("_xpc_connection_get_name", connection)
         if not name_ptr:
-            return None
+            return ""
         return self.emu.read_string(name_ptr)
 
     def get_message_description(self, message: int) -> str:
@@ -127,7 +127,7 @@ class XpcMessageHandler:
 
         return reply
 
-    def handle_message(self, connection: int, message: int) -> int:
+    def handle_connection_message(self, connection: int, message: int) -> int:
         name = self.get_connection_name(connection)
         desc = self.get_message_description(message)
         display = f"'{name}'" if name else hex(connection)

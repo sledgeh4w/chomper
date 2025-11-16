@@ -395,7 +395,7 @@ class Chomper:
                 self.add_hook(
                     buffer,
                     return_wrapper,
-                    user_data={"return_addr": return_addr, **(user_data or {})},
+                    user_data={"return_addr": return_addr, **(user_data_ or {})},
                 )
 
         def return_wrapper(uc: Uc, address: int, size: int, user_data_: HookContext):
@@ -412,6 +412,9 @@ class Chomper:
 
         if self.arch == arm_arch:
             hook_addr = (hook_addr | 1) - 1
+
+        # Ensure hook effect
+        self.uc.ctl_flush_tb()  # type: ignore
 
         return self.uc.hook_add(
             UC_HOOK_CODE,
