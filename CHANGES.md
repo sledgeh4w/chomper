@@ -1,3 +1,14 @@
+## v0.3.7
+
+Released: 2026-01-03
+
+- Add handling for xpc messages to support calls like `-[UIDevice identifierForVendor]` and `-[NSFileManager ubiquityIdentityToken]`.
+- Add compatibility for `nanosleep`, `vm_region_64`, `vm_read_overwrite` and `-[UIScreen brightness]`.
+- Optimize module memory layout for Mach-O.
+- Fix an error if the `oldp` argument for `sysctl` is null ([issue #218][issue_218]).
+
+[issue_218]: https://github.com/sledgeh4w/chomper/issues/218
+
 ## v0.3.6
 
 Released: 2025-10-08
@@ -20,7 +31,7 @@ Released: 2025-06-08
 - Add `Block` class for easier Objective-C block construction.
 - Add `add_mem_hook` method for exporting unicorn memory hook functionality.
 - Support emulation of device files such as `/dev/null` and `/dev/urandom`.
-- Fix compatibility with `-[NSFileManager directoryContentsAtPath:]`, `-[NSUserDefaults setObject:forKey:]`, `NSLog` and `CFNetworkCopySystemProxySettings`.
+- Add compatibility for `-[NSFileManager directoryContentsAtPath:]`, `-[NSUserDefaults setObject:forKey:]`, `NSLog` and `CFNetworkCopySystemProxySettings`.
 - Compatible with capstone 6.0.0a4.
 
 ## v0.3.4

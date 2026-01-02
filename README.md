@@ -14,7 +14,7 @@ Chomper is a lightweight emulation framework based on [Unicorn](https://github.c
 
 ## Requirements
 
-- Python 3.8+
+- Python 3.9+
 - Unicorn 2.0.0+
 
 ## Installation
