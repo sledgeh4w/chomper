@@ -539,7 +539,7 @@ class IosOs(PosixOs):
         if not self.emu.find_module("libobjc.A.dylib"):
             return
 
-        mach_header_ptr = module.dyld_info.image_header
+        mach_header_ptr = module.macho_info.image_header
         mach_header_ptrs = self.emu.create_buffer(self.emu.arch.addr_size)
 
         mh_execute_header_pointer = self.emu.get_symbol("__mh_execute_header_pointer")
@@ -620,7 +620,7 @@ class IosOs(PosixOs):
             # Execute initialization functions after fixup
             if module.init_array:
                 init_array = [
-                    module.base - module.dyld_info.image_base + init_func
+                    module.base - module.macho_info.image_base + init_func
                     for init_func in module.init_array
                 ]
                 self.emu.exec_init_array(init_array)
@@ -737,7 +737,7 @@ class IosOs(PosixOs):
         table_size = 7892
 
         objc_module = self.emu.find_module("libobjc.A.dylib")
-        objc_offset = objc_module.base - objc_module.dyld_info.image_base
+        objc_offset = objc_module.base - objc_module.macho_info.image_base
 
         for index in range(table_size):
             offset = table.address + index * 24 + 8

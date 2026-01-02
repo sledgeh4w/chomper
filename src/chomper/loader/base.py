@@ -52,7 +52,7 @@ class Segment:
 
 
 @dataclass
-class DyldInfo:
+class MachoInfo:
     image_base: int
     image_header: int
 
@@ -70,7 +70,7 @@ class Module:
         symbols: List[Symbol],
         regions: List[AddressRegion],
         init_array: List[int],
-        dyld_info: Optional[DyldInfo] = None,
+        macho_info: Optional[MachoInfo] = None,
     ):
         self._path = path
         self._base = base
@@ -80,7 +80,7 @@ class Module:
         self._regions = regions
         self._init_array = init_array
 
-        self._dyld_info = dyld_info
+        self._macho_info = macho_info
 
     @property
     def path(self) -> str:
@@ -111,13 +111,13 @@ class Module:
         return self._init_array
 
     @property
-    def has_dyld_info(self) -> bool:
-        return bool(self._dyld_info)
+    def is_macho(self) -> bool:
+        return bool(self._macho_info)
 
     @property
-    def dyld_info(self) -> DyldInfo:
-        assert self._dyld_info
-        return self._dyld_info
+    def macho_info(self) -> MachoInfo:
+        assert self._macho_info
+        return self._macho_info
 
     def contains(self, address: int) -> bool:
         for region in self.regions:
@@ -147,10 +147,10 @@ class BaseLoader(ABC):
         bindings: Dict[str, List] = {}
 
         for module in self.emu.modules:
-            if not module.has_dyld_info:
+            if not module.is_macho:
                 continue
 
-            for binding in module.dyld_info.lazy_bindings:
+            for binding in module.macho_info.lazy_bindings:
                 symbol_name = binding.symbol
 
                 if not bindings.get(symbol_name):

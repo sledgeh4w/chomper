@@ -305,8 +305,8 @@ class Chomper:
         if module:
             offset = address - module.base
 
-            if module.has_dyld_info:
-                offset += module.dyld_info.image_base
+            if module.is_macho:
+                offset += module.macho_info.image_base
 
             return f"{module.name}!{hex(offset)}"
 
