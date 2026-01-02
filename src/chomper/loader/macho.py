@@ -8,7 +8,7 @@ from lief.MachO import ARM64_RELOCATION, RelocationFixup
 from chomper import const
 from chomper.utils import aligned
 
-from .base import BaseLoader, Module, DyldInfo, Symbol, Binding, Segment, AddressRegion
+from .base import BaseLoader, Module, MachoInfo, Symbol, Binding, Segment, AddressRegion
 
 
 class MachoLoader(BaseLoader):
@@ -151,7 +151,7 @@ class MachoLoader(BaseLoader):
 
                     if reloc_addr:
                         address = (
-                            module.base - module.dyld_info.image_base + binding.address
+                            module.base - module.macho_info.image_base + binding.address
                         )
 
                         value = reloc_addr + binding.addend
@@ -411,7 +411,7 @@ class MachoLoader(BaseLoader):
         image_base = binary.imagebase
         image_header = module_base + text_segment.virtual_address
 
-        dyld_info = DyldInfo(
+        macho_info = MachoInfo(
             image_base=image_base,
             image_header=image_header,
             lazy_bindings=lazy_bindings,
@@ -425,5 +425,5 @@ class MachoLoader(BaseLoader):
             symbols=symbols,
             regions=regions,
             init_array=init_array,
-            dyld_info=dyld_info,
+            macho_info=macho_info,
         )
