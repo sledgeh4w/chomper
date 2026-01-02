@@ -285,7 +285,7 @@ def hook_dyld_image_header_containing_address(
 
     for module in emu.modules:
         if module.contains(address):
-            return module.dyld_info.image_header
+            return module.macho_info.image_header
 
     return 0
 
@@ -307,7 +307,7 @@ def hook_dyld_get_image_header(uc: Uc, address: int, size: int, user_data: HookC
 
     if emu.modules:
         module = emu.modules[-1]
-        return module.dyld_info.image_header
+        return module.macho_info.image_header
 
     return 0
 
@@ -320,7 +320,7 @@ def hook_dyld_get_image_vmaddr_slide(
 
     if emu.modules:
         module = emu.modules[-1]
-        return module.base - module.dyld_info.image_base
+        return module.base - module.macho_info.image_base
 
     return 0
 
