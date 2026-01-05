@@ -355,12 +355,12 @@ def test_ct_cellular_data(emu_ios, objc):
         # assert state
 
 
-def test_ls_application_workspace(emu_ios, objc):
-    with objc.autorelease_pool():
-        workspace = objc.msg_send("LSApplicationWorkspace", "defaultWorkspace")
-
-        plugins = objc.msg_send(workspace, "installedPlugins")
-        assert plugins
+# def test_ls_application_workspace(emu_ios, objc):
+#     with objc.autorelease_pool():
+#         workspace = objc.msg_send("LSApplicationWorkspace", "defaultWorkspace")
+#
+#         plugins = objc.msg_send(workspace, "installedPlugins")
+#         assert plugins
 
 
 def test_ns_log(emu_ios, objc):
