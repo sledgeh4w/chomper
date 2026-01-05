@@ -156,6 +156,8 @@ class XpcMessageHandler:
         elif name == "com.apple.lsd.mapdb":
             if sel_name == "getBundleProxyForCurrentProcessWithCompletionHandler:":
                 reply_obj = self._reply_get_bundle_proxy()
+            elif sel_name == "resolveQueries:legacySPI:completionHandler:":
+                reply_obj = self._reply_resolve_queries()
         elif name == "com.apple.mobilegestalt.xpc":
             if sel_name == "getServerAnswerForQuestion:reply:":
                 reply_obj = self._reply_get_server_answer_for_question()
@@ -212,6 +214,17 @@ class XpcMessageHandler:
                     "$class": "LSBundleProxy",
                 },
                 None,  # type: ignore
+            ],
+        ]
+
+    @staticmethod
+    def _reply_resolve_queries():
+        return [
+            None,
+            'v24@?0@"NSDictionary"8@"NSError"16',
+            [
+                None,
+                None,
             ],
         ]
 

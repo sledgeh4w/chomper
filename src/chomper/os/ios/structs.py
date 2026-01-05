@@ -370,3 +370,13 @@ class DlInfo(ctypes.Structure):
         ("dli_sname", ctypes.c_uint64),
         ("dli_saddr", ctypes.c_uint64),
     ]
+
+
+class Utsname(ctypes.Structure):
+    _fields_ = [
+        ("sysname", ctypes.c_char * 256),
+        ("nodename", ctypes.c_char * 256),
+        ("release", ctypes.c_char * 256),
+        ("version", ctypes.c_char * 256),
+        ("machine", ctypes.c_char * 256),
+    ]

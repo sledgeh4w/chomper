@@ -111,7 +111,7 @@ SYSTEM_MODULES = [
 # Symbolic links in the file system
 SYMBOLIC_LINKS = {
     "/etc": "/private/etc",
-    "/tmp": "/private/tmp",
+    "/tmp": "/private/var/tmp",
     "/var": "/private/var",
     "/usr/share/zoneinfo": "/var/db/timezone/zoneinfo",
     "/var/db/timezone/icutz": "/var/db/timezone/tz/2024a.1.0/icutz/",
@@ -131,6 +131,13 @@ PREFERENCES = {
         "en",
     ],
     "AppleLocale": "zh-Hans",
+}
+
+# Virtual device files
+DEVICES_FILES = {
+    "/dev/null": NullDevice,
+    "/dev/random": RandomDevice,
+    "/dev/urandom": UrandomDevice,
 }
 
 
@@ -159,6 +166,14 @@ class IosOs(PosixOs):
 
     MACH_PORT_START_VALUE = 65536
     MACH_PORT_MAX_NUM = 10000
+
+    MACH_SERVICES = {
+        "com.apple.system.notification_center": MACH_PORT_NOTIFICATION_CENTER,
+        "com.apple.CARenderServer": MACH_PORT_CA_RENDER_SERVER,
+        "com.apple.lsd.advertisingidentifiers": MACH_PORT_ADVERTISING_IDENTIFIERS,
+        "com.apple.backboard.hid.services": MACH_PORT_BKS_HID_SERVER,
+        "com.apple.SystemConfiguration.configd": MACH_PORT_CONFIGD,
+    }
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -325,15 +340,6 @@ class IosOs(PosixOs):
         )
         return struct_to_bytes(st)
 
-    def _setup_hooks(self):
-        """Initialize hooks."""
-        self.emu.hooks.update(get_hooks())
-
-    def _setup_syscall_handlers(self):
-        """Initialize system call handlers."""
-        self.emu.syscall_handlers.update(get_syscall_handlers())
-        self.emu.syscall_names.update(get_syscall_names())
-
     def _setup_tls(self):
         """Initialize thread local storage (TLS)."""
         errno_ptr = self.emu.create_buffer(0x8)
@@ -345,18 +351,9 @@ class IosOs(PosixOs):
         self.emu.write_pointer(TLS_ADDRESS + 0x8, errno_ptr)
         self.emu.write_u32(TLS_ADDRESS + 0x18, 5)
 
-    def _setup_devices(self):
-        """Mount virtual device files."""
-        device_map = {
-            "/dev/null": NullDevice,
-            "/dev/random": RandomDevice,
-            "/dev/urandom": UrandomDevice,
-        }
+    def _setup_system_registers(self):
+        """Initialize MMIO for system registers."""
 
-        for path, dev_cls in device_map.items():
-            self.mount_device(path, dev_cls)
-
-    def _setup_mmio(self):
         def read_cb(uc, offset, size_, read_ud):
             # Arch type
             if offset == 0x23:
@@ -414,9 +411,6 @@ class IosOs(PosixOs):
         environ = self.emu.get_symbol("_environ")
         self.emu.write_pointer(environ.address, environ_buf)
 
-    def _init_lib_system_kernel(self):
-        self.emu.call_symbol("_mach_init_doit")
-
     def _init_lib_system_c(self):
         # __program_vars_init
         argc = self.emu.create_buffer(8)
@@ -473,12 +467,6 @@ class IosOs(PosixOs):
         mach_task_self = self.emu.get_symbol("_mach_task_self_")
         self.emu.write_u32(mach_task_self.address, self.MACH_PORT_TASK)
 
-    def _init_lib_system_trace(self):
-        self.emu.call_symbol("__libtrace_init")
-
-    def _init_lib_xpc(self):
-        self.emu.call_symbol("__libxpc_initializer")
-
     def _init_lib_objc(self):
         prototypes = self.emu.get_symbol("__ZL10prototypes")
         self.emu.write_u64(prototypes.address, 0)
@@ -496,14 +484,6 @@ class IosOs(PosixOs):
         self.emu.write_u8(disable_preopt.address, 1)
 
         self.emu.call_symbol("__objc_init")
-
-    def _init_core_foundation(self):
-        self._fix_method_signature_rom_table()
-
-        self.emu.call_symbol("___CFInitialize")
-
-    def _init_foundation(self):
-        self.emu.call_symbol("__NSInitializePlatform")
 
     def _init_system_symbols(self):
         # libsandbox.dylib
@@ -531,6 +511,33 @@ class IosOs(PosixOs):
         g_user_unlocked_since_boot = self.emu.get_symbol("_gUserUnlockedSinceBoot")
         if g_user_unlocked_since_boot:
             self.emu.write_u8(g_user_unlocked_since_boot.address, 1)
+
+    def _init_system_module(self, name: str, module: Module):
+        """For certain system modules, perform additional initialization before
+        and after Objective-C initialization."""
+        if name == "libsystem_kernel.dylib":
+            self.emu.call_symbol("_mach_init_doit")
+        elif name == "libsystem_c.dylib":
+            self._init_lib_system_c()
+        elif name == "libdyld.dylib":
+            self._init_lib_dyld()
+        elif name == "libsystem_pthread.dylib":
+            self._init_lib_system_pthread()
+        elif name == "libsystem_trace.dylib":
+            self.emu.call_symbol("__libtrace_init")
+        elif name == "libobjc.A.dylib":
+            self._init_lib_objc()
+
+        # Initialize Objective-C
+        self.init_objc(module)
+
+        if name == "libxpc.dylib":
+            self.emu.call_symbol("__libxpc_initializer")
+        elif name == "CoreFoundation":
+            self._fix_method_signature_rom_table()
+            self.emu.call_symbol("___CFInitialize")
+        elif name == "Foundation":
+            self.emu.call_symbol("__NSInitializePlatform")
 
     def init_objc(self, module: Module):
         """Initialize Objective-C for the module by calling `map_images`
@@ -625,33 +632,7 @@ class IosOs(PosixOs):
                 ]
                 self.emu.exec_init_array(init_array)
 
-            # Initialize system modules
-            if name == "libsystem_kernel.dylib":
-                self._init_lib_system_kernel()
-            elif name == "libsystem_c.dylib":
-                self._init_lib_system_c()
-            elif name == "libdyld.dylib":
-                self._init_lib_dyld()
-            elif name == "libsystem_pthread.dylib":
-                self._init_lib_system_pthread()
-            elif name == "libsystem_trace.dylib":
-                self._init_lib_system_trace()
-            elif name == "libobjc.A.dylib":
-                self._init_lib_objc()
-
-            # Initialize Objective-C
-            self.init_objc(module)
-
-            if name == "libxpc.dylib":
-                self._init_lib_xpc()
-            elif name == "CoreFoundation":
-                self._init_core_foundation()
-            elif name == "Foundation":
-                self._init_foundation()
-
-    def _setup_symbolic_links(self):
-        for src, dst in SYMBOLIC_LINKS.items():
-            self.set_symbolic_link(src, dst)
+            self._init_system_module(name, module)
 
     def _setup_bundle_dir(self):
         """Set bundle directory as current working directory."""
@@ -879,19 +860,6 @@ class IosOs(PosixOs):
     def mach_port_destruct(self, mach_port: int):
         self._mach_port_manager.free(mach_port)
 
-    def _setup_mach_service(self):
-        services = {
-            "com.apple.system.notification_center": self.MACH_PORT_NOTIFICATION_CENTER,
-            "com.apple.CARenderServer": self.MACH_PORT_CA_RENDER_SERVER,
-            "com.apple.lsd.advertisingidentifiers": (
-                self.MACH_PORT_ADVERTISING_IDENTIFIERS
-            ),
-            "com.apple.backboard.hid.services": self.MACH_PORT_BKS_HID_SERVER,
-            "com.apple.SystemConfiguration.configd": self.MACH_PORT_CONFIGD,
-        }
-
-        self._mach_services.update(services)
-
     def bootstrap_look_up(self, name: str) -> int:
         """Find registered mach service.
 
@@ -926,20 +894,34 @@ class IosOs(PosixOs):
 
     def xpc_connection_send_message(self, connection: int, message: int) -> int:
         """Respond to `xpc_connection_send_message_with_reply_sync`."""
-        return self._xpc_message_handler.handle_connection_message(connection, message)
+        return self._xpc_message_handler.handle_connection_message(
+            connection,
+            message,
+        )
 
     def initialize(self):
-        self._setup_hooks()
-        self._setup_syscall_handlers()
+        # Setup hooks
+        self.emu.hooks.update(get_hooks())
+
+        # Setup syscall handles
+        self.emu.syscall_handlers.update(get_syscall_handlers())
+        self.emu.syscall_names.update(get_syscall_names())
+
         self._setup_tls()
-        self._setup_devices()
 
-        self._setup_mmio()
+        # Mount virtual device files
+        self.mount_devices(DEVICES_FILES)
 
-        self._setup_symbolic_links()
+        self._setup_system_registers()
+
+        # Setup symbolic links
+        for src, dst in SYMBOLIC_LINKS.items():
+            self.set_symbolic_link(src, dst)
+
         self._setup_bundle_dir()
 
-        self._setup_mach_service()
+        # Setup mach services
+        self._mach_services.update(self.MACH_SERVICES)
 
         # Setup system modules
         self.resolve_modules(SYSTEM_MODULES)

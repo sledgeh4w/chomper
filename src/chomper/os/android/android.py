@@ -20,6 +20,13 @@ from .syscall import get_syscall_handlers, get_syscall_names
 
 ENVIRON_VARIABLES = """"""
 
+# Virtual device files
+DEVICES_FILES = {
+    "/dev/null": NullDevice,
+    "/dev/random": RandomDevice,
+    "/dev/urandom": UrandomDevice,
+}
+
 
 class AndroidOs(PosixOs):
     """Provide Android environment."""
@@ -154,17 +161,6 @@ class AndroidOs(PosixOs):
         )
         return struct_to_bytes(st)
 
-    def _setup_hooks(self):
-        """Initialize the hooks."""
-        self.emu.hooks.update(get_hooks())
-
-    def _setup_syscall_handlers(self):
-        """Initialize system call handlers."""
-        # Only compatible with arm64 now
-        if self.emu.arch == arm64_arch:
-            self.emu.syscall_handlers.update(get_syscall_handlers())
-            self.emu.syscall_names.update(get_syscall_names())
-
     def _setup_tls(self):
         """Initialize thread local storage (TLS)."""
         if self.emu.arch == arm64_arch:
@@ -177,14 +173,10 @@ class AndroidOs(PosixOs):
             self.emu.write_pointer(TLS_ADDRESS + 0x8, thread_ptr)
             self.emu.write_pointer(TLS_ADDRESS + 0x10, errno_ptr)
 
-    def _check_libc(self) -> bool:
-        """Check whether libc has been loaded."""
-        return bool(self.emu.find_module("libc.so"))
-
-    def _enable_libc(self):
+    def _enable_libc(self) -> bool:
         """Attempt to load libc."""
         if not self.rootfs_path:
-            return
+            return False
 
         if self.emu.arch == arm64_arch:
             lib_dir = "system/lib64"
@@ -194,9 +186,10 @@ class AndroidOs(PosixOs):
         libc_path = os.path.join(self.rootfs_path, lib_dir, "libc.so")
 
         if not os.path.exists(libc_path):
-            return
+            return False
 
         self.emu.load_module(libc_path, exec_init_array=False)
+        return True
 
     def _create_fp(self, fd: int, mode: str, unbuffered: bool = False) -> int:
         """Wrap file descriptor to file object by calling `fdopen`."""
@@ -238,26 +231,21 @@ class AndroidOs(PosixOs):
         environ = self.emu.get_symbol("environ")
         self.emu.write_pointer(environ.address, environ_buf)
 
-    def _setup_devices(self):
-        """Mount virtual device files."""
-        device_map = {
-            "/dev/null": NullDevice,
-            "/dev/random": RandomDevice,
-            "/dev/urandom": UrandomDevice,
-        }
-
-        for path, dev_cls in device_map.items():
-            self.mount_device(path, dev_cls)
-
     def initialize(self):
-        self._setup_hooks()
-        self._setup_syscall_handlers()
-        self._setup_devices()
+        # Setup hooks
+        self.emu.hooks.update(get_hooks())
+
+        # Setup syscall handles
+        if self.emu.arch == arm64_arch:
+            # Only compatible with arm64 now
+            self.emu.syscall_handlers.update(get_syscall_handlers())
+            self.emu.syscall_names.update(get_syscall_names())
+
+        # Mount virtual device files
+        self.mount_devices(DEVICES_FILES)
 
         self._setup_tls()
 
-        self._enable_libc()
-
-        if self._check_libc():
+        if self._enable_libc():
             self._setup_standard_io()
             self._setup_environ()

@@ -347,6 +347,11 @@ class PosixOs(ABC):
         """Unmount device file."""
         del self._devices[path]
 
+    def mount_devices(self, dev_map: Dict[str, Type[DeviceFile]]):
+        """Mount multiple files"""
+        for path, dev_cls in dev_map.items():
+            self.mount_device(path, dev_cls)
+
     def _create_environ(self, text: str) -> int:
         """Create the structure that contains environment variables."""
         lines = text.split("\n")
@@ -931,6 +936,7 @@ class PosixOs(ABC):
                 return os.O_RDONLY
             elif fd in (self._stdout_fd, self._stderr_fd):
                 return os.O_WRONLY
+            return os.O_RDWR
         elif cmd == self.F_GETPATH:
             path = self._get_fd_path(fd)
             if path:
