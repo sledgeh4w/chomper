@@ -968,6 +968,11 @@ def handle_sys_bsdthread_create(emu: Chomper):
     return 0
 
 
+@register_syscall_handler(const.SYS_KQUEUE, "SYS_kqueue")
+def handle_sys_kqueue(emu: Chomper):
+    return -1
+
+
 @register_syscall_handler(const.SYS_LCHOWN, "SYS_lchown")
 def handle_sys_lchown(emu: Chomper):
     path = emu.read_string(emu.get_arg(0))
