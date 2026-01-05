@@ -6,8 +6,8 @@ import pytest
 
 from chomper.const import OS_IOS
 from chomper.exceptions import SymbolMissing
-from chomper.os.ios.structs import Timespec
-from chomper.utils import struct_to_bytes
+from chomper.os.ios.structs import Timespec, Utsname
+from chomper.utils import struct_to_bytes, bytes_to_struct
 
 emu_names = ["emu_arm", "emu_arm64", "emu_ios"]
 
@@ -593,7 +593,35 @@ def test_getprogname(request, emu_name):
     emu = request.getfixturevalue(emu_name)
 
     result = call_symbol(emu, "getprogname")
-    emu.read_string(result)
+    assert result
+
+
+@pytest.mark.parametrize("emu_name", ["emu_ios"])
+def test_uname(request, emu_name):
+    emu = request.getfixturevalue(emu_name)
+
+    with emu.mem_context() as ctx:
+        utsname_buf = ctx.create_buffer(sizeof(Utsname))
+
+        result = call_symbol(emu, "uname", utsname_buf)
+        assert result == 0
+
+        utsname_bytes = emu.read_bytes(utsname_buf, sizeof(Utsname))
+        utsname = bytes_to_struct(utsname_bytes, Utsname)
+
+        assert utsname.sysname
+        assert utsname.nodename
+        assert utsname.release
+        assert utsname.version
+        assert utsname.machine
+
+
+@pytest.mark.parametrize("emu_name", ["emu_ios"])
+def test_tmpfile(request, emu_name):
+    emu = request.getfixturevalue(emu_name)
+
+    result = call_symbol(emu, "tmpfile")
+    assert result
 
 
 @pytest.mark.parametrize("emu_name", ["emu_ios"])
