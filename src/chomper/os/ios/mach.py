@@ -17,6 +17,7 @@ from .structs import (
     MachMsgBody,
     MachMsgPortDescriptor,
     MachMsgOolDescriptor,
+    MachMsgOolPortsDescriptor,
     MachTimespec,
     VmRegionBasicInfo64,
     VmStatistics,
@@ -152,7 +153,9 @@ class MachMsgHandler:
             elif msgh_id == 412:
                 result = self._handle_host_get_special_port(msg, msgh)
         elif remote_port == self.emu.ios_os.MACH_PORT_TASK:
-            if msgh_id == 3405:
+            if msgh_id == 3402:
+                result = self._handle_task_threads(msg, msgh)
+            elif msgh_id == 3405:
                 result = self._handle_task_info(msg, msgh)
             elif msgh_id == 3409:
                 result = self._handle_task_get_special_port(msg, msgh)
@@ -332,6 +335,43 @@ class MachMsgHandler:
             )
 
         self.write_reply_port_msg(msg, msgh, port)
+
+        return const.KERN_SUCCESS
+
+    def _handle_task_threads(self, msg: int, msgh: MachMsgHeader) -> int:
+        # Return empty for now
+        count = 0
+
+        msg_header = MachMsgHeader(
+            msgh_bits=const.MACH_MSGH_BITS_COMPLEX,
+            msgh_size=56,
+            msgh_remote_port=0,
+            msgh_local_port=0,
+            msgh_voucher_port=0,
+            msgh_id=(msgh.msgh_id + 100),
+        )
+
+        msg_body = MachMsgBody(
+            msgh_descriptor_count=1,
+        )
+
+        descriptor = MachMsgOolPortsDescriptor(
+            address=0,
+            deallocate=0,
+            copy=0,
+            disposition=const.MACH_MSG_TYPE_MOVE_SEND,
+            type=const.MACH_MSG_OOL_PORTS_DESCRIPTOR,
+            count=count,
+        )
+
+        self.write_msg(
+            msg,
+            msg_header,
+            msg_body,
+            struct_to_bytes(descriptor),
+            int_to_bytes(0, 8),
+            int_to_bytes(count, 4),
+        )
 
         return const.KERN_SUCCESS
 
