@@ -190,6 +190,9 @@ class MachMsgHandler:
         elif remote_port == self.emu.ios_os.MACH_PORT_CONFIGD:
             if msgh_id == 20010:
                 result = self._handle_configget(msg, msgh)
+        elif self.mach_port_manager.validate(remote_port):
+            if msgh_id == 3603:
+                result = self._handle_thread_get_state(msg, msgh)
 
         if result is None:
             self.emu.logger.warning(
@@ -339,8 +342,22 @@ class MachMsgHandler:
         return const.KERN_SUCCESS
 
     def _handle_task_threads(self, msg: int, msgh: MachMsgHeader) -> int:
-        # Return empty for now
-        count = 0
+        thread_act = self.mach_port_manager.new()
+        if not thread_act:
+            return const.KERN_RESOURCE_SHORTAGE
+
+        self.mach_port_manager.set_prop(thread_act, "tid", self.emu.ios_os.tid)
+
+        thread_act_list = [thread_act]
+
+        count = len(thread_act_list)
+        address = self.emu.create_buffer(4 * count)
+
+        self.emu.write_array(
+            address,
+            thread_act_list,
+            size=4,
+        )
 
         msg_header = MachMsgHeader(
             msgh_bits=const.MACH_MSGH_BITS_COMPLEX,
@@ -356,7 +373,7 @@ class MachMsgHandler:
         )
 
         descriptor = MachMsgOolPortsDescriptor(
-            address=0,
+            address=address,
             deallocate=0,
             copy=0,
             disposition=const.MACH_MSG_TYPE_MOVE_SEND,
@@ -472,6 +489,11 @@ class MachMsgHandler:
         self.write_reply_port_msg(msg, msgh, semaphore)
 
         return const.KERN_SUCCESS
+
+    def _handle_thread_get_state(self, msg: int, msgh: MachMsgHeader) -> int:
+        tid = self.mach_port_manager.get_prop(msgh.msgh_remote_port, "tid")
+        self.emu.logger.warning(f"Unhandled thread_get_state: tid={tid}")
+        return const.KERN_RESOURCE_SHORTAGE
 
     def _handle_vm_read_overwrite(self, msg: int, msgh: MachMsgHeader) -> int:
         address = self.emu.read_u64(msg + 0x20)
