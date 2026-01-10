@@ -4,11 +4,10 @@ from chomper import Chomper
 from chomper.const import ARCH_ARM64, OS_IOS
 from chomper.objc import ObjcRuntime
 
-binary_path = "examples/binaries/ios/com.xingin.discover/8.74/discover"
-
 base_path = os.path.abspath(os.path.dirname(__file__))
+
 rootfs_path = os.path.join(base_path, "../../rootfs/ios")
-module_path = os.path.join(base_path, "../..", binary_path)
+module_path = os.path.join(base_path, "../../examples/binaries/ios/com.xingin.discover/8.74/discover")
 
 
 def main():
@@ -45,6 +44,7 @@ def main():
 
         result = ti_tiny_class.call_method("signWithMethod:url:payload:", method, url, payload)
         result_str = emu.read_string(result.call_method("description").call_method("UTF8String"))
+
         emu.logger.info("Sign result: %s", result_str)
 
 

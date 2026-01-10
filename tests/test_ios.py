@@ -1,3 +1,4 @@
+import os
 from ctypes import sizeof
 
 from chomper.os.ios import const
@@ -422,6 +423,26 @@ def test_clock(emu_ios):
 
         result = emu_ios.call_symbol("_clock_get_time", clock_port, cur_time_buf)
         assert result == 0
+
+
+def test_clonefile(emu_ios):
+    work_dir = "/System/Library/CoreServices"
+    emu_ios.os.set_working_dir(work_dir)
+
+    src = "SystemVersion.plist"
+    dst = "SystemVersion.plist.bak"
+
+    dst_path = os.path.join(emu_ios.os.rootfs_path, work_dir.lstrip("/"), dst)
+    if os.path.exists(dst_path):
+        os.remove(dst_path)
+
+    with emu_ios.mem_context() as ctx:
+        src_str = ctx.create_string(src)
+        dst_str = ctx.create_string(dst)
+
+        emu_ios.call_symbol("_clonefile", src_str, dst_str, 0)
+
+        assert os.path.exists(dst_path)
 
 
 def test_mach_ports(emu_ios):
