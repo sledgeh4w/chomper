@@ -557,34 +557,34 @@ def test_link(request, emu_name):
 
     work_dir = "/usr/lib"
 
-    link_src = "libobjc.A.dylib"
-    link_dst = "libobjc.A.dylib.1"
-    link_dst2 = "libobjc.A.dylib.2"
+    src = "libobjc.A.dylib"
+    dst = "libobjc.A.dylib.1"
+    dst2 = "libobjc.A.dylib.2"
 
     with emu.mem_context() as ctx:
-        work_dir_buf = ctx.create_string(work_dir)
-        link_src_buf = ctx.create_string(link_src)
-        link_dst_buf = ctx.create_string(link_dst)
-        link_dst2_buf = ctx.create_string(link_dst2)
+        work_dir_str = ctx.create_string(work_dir)
+        src_str = ctx.create_string(src)
+        dst_str = ctx.create_string(dst)
+        dst2_str = ctx.create_string(dst2)
 
-        call_symbol(emu, "chdir", work_dir_buf)
+        call_symbol(emu, "chdir", work_dir_str)
 
-        call_symbol(emu, "link", link_src_buf, link_dst_buf)
+        call_symbol(emu, "link", src_str, dst_str)
 
-        result = call_symbol(emu, "access", link_dst_buf, 0x4)
+        result = call_symbol(emu, "access", dst2_str, 0x4)
         assert result
 
         call_symbol(
             emu,
             "linkat",
             emu.os.AT_FDCWD,
-            link_src_buf,
+            src_str,
             emu.os.AT_FDCWD,
-            link_dst2_buf,
+            dst2_str,
             0,
         )
 
-        result = call_symbol(emu, "access", link_dst2_buf, 0x4)
+        result = call_symbol(emu, "access", dst2_str, 0x4)
         assert result
 
 

@@ -18,6 +18,7 @@ SYSCALL_ERRORS = {
     SyscallError.ENOENT: (const.ENOENT, "ENOENT"),
     SyscallError.EBADF: (const.EBADF, "EBADF"),
     SyscallError.EACCES: (const.EACCES, "EACCES"),
+    SyscallError.EFAULT: (const.EFAULT, "EFAULT"),
     SyscallError.EEXIST: (const.EEXIST, "EEXIST"),
     SyscallError.ENOTDIR: (const.ENOTDIR, "ENOTDIR"),
 }

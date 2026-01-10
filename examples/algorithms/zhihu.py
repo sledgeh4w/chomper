@@ -4,11 +4,10 @@ from chomper import Chomper
 from chomper.const import ARCH_ARM64, OS_IOS
 from chomper.objc import ObjcRuntime
 
-binary_path = "examples/binaries/ios/com.zhihu.ios/osee2unifiedRelease"
-
 base_path = os.path.abspath(os.path.dirname(__file__))
+
 rootfs_path = os.path.join(base_path, "../../rootfs/ios")
-module_path = os.path.join(base_path, "../..", binary_path)
+module_path = os.path.join(base_path, "../../examples/binaries/ios/com.zhihu.ios/osee2unifiedRelease")
 
 
 def main():

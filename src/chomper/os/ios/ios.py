@@ -2,6 +2,7 @@ import ctypes
 import os
 import plistlib
 import random
+import shutil
 import sys
 import time
 import uuid
@@ -339,6 +340,18 @@ class IosOs(PosixOs):
             d_name=dir_entry.name.encode("utf-8"),
         )
         return struct_to_bytes(st)
+
+    @log_call
+    def clonefileat(
+        self, src_dir_fd: int, src_path: str, dst_dir_fd: int, dst_path: str
+    ):
+        src_path = self._resolve_dir_fd(src_dir_fd, src_path)
+        dst_path = self._resolve_dir_fd(dst_dir_fd, dst_path)
+
+        real_src_path = self._get_real_path(src_path)
+        real_dst_path = self._get_real_path(dst_path)
+
+        shutil.copy2(real_src_path, real_dst_path)
 
     def _setup_tls(self):
         """Initialize thread local storage (TLS)."""
