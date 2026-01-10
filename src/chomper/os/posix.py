@@ -27,8 +27,9 @@ class SyscallError(Enum):
     ENOENT = 2
     EBADF = 3
     EACCES = 4
-    EEXIST = 5
-    ENOTDIR = 6
+    EFAULT = 5
+    EEXIST = 6
+    ENOTDIR = 7
 
     EXT1 = 1000
 
@@ -945,3 +946,23 @@ class PosixOs(ABC):
             self.emu.logger.warning(f"Unhandled fcntl command: {cmd}")
 
         return 0
+
+    @log_call
+    def ftruncate(self, fd: int, length: int):
+        self._check_fd(fd)
+        real_fd = self._get_fd_real_fd(fd)
+
+        os.ftruncate(real_fd, length)
+
+    @log_call
+    def utimes(self, path: str, times: Optional[Tuple[float, float]]):
+        real_path = self._get_real_path(path)
+
+        os.utime(real_path, times)
+
+    @log_call
+    def futimes(self, fd: int, times: Optional[Tuple[float, float]]):
+        self._check_fd(fd)
+        path = self._get_fd_path(fd)
+
+        os.utime(path, times)

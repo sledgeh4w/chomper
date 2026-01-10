@@ -27,6 +27,9 @@ class Timespec(ctypes.Structure):
             tv_nsec=time_ns % (10**9),
         )
 
+    def to_seconds(self) -> float:
+        return float(self.tv_sec) + float(self.tv_nsec) / 1e9
+
 
 class Stat64(ctypes.Structure):
     _fields_ = [

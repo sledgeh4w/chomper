@@ -12,10 +12,16 @@ from unicorn import arm64_const
 from chomper.exceptions import SystemOperationFailed, ProgramTerminated
 from chomper.os.posix import SyscallError
 from chomper.typing import SyscallHandleCallable
-from chomper.utils import to_signed, struct_to_bytes
+from chomper.utils import to_signed, struct_to_bytes, bytes_to_struct
 
 from . import const
-from .structs import Rusage, ProcBsdinfo, ProcBsdshortinfo, ProcUniqidentifierinfo
+from .structs import (
+    Timespec,
+    Rusage,
+    ProcBsdinfo,
+    ProcBsdshortinfo,
+    ProcUniqidentifierinfo,
+)
 from .sysctl import sysctl, sysctlbyname
 
 if TYPE_CHECKING:
@@ -27,6 +33,7 @@ SYSCALL_ERRORS = {
     SyscallError.ENOENT: (const.ENOENT, "ENOENT"),
     SyscallError.EBADF: (const.EBADF, "EBADF"),
     SyscallError.EACCES: (const.EACCES, "EACCES"),
+    SyscallError.EFAULT: (const.EFAULT, "EFAULT"),
     SyscallError.EEXIST: (const.EEXIST, "EEXIST"),
     SyscallError.ENOTDIR: (const.ENOTDIR, "ENOTDIR"),
     SyscallError.EXT1: (60, "EXT1"),
@@ -61,6 +68,8 @@ def register_syscall_handler(syscall_no: int, syscall_name: Optional[str] = None
                 error_type = SyscallError.ENOENT
             except FileExistsError:
                 error_type = SyscallError.EEXIST
+            except UnicodeDecodeError:
+                error_type = SyscallError.EPERM
             except SystemOperationFailed as e:
                 error_type = e.error_type
 
@@ -512,6 +521,50 @@ def handle_sys_rmdir(emu: Chomper):
     return 0
 
 
+@register_syscall_handler(const.SYS_UTIMES, "SYS_utimes")
+def handle_sys_utimes(emu: Chomper):
+    path = emu.read_string(emu.get_arg(0))
+    times_ptr = emu.get_arg(1)
+
+    if times_ptr:
+        time1 = emu.read_bytes(times_ptr, ctypes.sizeof(Timespec))
+        time2 = emu.read_bytes(
+            times_ptr + ctypes.sizeof(Timespec), ctypes.sizeof(Timespec)
+        )
+        times = (
+            bytes_to_struct(time1, Timespec).to_seconds(),
+            bytes_to_struct(time2, Timespec).to_seconds(),
+        )
+    else:
+        times = None
+
+    emu.os.utimes(path, times)
+
+    return 0
+
+
+@register_syscall_handler(const.SYS_FUTIMES, "SYS_futimes")
+def handle_sys_futimes(emu: Chomper):
+    fd = emu.get_arg(0)
+    times_ptr = emu.get_arg(1)
+
+    if times_ptr:
+        time1 = emu.read_bytes(times_ptr, ctypes.sizeof(Timespec))
+        time2 = emu.read_bytes(
+            times_ptr + ctypes.sizeof(Timespec), ctypes.sizeof(Timespec)
+        )
+        times = (
+            bytes_to_struct(time1, Timespec).to_seconds(),
+            bytes_to_struct(time2, Timespec).to_seconds(),
+        )
+    else:
+        times = None
+
+    emu.os.futimes(fd, times)
+
+    return 0
+
+
 @register_syscall_handler(const.SYS_ADJTIME, "SYS_adjtime")
 def handle_sys_adjtime(emu: Chomper):
     raise_permission_denied()
@@ -691,6 +744,16 @@ def handle_sys_select(emu: Chomper):
     timeout = emu.get_arg(4)
 
     return emu.os.select(nfds, readfds, writefds, errorfds, timeout)
+
+
+@register_syscall_handler(const.SYS_FTRUNCATE, "SYS_ftruncate")
+def handle_sys_ftruncate(emu: Chomper):
+    fd = emu.get_arg(0)
+    length = emu.get_arg(1)
+
+    emu.os.ftruncate(fd, length)
+
+    return 0
 
 
 @register_syscall_handler(const.SYS_SYSCTL, "SYS_sysctl")
@@ -1058,6 +1121,18 @@ def handle_sys_guarded_close_np(emu: Chomper):
 
 @register_syscall_handler(const.SYS_GETATTRLISTBULK, "SYS_getattrlistbulk")
 def handle_sys_getattrlistbulk(emu: Chomper):
+    return 0
+
+
+@register_syscall_handler(const.SYS_CLONEFILEAT, "SYS_clonefileat")
+def handle_sys_clonefileat(emu: Chomper):
+    src_dir_fd = to_signed(emu.get_arg(0), 4)
+    src_path = emu.read_string(emu.get_arg(1))
+    dst_dir_fd = to_signed(emu.get_arg(2), 4)
+    dst_path = emu.read_string(emu.get_arg(3))
+
+    emu.ios_os.clonefileat(src_dir_fd, src_path, dst_dir_fd, dst_path)
+
     return 0
 
 
@@ -1510,3 +1585,8 @@ def handle_mach_timebase_info_trap(emu: Chomper):
 @register_syscall_handler(const.MK_TIMER_CREATE_TRAP, "MK_TIMER_CREATE_TRAP")
 def handle_mk_timer_create_trap(emu: Chomper):
     return emu.ios_os.MACH_PORT_TIMER
+
+
+@register_syscall_handler(const.MK_TIMER_ARM, "MK_TIMER_ARM")
+def handle_mk_timer_arm(emu: Chomper):
+    return 0
