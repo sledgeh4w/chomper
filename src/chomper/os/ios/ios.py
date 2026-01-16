@@ -3,6 +3,7 @@ import os
 import plistlib
 import random
 import shutil
+import socket
 import sys
 import time
 import uuid
@@ -19,7 +20,7 @@ from chomper.utils import log_call, struct_to_bytes, to_unsigned
 from .fixup import SystemModuleFixer
 from .hooks import get_hooks
 from .mach import MachMsgHandler
-from .structs import Dirent, Stat64, Statfs64, Timespec
+from .structs import Dirent, Stat64, Statfs64, Timespec, SockaddrIn
 from .syscall import get_syscall_handlers, get_syscall_names
 from .xpc import XpcMessageHandler
 
@@ -186,6 +187,7 @@ class IosOs(PosixOs):
         self.gid = self.uid
 
         self.pid = random.randint(1000, 2000)
+        self.pgid = self.pid
 
         self.tid = random.randint(10000, 20000)
 
@@ -231,7 +233,7 @@ class IosOs(PosixOs):
         self.emu.write_s32(errno_ptr, value)
 
     @staticmethod
-    def _create_stat(st: os.stat_result) -> bytes:
+    def _construct_stat(st: os.stat_result) -> bytes:
         if sys.platform == "win32":
             block_size = 4096
 
@@ -272,7 +274,7 @@ class IosOs(PosixOs):
         return struct_to_bytes(st)
 
     @staticmethod
-    def _create_device_stat() -> bytes:
+    def _construct_device_stat() -> bytes:
         atimespec = Timespec.from_time_ns(0)
         mtimespec = Timespec.from_time_ns(0)
         ctimespec = Timespec.from_time_ns(0)
@@ -297,7 +299,7 @@ class IosOs(PosixOs):
         return struct_to_bytes(st)
 
     @staticmethod
-    def _create_statfs() -> bytes:
+    def _construct_statfs() -> bytes:
         st = Statfs64(
             f_bsize=4096,
             f_iosize=1048576,
@@ -316,6 +318,16 @@ class IosOs(PosixOs):
             f_mntfromname=b"/dev/disk0s1s1",
         )
         return struct_to_bytes(st)
+
+    @classmethod
+    def _construct_sockaddr_in(cls, address: str, port: int) -> bytes:
+        sa = SockaddrIn(
+            sin_len=ctypes.sizeof(SockaddrIn),
+            sin_family=cls.AF_INET,
+            sin_port=socket.htons(port),
+            sin_addr=int.from_bytes(socket.inet_aton(address), "little"),
+        )
+        return struct_to_bytes(sa)
 
     @log_call
     def getdirentries(self, fd: int, offset: int) -> Optional[bytes]:

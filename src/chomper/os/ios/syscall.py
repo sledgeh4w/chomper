@@ -17,6 +17,7 @@ from chomper.utils import to_signed, struct_to_bytes, bytes_to_struct
 from . import const
 from .structs import (
     Timespec,
+    Rlimit,
     Rusage,
     ProcBsdinfo,
     ProcBsdshortinfo,
@@ -36,11 +37,25 @@ SYSCALL_ERRORS = {
     SyscallError.EFAULT: (const.EFAULT, "EFAULT"),
     SyscallError.EEXIST: (const.EEXIST, "EEXIST"),
     SyscallError.ENOTDIR: (const.ENOTDIR, "ENOTDIR"),
+    SyscallError.EINVAL: (const.EINVAL, "EINVAL"),
     SyscallError.EXT1: (60, "EXT1"),
 }
 
 syscall_handlers: Dict[int, SyscallHandleCallable] = {}
 syscall_names: Dict[int, str] = {}
+
+# Used by `getrlimit`
+RESOURCE_LIMITS = {
+    const.RLIMIT_CPU: (const.RLIM_INFINITY, const.RLIM_INFINITY),
+    const.RLIMIT_FSIZE: (const.RLIM_INFINITY, const.RLIM_INFINITY),
+    const.RLIMIT_DATA: (const.RLIM_INFINITY, const.RLIM_INFINITY),
+    const.RLIMIT_STACK: (0xFC000, 0xFC000),
+    const.RLIMIT_CORE: (0, const.RLIM_INFINITY),
+    const.RLIMIT_RSS: (const.RLIM_INFINITY, const.RLIM_INFINITY),
+    const.RLIMIT_MEMLOCK: (const.RLIM_INFINITY, const.RLIM_INFINITY),
+    const.RLIMIT_NPROC: (1333, 2000),
+    const.RLIMIT_NOFILE: (0x1C00, const.RLIM_INFINITY),
+}
 
 
 def get_syscall_handlers() -> Dict[int, SyscallHandleCallable]:
@@ -70,6 +85,8 @@ def register_syscall_handler(syscall_no: int, syscall_name: Optional[str] = None
                 error_type = SyscallError.EEXIST
             except UnicodeDecodeError:
                 error_type = SyscallError.EPERM
+            except OSError:
+                error_type = SyscallError.EINVAL
             except SystemOperationFailed as e:
                 error_type = e.error_type
 
@@ -98,15 +115,18 @@ def register_syscall_handler(syscall_no: int, syscall_name: Optional[str] = None
     return wrapper
 
 
-def raise_permission_denied():
-    raise SystemOperationFailed("No permission", SyscallError.EPERM)
-
-
 @register_syscall_handler(const.SYS_EXIT, "SYS_exit")
 def handle_sys_exit(emu: Chomper):
     status = emu.get_arg(0)
 
     raise ProgramTerminated("Program terminated with status: %s" % status)
+
+
+@register_syscall_handler(const.SYS_FORK, "SYS_fork")
+def handle_sys_fork(emu: Chomper):
+    emu.os.raise_permission_denied()
+
+    return 0
 
 
 @register_syscall_handler(const.SYS_READ, "SYS_read")
@@ -248,6 +268,32 @@ def handle_sys_recvfrom(emu: Chomper):
     return emu.os.recvfrom(sock, buffer, length, flags, address, address_len)
 
 
+@register_syscall_handler(const.SYS_GETPEERNAME, "SYS_getpeername")
+def handle_sys_getpeername(emu: Chomper):
+    sock = emu.get_arg(0)
+    address = emu.get_arg(1)
+    # address_len = emu.get_arg(2)
+
+    result = emu.os.getpeername(sock)
+    if address and result:
+        emu.write_bytes(address, result)
+
+    return 0
+
+
+@register_syscall_handler(const.SYS_GETSOCKNAME, "SYS_getsockname")
+def handle_sys_getsockname(emu: Chomper):
+    sock = emu.get_arg(0)
+    address = emu.get_arg(1)
+    # address_len = emu.get_arg(2)
+
+    result = emu.os.getsockname(sock)
+    if address and result:
+        emu.write_bytes(address, result)
+
+    return 0
+
+
 @register_syscall_handler(const.SYS_KILL, "SYS_kill")
 def handle_sys_kill(emu: Chomper):
     return -1
@@ -266,14 +312,14 @@ def handle_sys_access(emu: Chomper):
 
 @register_syscall_handler(const.SYS_CHFLAGS, "SYS_chflags")
 def handle_sys_chflags(emu: Chomper):
-    raise_permission_denied()
+    emu.os.raise_permission_denied()
 
     return 0
 
 
 @register_syscall_handler(const.SYS_FCHFLAGS, "SYS_fchflags")
 def handle_sys_fchflags(emu: Chomper):
-    raise_permission_denied()
+    emu.os.raise_permission_denied()
 
     return 0
 
@@ -298,6 +344,18 @@ def handle_sys_sigprocmask(emu: Chomper):
     return 0
 
 
+@register_syscall_handler(const.SYS_GETLOGIN, "SYS_getlogin")
+def handle_sys_getlogin(emu: Chomper):
+    return emu.create_const_string("mobile")
+
+
+@register_syscall_handler(const.SYS_SETLOGIN, "SYS_setlogin")
+def handle_sys_setlogin(emu: Chomper):
+    emu.os.raise_permission_denied()
+
+    return 0
+
+
 @register_syscall_handler(const.SYS_SIGALTSTACK, "SYS_sigaltstack")
 def handle_sys_sigaltstack(emu: Chomper):
     return 0
@@ -319,6 +377,13 @@ def handle_sys_ioctl(emu: Chomper):
     )
 
     emu.logger.warning("ioctl request not processed")
+    return 0
+
+
+@register_syscall_handler(const.SYS_REBOOT, "SYS_reboot")
+def handle_sys_reboot(emu: Chomper):
+    emu.os.raise_permission_denied()
+
     return 0
 
 
@@ -347,11 +412,21 @@ def handle_sys_readlink(emu: Chomper):
     return 0
 
 
+@register_syscall_handler(const.SYS_MSYNC, "SYS_msync")
+def handle_sys_msync(emu: Chomper):
+    addr = emu.get_arg(0)
+    length = emu.get_arg(1)
+
+    emu.os.msync(addr, length)
+
+    return 0
+
+
 @register_syscall_handler(const.SYS_MUNMAP, "SYS_munmap")
 def handle_sys_munmap(emu: Chomper):
     addr = emu.get_arg(0)
 
-    emu.free(addr)
+    emu.os.munmap(addr)
 
     return 0
 
@@ -567,7 +642,21 @@ def handle_sys_futimes(emu: Chomper):
 
 @register_syscall_handler(const.SYS_ADJTIME, "SYS_adjtime")
 def handle_sys_adjtime(emu: Chomper):
-    raise_permission_denied()
+    emu.os.raise_permission_denied()
+
+    return 0
+
+
+@register_syscall_handler(const.SYS_GETPGID, "SYS_getpgid")
+def handle_sys_getpgid(emu: Chomper):
+    pid = emu.get_arg(0)
+
+    if pid == 0 or pid == emu.ios_os.pid:
+        return emu.ios_os.pgid
+    elif pid == 1:
+        return 1
+
+    emu.os.raise_permission_denied()
 
     return 0
 
@@ -615,13 +704,33 @@ def handle_sys_csops_audittoken(emu: Chomper):
     return 0
 
 
-@register_syscall_handler(const.SYS_RLIMIT, "SYS_rlimit")
-def handle_sys_rlimit(emu: Chomper):
+@register_syscall_handler(const.SYS_GETRLIMIT, "SYS_getrlimit")
+def handle_sys_getrlimit(emu: Chomper):
+    resource = emu.get_arg(0)
+    rlp = emu.get_arg(1)
+
+    resource &= ~0x1000
+
+    if resource not in RESOURCE_LIMITS:
+        raise SystemOperationFailed("Invalid value", SyscallError.EINVAL)
+
+    rlim_cur, rlim_max = RESOURCE_LIMITS[resource]
+
+    rlimit = Rlimit(
+        rlim_cur=rlim_cur,
+        rlim_max=rlim_max,
+    )
+
+    if rlp:
+        emu.write_bytes(rlp, struct_to_bytes(rlimit))
+
     return 0
 
 
 @register_syscall_handler(const.SYS_SETRLIMIT, "SYS_setrlimit")
 def handle_sys_setrlimit(emu: Chomper):
+    emu.os.raise_permission_denied()
+
     return 0
 
 
@@ -631,21 +740,7 @@ def handle_sys_mmap(emu: Chomper):
     fd = to_signed(emu.get_arg(4), 4)
     offset = emu.get_arg(5)
 
-    buf = emu.create_buffer(length)
-
-    if fd != -1:
-        chunk_size = 1024 * 1024
-        content = b""
-
-        while True:
-            chunk = emu.ios_os.read(fd, chunk_size)
-            if not chunk:
-                break
-            content += chunk
-
-        emu.write_bytes(buf, content[offset:])
-
-    return buf
+    return emu.os.mmap(length, fd, offset)
 
 
 @register_syscall_handler(const.SYS_LSEEK, "SYS_lseek")
@@ -669,6 +764,13 @@ def handle_sys_fsync(emu: Chomper):
     return 0
 
 
+@register_syscall_handler(const.SYS_SETPRIORITY, "SYS_setpriority")
+def handle_sys_setpriority(emu):
+    emu.os.raise_permission_denied()
+
+    return 0
+
+
 @register_syscall_handler(const.SYS_SOCKET, "SYS_socket")
 def handle_sys_socket(emu):
     domain = emu.get_arg(0)
@@ -686,6 +788,14 @@ def handle_sys_connect(emu):
     address_len = emu.get_arg(2)
 
     return emu.os.connect(sock, address, address_len)
+
+
+@register_syscall_handler(const.SYS_GETPRIORITY, "SYS_getpriority")
+def handle_sys_getpriority(emu):
+    # which = emu.get_arg(0)
+    # who = emu.get_arg(1)
+
+    return 0
 
 
 @register_syscall_handler(const.SYS_BIND, "SYS_bind")
@@ -722,6 +832,13 @@ def handle_sys_getsockopt(emu):
 @register_syscall_handler(const.SYS_SIGSUSPEND, "SYS_sigsuspend")
 def handle_sys_sigsuspend(emu: Chomper):
     return -1
+
+
+@register_syscall_handler(const.SYS_SETPGID, "SYS_setpgid")
+def handle_sys_setpgid(emu: Chomper):
+    emu.os.raise_permission_denied()
+
+    return 0
 
 
 @register_syscall_handler(const.SYS_FCNTL, "SYS_fcntl")
@@ -860,7 +977,7 @@ def handle_sys_gettid(emu: Chomper):
 
 @register_syscall_handler(const.SYS_IDENTITYSVC, "SYS_identitysvc")
 def handle_sys_identitysvc(emu: Chomper):
-    raise_permission_denied()
+    emu.os.raise_permission_denied()
 
     return 0
 
@@ -900,7 +1017,7 @@ def handle_sys_proc_info(emu: Chomper):
     buffer = emu.get_arg(4)
 
     if pid != emu.ios_os.pid:
-        raise_permission_denied()
+        emu.os.raise_permission_denied()
 
     emu.logger.info(f"pid={pid}, flavor={flavor}")
 

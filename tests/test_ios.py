@@ -338,11 +338,7 @@ def test_ct_telephony_network_info(emu_ios, objc):
 
         network_info.call_method("init")
 
-        # radio_access_technology = objc.msg_send(
-        #     network_info,
-        #     "currentRadioAccessTechnology",
-        # )
-        # assert radio_access_technology
+        network_info.call_method("currentRadioAccessTechnology")
 
 
 def test_ct_cellular_data(emu_ios, objc):
@@ -389,16 +385,16 @@ def test_sc_network_reachability(emu_ios, objc):
     with emu_ios.mem_context() as ctx, objc.autorelease_pool():
         name = "apple.com"
 
-        name_buf = ctx.create_string(name)
-        flags_buf = ctx.create_buffer(8)
+        name_ptr = ctx.create_string(name)
+        flags_ptr = ctx.create_buffer(8)
 
         reachability = emu_ios.call_symbol(
-            "_SCNetworkReachabilityCreateWithName", 0, name_buf
+            "_SCNetworkReachabilityCreateWithName", 0, name_ptr
         )
         assert reachability
 
         result = emu_ios.call_symbol(
-            "_SCNetworkReachabilityGetFlags", reachability, flags_buf
+            "_SCNetworkReachabilityGetFlags", reachability, flags_ptr
         )
         assert result
 
@@ -419,9 +415,9 @@ def test_clock(emu_ios):
     clock_port = emu_ios.ios_os.MACH_PORT_CLOCK
 
     with emu_ios.mem_context() as ctx:
-        cur_time_buf = ctx.create_buffer(sizeof(MachTimespec))
+        cur_time_ptr = ctx.create_buffer(sizeof(MachTimespec))
 
-        result = emu_ios.call_symbol("_clock_get_time", clock_port, cur_time_buf)
+        result = emu_ios.call_symbol("_clock_get_time", clock_port, cur_time_ptr)
         assert result == 0
 
 
@@ -447,7 +443,7 @@ def test_clonefile(emu_ios):
 
 def test_mach_ports(emu_ios):
     with emu_ios.mem_context() as ctx:
-        port_buf = ctx.create_buffer(4)
+        port_ptr = ctx.create_buffer(4)
 
         port = emu_ios.call_symbol("_mach_host_self")
         assert port == emu_ios.ios_os.MACH_PORT_HOST
@@ -469,26 +465,43 @@ def test_mach_ports(emu_ios):
             emu_ios.ios_os.MACH_PORT_HOST,
             0,
             const.HOST_PORT,
-            port_buf,
+            port_ptr,
         )
-        assert emu_ios.read_u32(port_buf) == emu_ios.ios_os.MACH_PORT_HOST
+        assert emu_ios.read_u32(port_ptr) == emu_ios.ios_os.MACH_PORT_HOST
 
         emu_ios.call_symbol(
             "_task_get_special_port",
             emu_ios.ios_os.MACH_PORT_TASK,
             const.TASK_BOOTSTRAP_PORT,
-            port_buf,
+            port_ptr,
         )
-        assert emu_ios.read_u32(port_buf) == emu_ios.ios_os.MACH_PORT_BOOTSTRAP
+        assert emu_ios.read_u32(port_ptr) == emu_ios.ios_os.MACH_PORT_BOOTSTRAP
 
-        io_master_buf = ctx.create_buffer(4)
+        io_master_ptr = ctx.create_buffer(4)
         emu_ios.call_symbol(
-            "_host_get_io_master", emu_ios.ios_os.MACH_PORT_HOST, io_master_buf
+            "_host_get_io_master", emu_ios.ios_os.MACH_PORT_HOST, io_master_ptr
         )
-        assert emu_ios.read_u32(io_master_buf) == emu_ios.ios_os.MACH_PORT_IO_MASTER
+        assert emu_ios.read_u32(io_master_ptr) == emu_ios.ios_os.MACH_PORT_IO_MASTER
 
         port = emu_ios.call_symbol("__os_trace_create_debug_control_port")
         assert port
+
+        masks_ptr = ctx.create_buffer(4 * 14)
+        masks_cnt_ptr = ctx.create_buffer(4)
+        handlers_ptr = ctx.create_buffer(4 * 14)
+        behaviors_ptr = ctx.create_buffer(4 * 14)
+        flavors_ptr = ctx.create_buffer(4 * 14)
+
+        result = emu_ios.call_symbol(
+            "_task_get_exception_ports",
+            emu_ios.ios_os.MACH_PORT_TASK,
+            masks_ptr,
+            masks_cnt_ptr,
+            handlers_ptr,
+            behaviors_ptr,
+            flavors_ptr,
+        )
+        assert result == 0
 
 
 def test_xpc_connection(emu_ios):

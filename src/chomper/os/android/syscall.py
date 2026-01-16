@@ -21,6 +21,7 @@ SYSCALL_ERRORS = {
     SyscallError.EFAULT: (const.EFAULT, "EFAULT"),
     SyscallError.EEXIST: (const.EEXIST, "EEXIST"),
     SyscallError.ENOTDIR: (const.ENOTDIR, "ENOTDIR"),
+    SyscallError.EINVAL: (const.EINVAL, "EINVAL"),
 }
 
 syscall_handlers: Dict[int, SyscallHandleCallable] = {}
@@ -52,6 +53,10 @@ def register_syscall_handler(syscall_no: int, syscall_name: Optional[str] = None
                 error_type = SyscallError.ENOENT
             except FileExistsError:
                 error_type = SyscallError.EEXIST
+            except UnicodeDecodeError:
+                error_type = SyscallError.EPERM
+            except OSError:
+                error_type = SyscallError.EINVAL
             except SystemOperationFailed as e:
                 error_type = e.error_type
 
@@ -71,10 +76,6 @@ def register_syscall_handler(syscall_no: int, syscall_name: Optional[str] = None
         return f
 
     return wrapper
-
-
-def raise_permission_denied():
-    raise SystemOperationFailed("No permission", SyscallError.EPERM)
 
 
 @register_syscall_handler(const.NR_GETCWD, "NR_getcwd")
@@ -281,7 +282,7 @@ def handle_nr_clock_nanosleep(emu: Chomper):
 
 @register_syscall_handler(const.NR_SETRESGID, "NR_setresgid")
 def handle_nr_setresgid(emu: Chomper):
-    raise_permission_denied()
+    emu.os.raise_permission_denied()
 
     return 0
 
@@ -291,7 +292,7 @@ def handle_nr_getpgid(emu: Chomper):
     pid = emu.get_arg(0)
 
     if pid != 0:
-        raise_permission_denied()
+        emu.os.raise_permission_denied()
 
     return 1
 

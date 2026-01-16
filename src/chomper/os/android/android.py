@@ -57,7 +57,7 @@ class AndroidOs(PosixOs):
         self.emu.write_s32(TLS_ADDRESS + 0x10, value)
 
     @staticmethod
-    def _create_stat(st: os.stat_result) -> bytes:
+    def _construct_stat(st: os.stat_result) -> bytes:
         if sys.platform == "win32":
             block_size = 4096
 
@@ -92,7 +92,7 @@ class AndroidOs(PosixOs):
         return struct_to_bytes(st)
 
     @staticmethod
-    def _create_device_stat() -> bytes:
+    def _construct_device_stat() -> bytes:
         atim = Timespec.from_time_ns(0)
         mtim = Timespec.from_time_ns(0)
         ctim = Timespec.from_time_ns(0)

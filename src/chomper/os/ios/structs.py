@@ -383,3 +383,10 @@ class Utsname(ctypes.Structure):
         ("version", ctypes.c_char * 256),
         ("machine", ctypes.c_char * 256),
     ]
+
+
+class Rlimit(ctypes.Structure):
+    _fields_ = [
+        ("rlim_cur", ctypes.c_uint64),
+        ("rlim_max", ctypes.c_uint64),
+    ]
