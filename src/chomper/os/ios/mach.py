@@ -161,6 +161,8 @@ class MachMsgHandler:
                 result = self._handle_task_get_special_port(msg, msgh)
             elif msgh_id == 3410:
                 result = self._handle_task_set_special_port(msg, msgh)
+            elif msgh_id == 3414:
+                result = self._handle_task_get_exception_ports(msg, msgh)
             elif msgh_id == 3418:
                 result = self._handle_semaphore_create(msg, msgh)
             elif msgh_id == 4808:
@@ -477,6 +479,35 @@ class MachMsgHandler:
             msg_header,
             msg_body,
             int_to_bytes(0, 8),
+        )
+
+        return const.KERN_SUCCESS
+
+    def _handle_task_get_exception_ports(self, msg: int, msgh: MachMsgHeader) -> int:
+        msg_header = MachMsgHeader(
+            msgh_bits=const.MACH_MSGH_BITS_COMPLEX,
+            msgh_size=36 + 12 * 32 + 4,
+            msgh_remote_port=0,
+            msgh_local_port=0,
+            msgh_voucher_port=0,
+            msgh_id=(msgh.msgh_id + 100),
+        )
+
+        msg_body = MachMsgBody(
+            msgh_descriptor_count=32,
+        )
+
+        masks_cnt = 0
+
+        self.write_msg(
+            msg,
+            msg_header,
+            msg_body,
+            int_to_bytes(0, 8),
+            bytes(12 * 31),
+            int_to_bytes(0, 4),
+            int_to_bytes(0, 8),
+            int_to_bytes(masks_cnt, 4),
         )
 
         return const.KERN_SUCCESS

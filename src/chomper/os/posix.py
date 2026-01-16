@@ -30,6 +30,7 @@ class SyscallError(Enum):
     EFAULT = 5
     EEXIST = 6
     ENOTDIR = 7
+    EINVAL = 8
 
     EXT1 = 1000
 
@@ -99,6 +100,9 @@ class PosixOs(ABC):
 
         self._stdout_fd = self._new_fd(FdType.FILE, real_fd=sys.stdout.fileno())
         self._stderr_fd = self._new_fd(FdType.FILE, real_fd=sys.stderr.fileno())
+
+        # Mapping files
+        self._mapping_files: Dict[int, str] = {}
 
     def get_errno(self) -> int:
         """Get the `errno`."""
@@ -191,6 +195,10 @@ class PosixOs(ABC):
     def set_symbolic_link(self, src_path: str, dst_path: str):
         """Set a symbolic link to specified path."""
         self._symbolic_links[src_path] = dst_path
+
+    @staticmethod
+    def raise_permission_denied():
+        raise SystemOperationFailed("No permission", SyscallError.EPERM)
 
     def _new_fd(self, fd_type: FdType, **kwargs) -> int:
         """Create a new file descriptor."""
@@ -295,6 +303,13 @@ class PosixOs(ABC):
                 f"Bad file descriptor: {fd}", SyscallError.EBADF
             )
 
+    def _check_sock(self, sock: int):
+        """Check socket."""
+        self._check_fd(sock)
+
+        if not self._is_sock_fd(sock):
+            raise SystemOperationFailed(f"Bad socket: {sock}", SyscallError.EBADF)
+
     @staticmethod
     def _resolve_flags(flags: int) -> int:
         """Create flags that will be actually passed into the host machine.
@@ -369,16 +384,16 @@ class PosixOs(ABC):
         return buffer
 
     @staticmethod
-    def _create_stat(st: os.stat_result) -> bytes:
-        raise NotImplementedError("_create_stat")
+    def _construct_stat(st: os.stat_result) -> bytes:
+        raise NotImplementedError("construct_stat")
 
     @staticmethod
-    def _create_device_stat() -> bytes:
-        raise NotImplementedError("_create_device_stat")
+    def _construct_device_stat() -> bytes:
+        raise NotImplementedError("construct_device_stat")
 
     @staticmethod
-    def _create_statfs() -> bytes:
-        raise NotImplementedError("_create_statfs")
+    def _construct_statfs() -> bytes:
+        raise NotImplementedError("construct_statfs")
 
     def _open(self, path: str, flags: int, mode: int) -> int:
         real_path = self._get_real_path(path)
@@ -427,7 +442,7 @@ class PosixOs(ABC):
 
     def _stat(self, path: str) -> bytes:
         real_path = self._get_real_path(path)
-        return self._create_stat(os.stat(real_path))
+        return self._construct_stat(os.stat(real_path))
 
     def _rename(self, old: str, new: str):
         old = self._get_real_path(old)
@@ -457,6 +472,9 @@ class PosixOs(ABC):
 
         if self._is_dev_fd(fd):
             return self._device_read(fd, size)
+        elif self._is_sock_fd(fd):
+            sock = self._get_fd_sock(fd)
+            return sock.recv(size)
 
         real_fd = self._get_fd_real_fd(fd)
         return os.read(real_fd, size)
@@ -469,6 +487,9 @@ class PosixOs(ABC):
 
         if self._is_dev_fd(fd):
             return self._device_write(fd, data)
+        elif self._is_sock_fd(fd):
+            sock = self._get_fd_sock(fd)
+            return sock.send(data)
 
         real_fd = self._get_fd_real_fd(fd)
         return os.write(real_fd, data)
@@ -487,8 +508,7 @@ class PosixOs(ABC):
         self._check_fd(fd)
 
         if self._is_sock_fd(fd):
-            family = self._get_fd_family(fd)
-            if family == self.AF_INET:
+            if self._file_manager.has_prop(fd, "sock"):
                 sock = self._get_fd_sock(fd)
                 sock.close()
 
@@ -578,10 +598,10 @@ class PosixOs(ABC):
             return self._stat(path)
 
         if self._is_dev_fd(fd):
-            return self._create_device_stat()
+            return self._construct_device_stat()
 
         real_fd = self._get_fd_real_fd(fd)
-        return self._create_stat(os.fstat(real_fd))
+        return self._construct_stat(os.fstat(real_fd))
 
     @log_call
     def fstatat(self, dir_fd: int, path: str) -> bytes:
@@ -596,13 +616,13 @@ class PosixOs(ABC):
     def statfs(self, path: str) -> bytes:
         if path:
             pass
-        return self._create_statfs()
+        return self._construct_statfs()
 
     @log_call
     def fstatfs(self, fd: int) -> bytes:
         if fd:
             pass
-        return self._create_statfs()
+        return self._construct_statfs()
 
     @log_call
     def fsync(self, fd: int):
@@ -741,7 +761,7 @@ class PosixOs(ABC):
     @log_call
     def socket(self, domain: int, sock_type: int, protocol: int) -> int:
         if not self.FEATURE_SOCKET_ENABLE:
-            return -1
+            self.raise_permission_denied()
 
         domain_map = {
             self.AF_INET: socket.AF_INET,
@@ -778,18 +798,33 @@ class PosixOs(ABC):
     @log_call
     def connect(self, sock: int, address: int, address_len: int) -> int:
         if not self.FEATURE_SOCKET_ENABLE:
-            return -1
+            self.raise_permission_denied()
+
+        self._check_sock(sock)
 
         family = self.emu.read_u8(address + 1)
         if family == self.AF_UNIX:
             path = self.emu.read_string(address + 2)
             if path == "/var/run/mDNSResponder":
-                if self._file_manager.validate(sock):
-                    self._file_manager.set_prop(sock, "family", self.AF_UNIX)
-                    self._file_manager.set_prop(sock, "path", path)
+                self._file_manager.set_prop(sock, "family", family)
+                self._file_manager.set_prop(sock, "path", path)
                 return 0
         elif family == self.AF_INET:
-            pass
+            self._file_manager.set_prop(sock, "family", family)
+
+            port = self.emu.read_u16(address + 2)
+            host_bytes = self.emu.read_bytes(address + 4, 4)
+
+            port = socket.ntohs(port)
+            host = socket.inet_ntoa(host_bytes)
+
+            self.logger.info(
+                f"Establishing socket connection: host={host}, port={port}"
+            )
+            real_sock = self._get_fd_sock(sock)
+            real_sock.connect((host, port))
+
+            return 0
         else:
             self.logger.warning("Unsupported protocol family: %s", family)
             return -1
@@ -799,7 +834,7 @@ class PosixOs(ABC):
     @log_call
     def bind(self, sock: int, address: int, address_len: int):
         if not self.FEATURE_SOCKET_ENABLE:
-            return -1
+            self.raise_permission_denied()
 
         return -1
 
@@ -851,15 +886,21 @@ class PosixOs(ABC):
         dest_len: int,
     ) -> int:
         if not self.FEATURE_SOCKET_ENABLE:
-            return -1
+            self.raise_permission_denied()
 
+        self._check_sock(sock)
+
+        real_sock = self._get_fd_sock(sock)
         data = self.emu.read_bytes(buffer, length)
+
+        real_sock.send(data)
+
         return len(data)
 
     @log_call
     def sendmsg(self, sock: int, buffer: int, flags: int) -> int:
         if not self.FEATURE_SOCKET_ENABLE:
-            return -1
+            self.raise_permission_denied()
 
         msg_iov = self.emu.read_pointer(buffer + 16)
         msg_iovlen = self.emu.read_s64(buffer + 24)
@@ -888,10 +929,16 @@ class PosixOs(ABC):
         address_len: int,
     ) -> int:
         if not self.FEATURE_SOCKET_ENABLE:
-            return -1
+            self.raise_permission_denied()
 
-        self.emu.write_bytes(buffer, b"\x00" * length)
-        return length
+        self._check_sock(sock)
+
+        real_sock = self._get_fd_sock(sock)
+
+        recv_bytes = real_sock.recv(length)
+        self.emu.write_bytes(buffer, recv_bytes)
+
+        return len(recv_bytes)
 
     def _fd_set_count(self, fd_set: int) -> int:
         """Get the number of members in `fd_set`."""
@@ -913,7 +960,7 @@ class PosixOs(ABC):
         timeout: int,
     ) -> int:
         if not self.FEATURE_SOCKET_ENABLE:
-            return -1
+            self.raise_permission_denied()
 
         count = 0
 
@@ -929,6 +976,34 @@ class PosixOs(ABC):
             count += self._fd_set_count(errorfds)
 
         return count
+
+    @staticmethod
+    def _construct_sockaddr_in(address: str, port: int) -> bytes:
+        raise NotImplementedError("construct_sockaddr_in")
+
+    @log_call
+    def getpeername(self, sock: int) -> bytes:
+        if not self.FEATURE_SOCKET_ENABLE:
+            self.raise_permission_denied()
+
+        self._check_sock(sock)
+
+        real_sock = self._get_fd_sock(sock)
+        address, port = real_sock.getpeername()
+
+        return self._construct_sockaddr_in(address, port)
+
+    @log_call
+    def getsockname(self, sock: int) -> bytes:
+        if not self.FEATURE_SOCKET_ENABLE:
+            self.raise_permission_denied()
+
+        self._check_sock(sock)
+
+        real_sock = self._get_fd_sock(sock)
+        address, port = real_sock.getsockname()
+
+        return self._construct_sockaddr_in(address, port)
 
     @log_call
     def fcntl(self, fd: int, cmd: int, arg: int) -> int:
@@ -966,3 +1041,50 @@ class PosixOs(ABC):
         path = self._get_fd_path(fd)
 
         os.utime(path, times)
+
+    @log_call
+    def mmap(self, length: int, fd: int, offset: int) -> int:
+        addr = self.emu.create_buffer(length)
+
+        if fd != -1:
+            self._check_fd(fd)
+
+            chunk_size = 1024 * 1024
+            content = b""
+
+            while True:
+                chunk = self.read(fd, chunk_size)
+                if not chunk:
+                    break
+                content += chunk
+
+            self.emu.write_bytes(addr, content[offset:])
+
+            self._mapping_files[addr] = self._get_fd_path(fd)
+
+        return addr
+
+    @log_call
+    def munmap(self, addr: int):
+        if addr not in self._mapping_files:
+            raise SystemOperationFailed(
+                f"Invalid address: {hex(addr)}", SyscallError.EINVAL
+            )
+
+        self.emu.free(addr)
+        del self._mapping_files[addr]
+
+    @log_call
+    def msync(self, addr: int, length: int):
+        if addr not in self._mapping_files:
+            raise SystemOperationFailed(
+                f"Invalid address: {hex(addr)}", SyscallError.EINVAL
+            )
+
+        path = self._mapping_files[addr]
+        real_path = self._get_real_path(path)
+
+        data = self.emu.read_bytes(addr, length)
+
+        with open(real_path, "wb") as f:
+            f.write(data)
