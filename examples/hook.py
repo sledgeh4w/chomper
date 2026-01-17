@@ -8,24 +8,24 @@ base_path = os.path.abspath(os.path.dirname(__file__))
 rootfs_path = os.path.join(base_path, "../rootfs/ios")
 
 
-def hook_access(uc, address, size, user_data):
-    emu = user_data["emu"]
-    emu.logger.info("access called")
-
-
 def hook_stat(uc, address, size, user_data):
     emu = user_data["emu"]
-    emu.logger.info("stat called")
+    emu.logger.info(f"[HOOK] stat called: {emu.read_string(emu.get_arg(0))}")
 
 
-def hook_stat_return(uc, address, size, user_data):
+def hook_access(uc, address, size, user_data):
     emu = user_data["emu"]
-    emu.logger.info("stat returned")
+    emu.logger.info(f"[HOOK] access called: {emu.read_string(emu.get_arg(0))}")
+
+
+def hook_access_return(uc, address, size, user_data):
+    emu = user_data["emu"]
+    emu.logger.info(f"[HOOK] access returned: {emu.get_retval()}")
 
 
 def hook_ui_device_current_device(uc, address, size, user_data):
     emu = user_data["emu"]
-    emu.logger.info("+[UIDevice currentDevice] called")
+    emu.logger.info("[HOOK] +[UIDevice currentDevice] called")
 
 
 def hook_ui_device_identifier_for_vendor(uc, address, size, user_data):
@@ -55,11 +55,11 @@ def main():
     ui_device_class = objc.find_class("UIDevice")
 
     # Hook function by symbol name
-    emu.add_hook("_access", hook_access)
+    emu.add_hook("_stat", hook_stat)
 
     # Hook function by address
-    stat = emu.find_symbol("_stat")
-    emu.add_hook(stat.address, hook_stat, return_callback=hook_stat_return)
+    access = emu.find_symbol("_access")
+    emu.add_hook(access.address, hook_access, return_callback=hook_access_return)
 
     # Hook Objetive-C method
     emu.add_hook(
