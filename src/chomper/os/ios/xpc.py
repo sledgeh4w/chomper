@@ -23,35 +23,34 @@ class XpcMessageHandler:
             return ""
         return self.emu.read_string(name_ptr)
 
-    def get_message_description(self, message: int) -> str:
-        desc_ptr = self.emu.call_symbol("_xpc_copy_description", message)
+    def _copy_description(self, obj: int) -> str:
+        desc_ptr = self.emu.call_symbol("_xpc_copy_description", obj)
         return self.emu.read_string(desc_ptr)
 
-    def parse_message(self, message: int) -> Optional[Any]:
+    def _dictionary_get_int64(self, obj: int, key: str) -> int:
         with self.emu.mem_context() as ctx:
-            # Parse object
-            key_root = ctx.create_string("root")
+            return self.emu.call_symbol(
+                "_xpc_dictionary_get_int64",
+                obj,
+                ctx.create_string(key),
+            )
+
+    def _dictionary_get_data(self, obj: int, key: str) -> Optional[bytes]:
+        with self.emu.mem_context() as ctx:
+            key_ptr = ctx.create_string(key)
             length_out = ctx.create_buffer(4)
 
-            root_ptr = self.emu.call_symbol(
+            result = self.emu.call_symbol(
                 "_xpc_dictionary_get_data",
-                message,
-                key_root,
+                obj,
+                key_ptr,
                 length_out,
             )
-            if not root_ptr:
+            if not result:
                 return None
 
-            root_data = self.emu.read_bytes(root_ptr, self.emu.read_u32(length_out))
-            plist_parser = _BinaryPlist17Parser(dict_type=dict)
-
-            root_obj = plist_parser.parse(BytesIO(root_data))
-            if not root_obj:
-                return None
-
-            self.emu.logger.info("object = %s", root_obj)
-
-            return root_obj
+            length = self.emu.read_u32(length_out)
+            return self.emu.read_bytes(result, length)
 
     @classmethod
     def _add_type_info(cls, obj: Any):
@@ -104,7 +103,48 @@ class XpcMessageHandler:
             raise ValueError(f"Unsupported type: {type(obj)}")
         return data
 
-    def create_reply(self, obj: Any) -> int:
+    def handle_message(self, connection: int, message: int) -> int:
+        name = self.get_connection_name(connection)
+        desc = self._copy_description(message)
+        display = f"'{name}'" if name else hex(connection)
+
+        self.emu.logger.info("Received an xpc message to %s: %s", display, desc)
+
+        if not name:
+            return 0
+
+        # NSXPCConnection
+        root_obj = self.parse_ns_xpc_message(message)
+        if root_obj and isinstance(root_obj, list):
+            sel_name = root_obj[0]
+            return self.reply_ns_xpc_message(name, sel_name)
+
+        if name == "com.apple.SystemConfiguration.DNSConfiguration":
+            request_op = self._dictionary_get_int64(message, "request_op")
+            # _res_9_ninit
+            if request_op == 65537:
+                reply = self.emu.call_symbol("_xpc_dictionary_create_empty")
+                return reply
+
+        return 0
+
+    def parse_ns_xpc_message(self, message: int) -> Optional[Any]:
+        # Parse object
+        root_data = self._dictionary_get_data(message, "root")
+        if not root_data:
+            return None
+
+        plist_parser = _BinaryPlist17Parser(dict_type=dict)
+
+        root_obj = plist_parser.parse(BytesIO(root_data))
+        if not root_obj:
+            return None
+
+        self.emu.logger.info("object = %s", root_obj)
+
+        return root_obj
+
+    def create_ns_xpc_reply(self, obj: Any) -> int:
         write_io = BytesIO()
         plist_writer = _BinaryPlist17Writer(write_io)
         plist_writer.write(self._add_type_info(obj), with_type_info=True)
@@ -127,24 +167,7 @@ class XpcMessageHandler:
 
         return reply
 
-    def handle_connection_message(self, connection: int, message: int) -> int:
-        name = self.get_connection_name(connection)
-        desc = self.get_message_description(message)
-        display = f"'{name}'" if name else hex(connection)
-
-        self.emu.logger.info("Received an xpc message to %s: %s", display, desc)
-
-        if not name:
-            return 0
-
-        root_obj = self.parse_message(message)
-        if not root_obj or not isinstance(root_obj, list):
-            return 0
-
-        sel_name = root_obj[0]
-        return self.reply_message(name, sel_name)
-
-    def reply_message(self, name: str, sel_name: str) -> int:
+    def reply_ns_xpc_message(self, name: str, sel_name: str) -> int:
         reply_obj = None
 
         if name == "com.apple.lsd.advertisingidentifiers":
@@ -164,6 +187,13 @@ class XpcMessageHandler:
         elif name == "com.apple.commcenter.coretelephony.xpc":
             if sel_name == "getDescriptorsForDomain:completion:":
                 reply_obj = self._reply_get_descriptors_for_domain()
+        elif name == "com.apple.locationd.synchronous":
+            if sel_name == "getLocationServicesEnabledWithReplyBlock:":
+                reply_obj = self._reply_get_location_services_enabled()
+            elif (
+                sel_name == "getAuthorizationStatusForBundleID:orBundlePath:replyBlock:"
+            ):
+                reply_obj = self._reply_get_authorization_status_for_bundle_id()
 
         if not reply_obj:
             from_addr = self.emu.debug_symbol(
@@ -175,7 +205,7 @@ class XpcMessageHandler:
             )
             return 0
 
-        return self.create_reply(reply_obj)
+        return self.create_ns_xpc_reply(reply_obj)
 
     @staticmethod
     def _reply_get_identifier_of_type():
@@ -248,5 +278,27 @@ class XpcMessageHandler:
                     "$class": "CTServiceDescriptorContainer",
                 },
                 None,  # type: ignore
+            ],
+        ]
+
+    @staticmethod
+    def _reply_get_location_services_enabled():
+        return [
+            None,
+            'v20@?0@"NSError"8i16',
+            [
+                None,
+                0,
+            ],
+        ]
+
+    @staticmethod
+    def _reply_get_authorization_status_for_bundle_id():
+        return [
+            None,
+            'v20@?0@"NSError"8i16',
+            [
+                None,
+                0,
             ],
         ]

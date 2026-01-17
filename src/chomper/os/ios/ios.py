@@ -65,9 +65,11 @@ SYSTEM_MODULES = [
     "/usr/lib/system/libdispatch.dylib",
     "/usr/lib/system/libremovefile.dylib",
     "/usr/lib/system/libsystem_blocks.dylib",
+    "/usr/lib/system/libsystem_configuration.dylib",
     "/usr/lib/system/libsystem_coreservices.dylib",
     "/usr/lib/system/libsystem_darwin.dylib",
     "/usr/lib/system/libsystem_info.dylib",
+    "/usr/lib/system/libsystem_networkextension.dylib",
     "/usr/lib/system/libsystem_notify.dylib",
     "/usr/lib/system/libsystem_m.dylib",
     "/usr/lib/system/libsystem_sandbox.dylib",
@@ -79,12 +81,14 @@ SYSTEM_MODULES = [
     "/usr/lib/libicucore.A.dylib",
     "/usr/lib/libnetwork.dylib",
     "/usr/lib/libMobileGestalt.dylib",
+    "/usr/lib/libresolv.9.dylib",
     "/usr/lib/libTelephonyUtilDynamic.dylib",
     "/usr/lib/libz.1.dylib",
     "/System/Library/Frameworks/CoreFoundation",
     "/System/Library/Frameworks/Foundation",
     "/System/Library/Frameworks/CFNetwork",
     "/System/Library/Frameworks/CoreGraphics",
+    "/System/Library/Frameworks/CoreLocation",
     "/System/Library/Frameworks/CoreServices",
     "/System/Library/Frameworks/CoreTelephony",
     "/System/Library/Frameworks/CoreText",
@@ -919,7 +923,7 @@ class IosOs(PosixOs):
 
     def xpc_connection_send_message(self, connection: int, message: int) -> int:
         """Respond to `xpc_connection_send_message_with_reply_sync`."""
-        return self._xpc_message_handler.handle_connection_message(
+        return self._xpc_message_handler.handle_message(
             connection,
             message,
         )
