@@ -360,6 +360,18 @@ def test_ls_application_workspace(emu_ios, objc):
         assert plugins
 
 
+def test_cl_location_manager(emu_ios, objc):
+    with objc.autorelease_pool():
+        objc.msg_send("CLLocationManager", "locationServicesEnabled")
+
+        objc.msg_send(
+            "CLLocationManager",
+            "_authorizationStatusForBundleIdentifier:bundle:",
+            0,
+            0,
+        )
+
+
 def test_ns_log(emu_ios, objc):
     with objc.autorelease_pool():
         msg = objc.create_ns_string("test")
@@ -381,7 +393,7 @@ def test_cf_run_loop(emu_ios, objc):
         assert run_loop
 
 
-def test_sc_network_reachability(emu_ios, objc):
+def test_system_configuration(emu_ios, objc):
     with emu_ios.mem_context() as ctx, objc.autorelease_pool():
         name = "apple.com"
 
@@ -397,6 +409,9 @@ def test_sc_network_reachability(emu_ios, objc):
             "_SCNetworkReachabilityGetFlags", reachability, flags_ptr
         )
         assert result
+
+        interface_name = objc.create_cf_string("en0")
+        emu_ios.call_symbol("_CNCopyCurrentNetworkInfo", interface_name)
 
 
 def test_dispatch_semaphore(emu_ios):
@@ -512,3 +527,11 @@ def test_xpc_connection(emu_ios):
         const.XPC_CONNECTION_MACH_SERVICE_LISTENER,
     )
     assert service
+
+
+def test_resolv(emu_ios):
+    with emu_ios.mem_context() as ctx:
+        res = ctx.create_buffer(552)
+
+        result = emu_ios.call_symbol("_res_9_ninit", res)
+        assert result == 0
