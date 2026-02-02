@@ -7,6 +7,7 @@ import sys
 import shutil
 import time
 from abc import ABC
+from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Type, TYPE_CHECKING
@@ -40,6 +41,15 @@ class FdType(Enum):
     DIR = 2
     DEV = 3
     SOCK = 4
+
+
+@dataclass
+class FileProperty:
+    path: str
+    is_dir: bool
+    readable: bool
+    writeable: bool
+    executable: bool
 
 
 class PosixOs(ABC):
@@ -103,6 +113,8 @@ class PosixOs(ABC):
 
         # Mapping files
         self._mapping_files: Dict[int, str] = {}
+
+        self._file_properties: List[FileProperty] = []
 
     def get_errno(self) -> int:
         """Get the `errno`."""
@@ -395,6 +407,21 @@ class PosixOs(ABC):
     def _construct_statfs() -> bytes:
         raise NotImplementedError("construct_statfs")
 
+    def _get_file_property(self, path: str) -> Optional[FileProperty]:
+        for prop in self._file_properties:
+            if path == prop.path:
+                return prop
+        return None
+
+    def add_file_property(self, prop: FileProperty):
+        self._file_properties.append(prop)
+
+    def _check_dir_writeable(self, path: str):
+        dir_path = posixpath.dirname(path)
+        file_prop = self._get_file_property(dir_path)
+        if file_prop and file_prop.is_dir and not file_prop.writeable:
+            self.raise_permission_denied()
+
     def _open(self, path: str, flags: int, mode: int) -> int:
         real_path = self._get_real_path(path)
         flags = self._resolve_flags(flags)
@@ -411,6 +438,10 @@ class PosixOs(ABC):
                 device=device,
             )
 
+        # Check file creation permissions
+        if flags | os.O_CREAT:
+            self._check_dir_writeable(path)
+
         real_fd = os.open(real_path, flags, mode)
         return self._new_fd(
             FdType.FILE,
@@ -419,9 +450,13 @@ class PosixOs(ABC):
         )
 
     def _link(self, src_path: str, dst_path: str):
+        self._check_dir_writeable(dst_path)
+
         self.set_symbolic_link(src_path, dst_path)
 
     def _symlink(self, src_path: str, dst_path: str):
+        self._check_dir_writeable(dst_path)
+
         self.set_symbolic_link(src_path, dst_path)
 
     @staticmethod
@@ -445,6 +480,8 @@ class PosixOs(ABC):
         return self._construct_stat(os.stat(real_path))
 
     def _rename(self, old: str, new: str):
+        self._check_dir_writeable(new)
+
         old = self._get_real_path(old)
         new = self._get_real_path(new)
 
@@ -454,6 +491,8 @@ class PosixOs(ABC):
             shutil.copy(old, new)
 
     def _mkdir(self, path: str, mode: int):
+        self._check_dir_writeable(path)
+
         real_path = self._get_real_path(path)
         os.mkdir(real_path, mode)
 

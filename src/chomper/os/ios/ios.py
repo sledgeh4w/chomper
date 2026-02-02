@@ -13,7 +13,7 @@ from chomper.const import STACK_ADDRESS, STACK_SIZE, TLS_ADDRESS
 from chomper.exceptions import EmulatorCrashed, SystemOperationFailed
 from chomper.loader import MachoLoader, Module
 from chomper.os.device import NullDevice, RandomDevice, UrandomDevice
-from chomper.os.posix import PosixOs, SyscallError
+from chomper.os.posix import FileProperty, PosixOs, SyscallError
 from chomper.os.handle import HandleManager
 from chomper.utils import log_call, struct_to_bytes, to_unsigned
 
@@ -145,6 +145,12 @@ DEVICES_FILES = {
     "/dev/random": RandomDevice,
     "/dev/urandom": UrandomDevice,
 }
+
+FILE_PROPERTIES = [
+    # path, is_dir, readable, writeable, executable
+    ("/", True, True, False, False),
+    ("/private", True, True, False, False),
+]
 
 
 class IosOs(PosixOs):
@@ -409,6 +415,18 @@ class IosOs(PosixOs):
         size = 0x1000
 
         self.emu.uc.mmio_map(address, size, read_cb, None, write_cb, None)
+
+    def _setup_file_properties(self):
+        """Initialize file properties."""
+        for path, is_dir, readable, writeable, executable in FILE_PROPERTIES:
+            file_prop = FileProperty(
+                path=path,
+                is_dir=is_dir,
+                readable=readable,
+                writeable=writeable,
+                executable=executable,
+            )
+            self.add_file_property(file_prop)
 
     def _init_lib_dyld(self):
         g_use_dyld3 = self.emu.get_symbol("_gUseDyld3")
@@ -940,6 +958,8 @@ class IosOs(PosixOs):
 
         # Mount virtual device files
         self.mount_devices(DEVICES_FILES)
+
+        self._setup_file_properties()
 
         self._setup_system_registers()
 

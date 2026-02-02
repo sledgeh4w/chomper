@@ -364,12 +364,7 @@ def test_cl_location_manager(emu_ios, objc):
     with objc.autorelease_pool():
         objc.msg_send("CLLocationManager", "locationServicesEnabled")
 
-        objc.msg_send(
-            "CLLocationManager",
-            "_authorizationStatusForBundleIdentifier:bundle:",
-            0,
-            0,
-        )
+        objc.msg_send("CLLocationManager", "authorizationStatus")
 
 
 def test_ns_log(emu_ios, objc):
