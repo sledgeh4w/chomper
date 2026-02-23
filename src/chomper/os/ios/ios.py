@@ -581,7 +581,6 @@ class IosOs(PosixOs):
         if name == "libxpc.dylib":
             self.emu.call_symbol("__libxpc_initializer")
         elif name == "CoreFoundation":
-            self._fix_method_signature_rom_table()
             self.emu.call_symbol("___CFInitialize")
         elif name == "Foundation":
             self.emu.call_symbol("__NSInitializePlatform")
@@ -757,21 +756,6 @@ class IosOs(PosixOs):
 
     def get_executable_file(self) -> str:
         return self.executable_file
-
-    def _fix_method_signature_rom_table(self):
-        """Relocate references in `MethodSignatureROMTable`."""
-        table = self.emu.get_symbol("_MethodSignatureROMTable")
-
-        table_size = 7892
-
-        objc_module = self.emu.find_module("libobjc.A.dylib")
-        objc_offset = objc_module.base - objc_module.macho_info.image_base
-
-        for index in range(table_size):
-            offset = table.address + index * 24 + 8
-
-            address = self.emu.read_pointer(offset)
-            self.emu.write_pointer(offset, objc_offset + address)
 
     def _create_fp(self, fd: int, mode: str, unbuffered: bool = False) -> int:
         """Wrap file descriptor to file object by calling `fdopen`.
