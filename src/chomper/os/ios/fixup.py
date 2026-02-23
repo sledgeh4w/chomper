@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Dict, Optional, Set, Tuple, Union, TYPE_CHECKING
+from typing import Dict, Iterator, Optional, Sequence, Set, Tuple, Union, TYPE_CHECKING
 
 import lief
 from unicorn import UcError
@@ -49,15 +49,11 @@ class SystemModuleFixer:
             section.virtual_address <= address < section.virtual_address + section.size
         )
 
-    def get_sections(self, *names: Tuple[str, str]):
-        sections = []
-
+    def iter_sections(self, names: Sequence[Tuple[str, str]]) -> Iterator:
         for segment_name, section_name in names:
             section = self._module_binary.get_section(segment_name, section_name)
             if section:
-                sections.append(section)
-
-        return sections
+                yield section
 
     def relocate_reference(
         self,
@@ -103,14 +99,14 @@ class SystemModuleFixer:
 
     def check_address(self, address: int) -> bool:
         """Check if the address is in a data section."""
-        sections = self.get_sections(
+        names = [
             ("__DATA", "__data"),
             ("__DATA", "__cstring"),
             ("__DATA_DIRTY", "__data"),
             ("__DATA_DIRTY", "__cstring"),
-        )
+        ]
 
-        for section in sections:
+        for section in self.iter_sections(names):
             if self.is_address_in_section(address, section):
                 return True
 
@@ -135,6 +131,28 @@ class SystemModuleFixer:
 
                 if flags == 0x50000000 and reversed_value == 0:
                     self.relocate_reference(address + 16)
+
+    def iter_section_pointers(
+        self,
+        section_name: str,
+        segment_name: Optional[str] = None,
+    ) -> Iterator[Tuple[int, int]]:
+        """Iterate addresses in the specified section."""
+        if segment_name:
+            section = self._module_binary.get_section(segment_name, section_name)
+        else:
+            section = self._module_binary.get_section(section_name)
+
+        if not section:
+            return
+
+        for offset in range(0, section.size, 8):
+            address = self._module_base + section.virtual_address + offset
+
+            data = section.content[offset : offset + 8]
+            target_address = int.from_bytes(data, "little")
+
+            yield address, target_address
 
     def fixup_objc_sections(self):
         """Fixup sections which contains references."""
@@ -297,14 +315,14 @@ class SystemModuleFixer:
 
         # Validate superclass and set to nil if invalid to prevent map_images crashes.
         if superclass_addr:
-            sections = self.get_sections(
+            names = [
                 ("__DATA", "__objc_data"),
                 ("__DATA_DIRTY", "__objc_data"),
-            )
+            ]
 
             is_valid = False
 
-            for section in sections:
+            for section in self.iter_sections(names):
                 if self.is_address_in_section(superclass_addr, section):
                     is_valid = True
                     break
@@ -350,12 +368,12 @@ class SystemModuleFixer:
                 if not module.macho_info.shared_segments:
                     continue
 
+                module_base = module.base - module.macho_info.image_base
+
                 for segment in module.macho_info.shared_segments:
                     if self.is_address_in_segment(method_type_addr, segment):
-                        module_base = module.base - module.macho_info.image_base
                         self.relocate_reference(
-                            method_type_offset,
-                            module_base=module_base,
+                            method_type_offset, module_base=module_base
                         )
 
     def fixup_protocol_struct(self, address: int):
@@ -464,18 +482,18 @@ class SystemModuleFixer:
 
     def fixup_unicode_segment(self):
         """Fixup the `__UNICODE` segment."""
-        sections = self.get_sections(
+        names = [
             ("__UNICODE", "__csbitmaps"),
             ("__UNICODE", "__data"),
             ("__UNICODE", "__properties"),
-        )
+        ]
 
-        for section in sections:
+        for section in self.iter_sections(names):
             self.add_refs_to_relocation(section.virtual_address)
 
     def fixup_const_data(self):
         """Fixup references to const data."""
-        sections = self.get_sections(
+        names = [
             ("__DATA", "__common"),
             ("__DATA", "__data"),
             ("__DATA", "__objc_arraydata"),
@@ -485,7 +503,7 @@ class SystemModuleFixer:
             ("__DATA_DIRTY", "__common"),
             ("__DATA_DIRTY", "__data"),
             ("__TEXT", "__const"),
-        )
+        ]
 
         # Address range of the module
         module_start = self._module_binary.imagebase
@@ -500,7 +518,7 @@ class SystemModuleFixer:
         text_start = text_section.virtual_address
         text_end = text_start + text_section.size
 
-        for section in sections:
+        for section in self.iter_sections(names):
             for offset in range(0, section.size, 8):
                 data = section.content[offset : offset + 8]
                 address = int.from_bytes(data, "little")
@@ -508,7 +526,7 @@ class SystemModuleFixer:
                 if not (module_start <= address < module_end):
                     continue
 
-                for data_section in sections:
+                for data_section in self.iter_sections(names):
                     if self.is_address_in_section(address, data_section):
                         self.add_refs_to_relocation(address)
 
@@ -526,27 +544,37 @@ class SystemModuleFixer:
 
     def fixup_auth_ptr_section(self):
         """Fixup the `__auth_ptr` section."""
-        section = self._module_binary.get_section("__auth_ptr")
-        if not section:
-            return
-
-        for offset in range(0, section.size, 8):
-            address = self.emu.read_pointer(
-                self._module_base + section.virtual_address + offset
-            )
-
+        for address, target_address in self.iter_section_pointers("__auth_ptr"):
             for module in self.emu.modules:
                 if module.name == self._module.name:
                     continue
 
                 module_base = module.base - module.macho_info.image_base
-                target_address = address + module_base
 
-                if module.contains(target_address):
-                    self.relocate_reference(
-                        self._module_base + section.virtual_address + offset,
-                        module_base=module_base,
-                    )
+                if module.contains(target_address + module_base):
+                    self.relocate_reference(address, module_base=module_base)
+
+    def fixup_sel_references(self):
+        """Fixup references to SEL."""
+        names = [
+            ("__DATA_DIRTY", "__objc_data"),
+            ("__DATA_CONST", "__const"),
+        ]
+
+        for segment_name, section_name in names:
+            for address, target_address in self.iter_section_pointers(
+                section_name,
+                segment_name=segment_name,
+            ):
+                for module in self.emu.modules:
+                    if not module.macho_info.shared_segments:
+                        continue
+
+                    module_base = module.base - module.macho_info.image_base
+
+                    for segment in module.macho_info.shared_segments:
+                        if self.is_address_in_segment(target_address, segment):
+                            self.relocate_reference(address, module_base=module_base)
 
     def fixup_all(self):
         """Apply all fixup to the module."""
@@ -560,6 +588,8 @@ class SystemModuleFixer:
 
         # For arm64e
         self.fixup_auth_ptr_section()
+
+        self.fixup_sel_references()
 
         self.fixup_unicode_segment()
         self.fixup_const_data()
