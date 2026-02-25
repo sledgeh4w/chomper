@@ -60,7 +60,8 @@ class PosixOs(ABC):
         rootfs_path: As the root directory of the mapping file system.
     """
 
-    FEATURE_SOCKET_ENABLE = False
+    # Experimental support for socket
+    FEATURE_SOCKET_ENABLED = False
 
     FD_START_VALUE = 1
     FD_MAX_NUM = 10000
@@ -799,7 +800,7 @@ class PosixOs(ABC):
 
     @log_call
     def socket(self, domain: int, sock_type: int, protocol: int) -> int:
-        if not self.FEATURE_SOCKET_ENABLE:
+        if not self.FEATURE_SOCKET_ENABLED:
             self.raise_permission_denied()
 
         domain_map = {
@@ -836,7 +837,7 @@ class PosixOs(ABC):
 
     @log_call
     def connect(self, sock: int, address: int, address_len: int) -> int:
-        if not self.FEATURE_SOCKET_ENABLE:
+        if not self.FEATURE_SOCKET_ENABLED:
             self.raise_permission_denied()
 
         self._check_sock(sock)
@@ -872,16 +873,19 @@ class PosixOs(ABC):
 
     @log_call
     def bind(self, sock: int, address: int, address_len: int):
-        if not self.FEATURE_SOCKET_ENABLE:
+        if not self.FEATURE_SOCKET_ENABLED:
             self.raise_permission_denied()
 
         return -1
 
     @log_call
     def socketpair(
-        self, domain: int, sock_type: int, protocol: int
+        self,
+        domain: int,
+        sock_type: int,
+        protocol: int,
     ) -> Optional[Tuple[int, int]]:
-        if not self.FEATURE_SOCKET_ENABLE:
+        if not self.FEATURE_SOCKET_ENABLED:
             return None
 
         read_fd = self._new_fd(FdType.SOCK)
@@ -924,7 +928,7 @@ class PosixOs(ABC):
         dest_addr: int,
         dest_len: int,
     ) -> int:
-        if not self.FEATURE_SOCKET_ENABLE:
+        if not self.FEATURE_SOCKET_ENABLED:
             self.raise_permission_denied()
 
         self._check_sock(sock)
@@ -938,7 +942,7 @@ class PosixOs(ABC):
 
     @log_call
     def sendmsg(self, sock: int, buffer: int, flags: int) -> int:
-        if not self.FEATURE_SOCKET_ENABLE:
+        if not self.FEATURE_SOCKET_ENABLED:
             self.raise_permission_denied()
 
         msg_iov = self.emu.read_pointer(buffer + 16)
@@ -967,7 +971,7 @@ class PosixOs(ABC):
         address: int,
         address_len: int,
     ) -> int:
-        if not self.FEATURE_SOCKET_ENABLE:
+        if not self.FEATURE_SOCKET_ENABLED:
             self.raise_permission_denied()
 
         self._check_sock(sock)
@@ -998,7 +1002,7 @@ class PosixOs(ABC):
         errorfds: int,
         timeout: int,
     ) -> int:
-        if not self.FEATURE_SOCKET_ENABLE:
+        if not self.FEATURE_SOCKET_ENABLED:
             self.raise_permission_denied()
 
         count = 0
@@ -1022,7 +1026,7 @@ class PosixOs(ABC):
 
     @log_call
     def getpeername(self, sock: int) -> bytes:
-        if not self.FEATURE_SOCKET_ENABLE:
+        if not self.FEATURE_SOCKET_ENABLED:
             self.raise_permission_denied()
 
         self._check_sock(sock)
@@ -1034,7 +1038,7 @@ class PosixOs(ABC):
 
     @log_call
     def getsockname(self, sock: int) -> bytes:
-        if not self.FEATURE_SOCKET_ENABLE:
+        if not self.FEATURE_SOCKET_ENABLED:
             self.raise_permission_denied()
 
         self._check_sock(sock)

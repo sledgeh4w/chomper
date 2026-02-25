@@ -114,6 +114,18 @@ SYSTEM_MODULES = [
     "/System/Library/PrivateFrameworks/UIKitServices",
 ]
 
+SWIFT_MODULES = [
+    "/usr/lib/swift/libswiftCore.dylib",
+    "/usr/lib/swift/libswiftCoreFoundation.dylib",
+    "/usr/lib/swift/libswiftDarwin.dylib",
+    "/usr/lib/swift/libswiftDispatch.dylib",
+    "/usr/lib/swift/libswiftFoundation.dylib",
+    "/usr/lib/swift/libswiftObjectiveC.dylib",
+    "/usr/lib/swift/libswiftos.dylib",
+    "/usr/lib/swift/libswiftSystem.dylib",
+    "/usr/lib/swift/libswiftUIKit.dylib",
+]
+
 # Symbolic links in the file system
 SYMBOLIC_LINKS = {
     "/etc": "/private/etc",
@@ -155,6 +167,9 @@ FILE_PROPERTIES = [
 
 class IosOs(PosixOs):
     """Provide iOS environment."""
+
+    # Experimental support for Swift
+    FEATURE_SWIFT_ENABLED = False
 
     AT_FDCWD = to_unsigned(-2, size=4)
 
@@ -956,8 +971,13 @@ class IosOs(PosixOs):
         # Setup mach services
         self._mach_services.update(self.MACH_SERVICES)
 
+        modules = SYSTEM_MODULES.copy()
+
+        if self.FEATURE_SWIFT_ENABLED:
+            modules.extend(SWIFT_MODULES)
+
         # Setup system modules
-        self.resolve_modules(SYSTEM_MODULES)
+        self.resolve_modules(modules)
         self._init_system_symbols()
 
         self._setup_standard_io()
