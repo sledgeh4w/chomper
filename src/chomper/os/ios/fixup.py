@@ -99,14 +99,14 @@ class SystemModuleFixer:
 
     def check_address(self, address: int) -> bool:
         """Check if the address is in a data section."""
-        names = [
+        sections = [
             ("__DATA", "__data"),
             ("__DATA", "__cstring"),
             ("__DATA_DIRTY", "__data"),
             ("__DATA_DIRTY", "__cstring"),
         ]
 
-        for section in self.iter_sections(names):
+        for section in self.iter_sections(sections):
             if self.is_address_in_section(address, section):
                 return True
 
@@ -156,7 +156,7 @@ class SystemModuleFixer:
 
     def fixup_objc_sections(self):
         """Fixup sections which contains references."""
-        section_names = (
+        section_names = [
             "__objc_classlist",
             "__objc_catlist",
             "__objc_nlcatlist",
@@ -165,7 +165,7 @@ class SystemModuleFixer:
             "__objc_protorefs",
             "__objc_arraydata",
             "__la_resolver",
-        )
+        ]
 
         for section_name in section_names:
             section = self._module_binary.get_section(section_name)
@@ -315,14 +315,14 @@ class SystemModuleFixer:
 
         # Validate superclass and set to nil if invalid to prevent map_images crashes.
         if superclass_addr:
-            names = [
+            sections = [
                 ("__DATA", "__objc_data"),
                 ("__DATA_DIRTY", "__objc_data"),
             ]
 
             is_valid = False
 
-            for section in self.iter_sections(names):
+            for section in self.iter_sections(sections):
                 if self.is_address_in_section(superclass_addr, section):
                     is_valid = True
                     break
@@ -482,27 +482,35 @@ class SystemModuleFixer:
 
     def fixup_unicode_segment(self):
         """Fixup the `__UNICODE` segment."""
-        names = [
+        sections = [
             ("__UNICODE", "__csbitmaps"),
             ("__UNICODE", "__data"),
             ("__UNICODE", "__properties"),
         ]
 
-        for section in self.iter_sections(names):
+        for section in self.iter_sections(sections):
             self.add_refs_to_relocation(section.virtual_address)
 
     def fixup_const_data(self):
         """Fixup references to const data."""
-        names = [
-            ("__DATA", "__common"),
+        ref_sections = [
             ("__DATA", "__data"),
             ("__DATA", "__objc_arraydata"),
+            ("__DATA_CONST", "__const"),
+            ("__DATA_DIRTY", "__bss"),
+            ("__DATA_DIRTY", "__data"),
+        ]
+
+        data_sections = [
+            ("__DATA", "__data"),
             ("__DATA", "__objc_arrayobj"),
             ("__DATA", "__objc_dictobj"),
             ("__DATA_CONST", "__const"),
+            ("__DATA_CONST", "__objc_const"),
             ("__DATA_DIRTY", "__common"),
             ("__DATA_DIRTY", "__data"),
             ("__TEXT", "__const"),
+            ("__TEXT", "__swift5_typeref"),
         ]
 
         # Address range of the module
@@ -518,15 +526,15 @@ class SystemModuleFixer:
         text_start = text_section.virtual_address
         text_end = text_start + text_section.size
 
-        for section in self.iter_sections(names):
-            for offset in range(0, section.size, 8):
-                data = section.content[offset : offset + 8]
+        for ref_section in self.iter_sections(ref_sections):
+            for offset in range(0, ref_section.size, 8):
+                data = ref_section.content[offset : offset + 8]
                 address = int.from_bytes(data, "little")
 
                 if not (module_start <= address < module_end):
                     continue
 
-                for data_section in self.iter_sections(names):
+                for data_section in self.iter_sections(data_sections):
                     if self.is_address_in_section(address, data_section):
                         self.add_refs_to_relocation(address)
 
@@ -556,12 +564,12 @@ class SystemModuleFixer:
 
     def fixup_sel_references(self):
         """Fixup references to SEL."""
-        names = [
+        sections = [
             ("__DATA_DIRTY", "__objc_data"),
             ("__DATA_CONST", "__const"),
         ]
 
-        for segment_name, section_name in names:
+        for segment_name, section_name in sections:
             for address, target_address in self.iter_section_pointers(
                 section_name,
                 segment_name=segment_name,
