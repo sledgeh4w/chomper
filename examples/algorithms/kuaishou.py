@@ -39,10 +39,16 @@ def main():
     # Auth file
     auth_file = "video_yh_loading_icon.kss"
 
-    # Forward file accesses
+    # Forward bundle directory accesses
+    emu.os.forward_path(
+        f"{os.path.dirname(emu.os.executable_path)}",
+        os.path.join(module_path, ".."),
+    )
+
+    # Forward auth file accesses
     emu.os.forward_path(
         f"{os.path.dirname(emu.os.executable_path)}/{auth_file}",
-        os.path.join(module_path, "..", auth_file)
+        os.path.join(module_path, "..", auth_file),
     )
 
     # Diable data report
