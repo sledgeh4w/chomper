@@ -78,6 +78,7 @@ SYSTEM_MODULES = [
     "/usr/lib/system/libxpc.dylib",
     "/usr/lib/libAccessibility.dylib",
     "/usr/lib/libbsm.0.dylib",
+    "/usr/lib/libcompression.dylib",
     "/usr/lib/libcupolicy.dylib",
     "/usr/lib/libicucore.A.dylib",
     "/usr/lib/libnetwork.dylib",
