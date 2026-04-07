@@ -11,6 +11,33 @@ from chomper.utils import aligned
 from .base import BaseLoader, Module, MachoInfo, Symbol, Binding, Segment, AddressRegion
 
 
+_SYMBOL_ALIASES = {
+    "____chkstk_darwin": "___chkstk_darwin",
+}
+
+_PLATFORM_SYMBOLS = [
+    "_bzero",
+    "_memccpy",
+    "_memchr",
+    "_memcmp",
+    "_memmove",
+    "_memset",
+    "_memset_pattern16",
+    "_memset_pattern4",
+    "_memset_pattern8",
+    "_strchr",
+    "_strcmp",
+    "_strcpy",
+    "_strlcat",
+    "_strlcpy",
+    "_strlen",
+    "_strncmp",
+    "_strncpy",
+    "_strnlen",
+    "_strstr",
+]
+
+
 class MachoLoader(BaseLoader):
     """The Mach-O file loader."""
 
@@ -21,33 +48,9 @@ class MachoLoader(BaseLoader):
         self._init_symbol_aliases()
 
     def _init_symbol_aliases(self):
-        symbol_aliases = {
-            "____chkstk_darwin": "___chkstk_darwin",
-        }
+        symbol_aliases = _SYMBOL_ALIASES.copy()
 
-        platform_symbols = [
-            "_bzero",
-            "_memccpy",
-            "_memchr",
-            "_memcmp",
-            "_memmove",
-            "_memset",
-            "_memset_pattern16",
-            "_memset_pattern4",
-            "_memset_pattern8",
-            "_strchr",
-            "_strcmp",
-            "_strcpy",
-            "_strlcat",
-            "_strlcpy",
-            "_strlen",
-            "_strncmp",
-            "_strncpy",
-            "_strnlen",
-            "_strstr",
-        ]
-
-        for symbol in platform_symbols:
+        for symbol in _PLATFORM_SYMBOLS:
             symbol_aliases[f"__platform{symbol}"] = symbol
 
         self._symbol_aliases.update(symbol_aliases)
@@ -364,7 +367,8 @@ class MachoLoader(BaseLoader):
         module_name = os.path.basename(module_file)
         self.emu.logger.info(f'Load module "{module_name}"')
 
-        binary: lief.MachO.Binary = lief.parse(module_file)  # type: ignore
+        with open(module_file, "rb") as f:
+            binary: lief.MachO.Binary = lief.parse(f)  # type: ignore
 
         if module_base is None:
             if self.emu.modules:
