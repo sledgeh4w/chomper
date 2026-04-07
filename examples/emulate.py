@@ -15,19 +15,19 @@ def main():
         rootfs_path=rootfs_path,
     )
 
-    s = "chomper"
+    s = "Mocha"
 
     # Construct arguments
-    data = emu.create_string(s)
-    length = len(s)
-    output = emu.create_buffer(16)
+    input_str = emu.create_string(s)
+    input_size = len(s)
+    result_buf = emu.create_buffer(16)
 
     # Call function
-    emu.call_symbol("_CC_MD5", data, length, output)
+    emu.call_symbol("_CC_MD5", input_str, input_size, result_buf)
 
-    result = emu.read_bytes(output, 16)
+    result = emu.read_bytes(result_buf, 16)
     result_hex = binascii.b2a_hex(result).decode("utf-8")
-    print(f"CC_MD5: {result_hex}")
+    emu.logger.info(f"result: {result_hex}")
 
 
 

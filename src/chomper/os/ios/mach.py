@@ -348,7 +348,7 @@ class MachMsgHandler:
         if not thread_act:
             return const.KERN_RESOURCE_SHORTAGE
 
-        self.mach_port_manager.set_prop(thread_act, "tid", self.emu.ios_os.tid)
+        self.mach_port_manager.set_prop(thread_act, "tid", self.emu.ios_os.gettid())
 
         thread_act_list = [thread_act]
 
@@ -414,7 +414,7 @@ class MachMsgHandler:
                 msgh_descriptor_count=0,
             )
 
-            audit_token = [0, 0, 0, 0, 0, self.emu.ios_os.pid, 0, 1]
+            audit_token = [0, 0, 0, 0, 0, self.emu.ios_os.getpid(), 0, 1]
 
             self.write_msg(
                 msg,
@@ -484,9 +484,11 @@ class MachMsgHandler:
         return const.KERN_SUCCESS
 
     def _handle_task_get_exception_ports(self, msg: int, msgh: MachMsgHeader) -> int:
+        masks_cnt = 1
+
         msg_header = MachMsgHeader(
             msgh_bits=const.MACH_MSGH_BITS_COMPLEX,
-            msgh_size=36 + 12 * 32 + 4,
+            msgh_size=36 + 32 * 12 + 4 + masks_cnt * 12,
             msgh_remote_port=0,
             msgh_local_port=0,
             msgh_voucher_port=0,
@@ -497,17 +499,16 @@ class MachMsgHandler:
             msgh_descriptor_count=32,
         )
 
-        masks_cnt = 0
-
         self.write_msg(
             msg,
             msg_header,
             msg_body,
             int_to_bytes(0, 8),
-            bytes(12 * 31),
-            int_to_bytes(0, 4),
-            int_to_bytes(0, 8),
+            bytes(32 * 12),
             int_to_bytes(masks_cnt, 4),
+            int_to_bytes(0, 4),
+            int_to_bytes(0, 4),
+            int_to_bytes(0, 4),
         )
 
         return const.KERN_SUCCESS
@@ -690,7 +691,7 @@ class MachMsgHandler:
             msgh_descriptor_count=0x40585043,
         )
 
-        audit_token = [0, 0, 0, 0, 0, self.emu.ios_os.pid, 0, 1]
+        audit_token = [0, 0, 0, 0, 0, self.emu.ios_os.getpid(), 0, 1]
 
         self.write_msg(
             msg,

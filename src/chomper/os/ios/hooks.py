@@ -533,9 +533,10 @@ def hook_bootstrap_look_up3(uc: Uc, address: int, size: int, user_data: HookCont
     )
 
     port = emu.ios_os.bootstrap_look_up(service_name)
+    if not port:
+        return 1100
 
-    if port:
-        emu.write_u32(service_port, port)
+    emu.write_u32(service_port, port)
 
     return 0
 

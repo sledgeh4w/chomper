@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import abc
 import os
 import posixpath
 import socket
@@ -32,6 +33,7 @@ class SyscallError(Enum):
     EEXIST = 6
     ENOTDIR = 7
     EINVAL = 8
+    EMFILE = 9
 
     EXT1 = 1000
 
@@ -117,13 +119,15 @@ class PosixOs(ABC):
 
         self._file_properties: List[FileProperty] = []
 
+    @abc.abstractmethod
     def get_errno(self) -> int:
         """Get the `errno`."""
-        raise NotImplementedError("get_errno")
+        pass
 
+    @abc.abstractmethod
     def set_errno(self, value: int):
         """Set the `errno`."""
-        raise NotImplementedError("set_errno")
+        pass
 
     def get_working_dir(self) -> str:
         """Get current working directory."""
@@ -396,17 +400,17 @@ class PosixOs(ABC):
 
         return buffer
 
-    @staticmethod
-    def _construct_stat(st: os.stat_result) -> bytes:
-        raise NotImplementedError("construct_stat")
+    @abc.abstractmethod
+    def _construct_stat(self, st: os.stat_result) -> bytes:
+        pass
 
-    @staticmethod
-    def _construct_device_stat() -> bytes:
-        raise NotImplementedError("construct_device_stat")
+    @abc.abstractmethod
+    def _construct_device_stat(self) -> bytes:
+        pass
 
-    @staticmethod
-    def _construct_statfs() -> bytes:
-        raise NotImplementedError("construct_statfs")
+    @abc.abstractmethod
+    def _construct_statfs(self) -> bytes:
+        pass
 
     def _get_file_property(self, path: str) -> Optional[FileProperty]:
         for prop in self._file_properties:
@@ -422,6 +426,22 @@ class PosixOs(ABC):
         file_prop = self._get_file_property(dir_path)
         if file_prop and file_prop.is_dir and not file_prop.writeable:
             self.raise_permission_denied()
+
+    @abc.abstractmethod
+    def getuid(self) -> int:
+        pass
+
+    @abc.abstractmethod
+    def getgid(self) -> int:
+        pass
+
+    @abc.abstractmethod
+    def getpid(self) -> int:
+        pass
+
+    @abc.abstractmethod
+    def getpgid(self) -> int:
+        pass
 
     def _open(self, path: str, flags: int, mode: int) -> int:
         real_path = self._get_real_path(path)
@@ -449,6 +469,20 @@ class PosixOs(ABC):
             path=absolute_path,
             real_fd=real_fd,
         )
+
+    def _close(self, fd: int):
+        self._check_fd(fd)
+
+        if self._is_sock_fd(fd):
+            if self._file_manager.has_prop(fd, "sock"):
+                sock = self._get_fd_sock(fd)
+                sock.close()
+
+        if self._is_file_fd(fd):
+            real_fd = self._get_fd_real_fd(fd)
+            os.close(real_fd)
+
+        self._file_manager.free(fd)
 
     def _link(self, src_path: str, dst_path: str):
         self._check_dir_writeable(dst_path)
@@ -545,20 +579,38 @@ class PosixOs(ABC):
 
     @log_call
     def close(self, fd: int) -> int:
-        self._check_fd(fd)
-
-        if self._is_sock_fd(fd):
-            if self._file_manager.has_prop(fd, "sock"):
-                sock = self._get_fd_sock(fd)
-                sock.close()
-
-        if self._is_file_fd(fd):
-            real_fd = self._get_fd_real_fd(fd)
-            os.close(real_fd)
-
-        self._file_manager.free(fd)
+        self._close(fd)
 
         return 0
+
+    @log_call
+    def dup(self, fd: int) -> int:
+        self._check_fd(fd)
+
+        new_fd = self._file_manager.new()
+        if new_fd is None:
+            raise SystemOperationFailed("Too many open files", SyscallError.EMFILE)
+
+        for name, value in self._file_manager.iter_props(fd):
+            self._file_manager.set_prop(new_fd, name, value)
+
+        return new_fd
+
+    @log_call
+    def dup2(self, old_fd: int, new_fd: int):
+        self._check_fd(old_fd)
+
+        if old_fd == new_fd:
+            return
+
+        if self._file_manager.validate(new_fd):
+            self._close(new_fd)
+
+        result = self._file_manager.new(value=new_fd)
+        if result is None:
+            raise SystemOperationFailed(
+                f"Bad file descriptor: {new_fd}", SyscallError.EBADF
+            )
 
     @log_call
     def link(self, src_path: str, dst_path: str):

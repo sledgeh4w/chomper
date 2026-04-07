@@ -1,4 +1,4 @@
-from typing import Any, Dict, Optional, Set
+from typing import Any, Dict, Iterator, Optional, Set
 
 
 class HandleManager:
@@ -16,7 +16,7 @@ class HandleManager:
         self._handles: Set[int] = set()
         self._handle_props: Dict[int, dict] = {}
 
-    def new(self) -> Optional[int]:
+    def new(self, value: Optional[int] = None) -> Optional[int]:
         """Create a new resource handle.
 
         Returns:
@@ -24,6 +24,9 @@ class HandleManager:
         """
         for index in range(self.max_num):
             handle = self.start_value + index
+
+            if value is not None and value != handle:
+                continue
 
             if handle not in self._handles:
                 self._handles.add(handle)
@@ -67,3 +70,8 @@ class HandleManager:
             return False
 
         return name in self._handle_props[handle]
+
+    def iter_props(self, handle: int) -> Iterator:
+        """Iterate all property values for a resource."""
+        for name, value in self._handle_props[handle].items():
+            yield name, value

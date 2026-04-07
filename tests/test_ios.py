@@ -24,7 +24,7 @@ def test_ns_string(emu_ios, objc):
 
 def test_ns_mutable_string(emu_ios, objc):
     with objc.autorelease_pool():
-        sample_str = "chomper"
+        sample_str = "Mocha"
 
         string = objc.msg_send("NSMutableString", "string")
 
@@ -39,7 +39,7 @@ def test_ns_mutable_string(emu_ios, objc):
 
 def test_ns_array(emu_ios, objc):
     with objc.autorelease_pool():
-        sample_str = "chomper"
+        sample_str = "Mocha"
 
         array = objc.msg_send(
             "NSArray", "arrayWithObjects:", objc.create_ns_string(sample_str)
@@ -56,7 +56,7 @@ def test_ns_array(emu_ios, objc):
 
 def test_ns_mutable_array(emu_ios, objc):
     with objc.autorelease_pool():
-        sample_str = "chomper"
+        sample_str = "Mocha"
 
         array = objc.msg_send("NSMutableArray", "array")
         assert array
@@ -71,7 +71,7 @@ def test_ns_mutable_array(emu_ios, objc):
 def test_ns_dictionary(emu_ios, objc):
     with objc.autorelease_pool():
         sample_key = "name"
-        sample_value = "chomper"
+        sample_value = "Mocha"
 
         key = objc.create_ns_string(sample_key)
         value = objc.create_ns_string(sample_value)
@@ -92,7 +92,7 @@ def test_ns_dictionary(emu_ios, objc):
 def test_ns_mutable_dictionary(emu_ios, objc):
     with objc.autorelease_pool():
         sample_key = "name"
-        sample_value = "chomper"
+        sample_value = "Mocha"
 
         dictionary = objc.msg_send("NSMutableDictionary", "dictionary")
         assert dictionary
@@ -109,7 +109,7 @@ def test_ns_mutable_dictionary(emu_ios, objc):
 
 def test_ns_data(emu_ios, objc):
     with objc.autorelease_pool():
-        sample_bytes = b"chomper"
+        sample_bytes = b"Mocha"
 
         buffer = emu_ios.create_buffer(len(sample_bytes))
         emu_ios.write_bytes(buffer, sample_bytes)
@@ -505,6 +505,7 @@ def test_mach_ports(emu_ios):
         result = emu_ios.call_symbol(
             "_task_get_exception_ports",
             emu_ios.ios_os.MACH_PORT_TASK,
+            0,
             masks_ptr,
             masks_cnt_ptr,
             handlers_ptr,

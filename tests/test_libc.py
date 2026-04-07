@@ -46,7 +46,7 @@ def test_free(request, emu_name):
 def test_memcpy(request, emu_name):
     emu = request.getfixturevalue(emu_name)
 
-    s = "chomper"
+    s = "Mocha"
 
     with emu.mem_context() as ctx:
         v1 = ctx.create_buffer(16)
@@ -61,7 +61,7 @@ def test_memcpy(request, emu_name):
 def test_memcmp(request, emu_name):
     emu = request.getfixturevalue(emu_name)
 
-    s = "chomper"
+    s = "Mocha"
 
     with emu.mem_context() as ctx:
         v1 = ctx.create_string(s)
@@ -79,7 +79,7 @@ def test_memcmp(request, emu_name):
 def test_memset(request, emu_name):
     emu = request.getfixturevalue(emu_name)
 
-    s = "chomper"
+    s = "Mocha"
     n = len(s)
 
     with emu.mem_context() as ctx:
@@ -94,8 +94,8 @@ def test_memset(request, emu_name):
 def test_strncpy(request, emu_name):
     emu = request.getfixturevalue(emu_name)
 
-    s = "chomper"
-    n = 5
+    s = "Mocha"
+    n = 3
 
     with emu.mem_context() as ctx:
         v1 = ctx.create_buffer(16)
@@ -111,7 +111,7 @@ def test_strncpy(request, emu_name):
 def test_strncmp(request, emu_name):
     emu = request.getfixturevalue(emu_name)
 
-    s = "chomper"
+    s = "Mocha"
 
     with emu.mem_context() as ctx:
         v1 = ctx.create_string(s)
@@ -128,8 +128,8 @@ def test_strncmp(request, emu_name):
 def test_strncat(request, emu_name):
     emu = request.getfixturevalue(emu_name)
 
-    s = "chomper"
-    n = 5
+    s = "Mocha"
+    n = 3
 
     with emu.mem_context() as ctx:
         v1 = ctx.create_buffer(32)
@@ -146,7 +146,7 @@ def test_strncat(request, emu_name):
 def test_strcpy(request, emu_name):
     emu = request.getfixturevalue(emu_name)
 
-    s = "chomper"
+    s = "Mocha"
 
     with emu.mem_context() as ctx:
         v1 = ctx.create_buffer(16)
@@ -161,7 +161,7 @@ def test_strcpy(request, emu_name):
 def test_strcmp(request, emu_name):
     emu = request.getfixturevalue(emu_name)
 
-    s = "chomper"
+    s = "Mocha"
 
     with emu.mem_context() as ctx:
         v1 = ctx.create_string(s)
@@ -179,7 +179,7 @@ def test_strcmp(request, emu_name):
 def test_strcat(request, emu_name):
     emu = request.getfixturevalue(emu_name)
 
-    s = "chomper"
+    s = "Mocha"
 
     with emu.mem_context() as ctx:
         v1 = ctx.create_buffer(32)
@@ -196,7 +196,7 @@ def test_strcat(request, emu_name):
 def test_strlen(request, emu_name):
     emu = request.getfixturevalue(emu_name)
 
-    s = "chomper"
+    s = "Mocha"
 
     with emu.mem_context() as ctx:
         v1 = ctx.create_string(s)
@@ -209,7 +209,7 @@ def test_strlen(request, emu_name):
 def test_sprintf(request, emu_name):
     emu = request.getfixturevalue(emu_name)
 
-    s = "chomper"
+    s = "Mocha"
     fmt = "%d%s"
 
     with emu.mem_context() as ctx:
@@ -231,7 +231,7 @@ def test_sprintf(request, emu_name):
 def test_sscanf(request, emu_name):
     emu = request.getfixturevalue(emu_name)
 
-    s = "chomper"
+    s = "Mocha"
     n = len(s)
     fmt = "%d%s"
 
@@ -254,7 +254,7 @@ def test_sscanf(request, emu_name):
 def test_printf(request, emu_name):
     emu = request.getfixturevalue(emu_name)
 
-    s = "chomper"
+    s = "Mocha"
     fmt = "%d%s"
 
     with emu.mem_context() as ctx:
@@ -392,7 +392,7 @@ def test_read(request, emu_name):
     emu = request.getfixturevalue(emu_name)
 
     filepath = "/private/var/tmp/test_read"
-    s = "chomper"
+    s = "Mocha"
 
     real_path = f"{emu.os.rootfs_path}/{filepath[1:]}"
 
@@ -419,7 +419,7 @@ def test_write(request, emu_name):
     emu = request.getfixturevalue(emu_name)
 
     filepath = "/private/var/tmp/test_write"
-    s = "chomper"
+    s = "Mocha"
 
     real_path = f"{emu.os.rootfs_path}/{filepath[1:]}"
 

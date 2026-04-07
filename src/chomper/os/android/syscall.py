@@ -22,6 +22,7 @@ SYSCALL_ERRORS = {
     SyscallError.EEXIST: (const.EEXIST, "EEXIST"),
     SyscallError.ENOTDIR: (const.ENOTDIR, "ENOTDIR"),
     SyscallError.EINVAL: (const.EINVAL, "EINVAL"),
+    SyscallError.EMFILE: (const.EMFILE, "EMFILE"),
 }
 
 syscall_handlers: Dict[int, SyscallHandleCallable] = {}
@@ -309,7 +310,7 @@ def handle_nr_gettimeofday(emu: Chomper):
 
 @register_syscall_handler(const.NR_GETPID, "NR_getpid")
 def handle_nr_getpid(emu: Chomper):
-    return emu.os.pid
+    return emu.os.getpid()
 
 
 @register_syscall_handler(const.NR_GETPPID, "NR_getppid")
@@ -319,12 +320,12 @@ def handle_nr_getppid(emu: Chomper):
 
 @register_syscall_handler(const.NR_GETUID, "NR_getuid")
 def handle_ur_getuid(emu: Chomper):
-    return emu.os.uid
+    return emu.os.getuid()
 
 
 @register_syscall_handler(const.NR_GETEUID, "NR_geteuid")
 def handle_ur_geteuid(emu: Chomper):
-    return emu.os.uid
+    return emu.os.getuid()
 
 
 @register_syscall_handler(const.NR_GETEGID, "NR_getegid")
