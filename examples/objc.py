@@ -22,19 +22,19 @@ def main():
     ns_string_class = objc.find_class("NSString")
 
     # Call class methods
-    ns_str = ns_string_class.call_method("stringWithUTF8String:", "chomper")
-    print(f"NSString: {ns_str}")
+    ns_str = ns_string_class.call_method("stringWithUTF8String:", "Mocha")
+    emu.logger.info(f"NSString: {ns_str}")
 
     # Call instance methods
     raw_str = ns_str.call_method("UTF8String")
-    print(f"UTF8String: {emu.read_string(raw_str)}")
+    emu.logger.info(f"UTF8String: {emu.read_string(raw_str)}")
 
     # Utility for creating basic NS/CF objects
-    ns_data = objc.create_ns_string("chomper")
-    print(f"NSData: {ns_data}")
+    ns_dict = objc.create_ns_dictionary({"name": "Mocha"})
+    emu.logger.info(f"NSDictionary: {ns_dict}")
 
-    cf_dict = objc.create_cf_dictionary({"key": "value"})
-    print(f"CFDictionary: {cf_dict}")
+    cf_data = objc.create_cf_data(b"Mocha")
+    emu.logger.info(f"CFData: {cf_data}")
 
     # Automatically release Objective-C objects
     with objc.autorelease_pool():

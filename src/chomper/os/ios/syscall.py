@@ -38,11 +38,9 @@ SYSCALL_ERRORS = {
     SyscallError.EEXIST: (const.EEXIST, "EEXIST"),
     SyscallError.ENOTDIR: (const.ENOTDIR, "ENOTDIR"),
     SyscallError.EINVAL: (const.EINVAL, "EINVAL"),
+    SyscallError.EMFILE: (const.EMFILE, "EMFILE"),
     SyscallError.EXT1: (60, "EXT1"),
 }
-
-syscall_handlers: Dict[int, SyscallHandleCallable] = {}
-syscall_names: Dict[int, str] = {}
 
 # Used by `getrlimit`
 RESOURCE_LIMITS = {
@@ -56,6 +54,9 @@ RESOURCE_LIMITS = {
     const.RLIMIT_NPROC: (1333, 2000),
     const.RLIMIT_NOFILE: (0x1C00, const.RLIM_INFINITY),
 }
+
+syscall_handlers: Dict[int, SyscallHandleCallable] = {}
+syscall_names: Dict[int, str] = {}
 
 
 def get_syscall_handlers() -> Dict[int, SyscallHandleCallable]:
@@ -232,17 +233,17 @@ def handle_sys_chown(emu: Chomper):
 
 @register_syscall_handler(const.SYS_GETPID, "SYS_getpid")
 def handle_sys_getpid(emu: Chomper):
-    return emu.os.pid
+    return emu.os.getpid()
 
 
 @register_syscall_handler(const.SYS_GETUID, "SYS_getuid")
 def handle_sys_getuid(emu: Chomper):
-    return emu.os.uid
+    return emu.os.getuid()
 
 
 @register_syscall_handler(const.SYS_GETEUID, "SYS_geteuid")
 def handle_sys_geteuid(emu: Chomper):
-    return emu.os.uid
+    return emu.os.getuid()
 
 
 @register_syscall_handler(const.SYS_SENDMSG, "SYS_sendmsg")
@@ -327,6 +328,13 @@ def handle_sys_fchflags(emu: Chomper):
 @register_syscall_handler(const.SYS_GETPPID, "SYS_getppid")
 def handle_sys_getppid(emu: Chomper):
     return 1
+
+
+@register_syscall_handler(const.SYS_DUP, "SYS_dup")
+def handle_sys_dup(emu: Chomper):
+    fd = emu.get_arg(0)
+
+    return emu.os.dup(fd)
 
 
 @register_syscall_handler(const.SYS_PIPE, "SYS_pipe")
@@ -443,7 +451,7 @@ def handle_sys_madvise(emu: Chomper):
 
 @register_syscall_handler(const.SYS_GETEGID, "SYS_getegid")
 def handle_sys_getegid(emu: Chomper):
-    return emu.os.gid
+    return emu.os.getgid()
 
 
 @register_syscall_handler(const.SYS_GETTIMEOFDAY, "SYS_gettimeofday")
@@ -651,8 +659,8 @@ def handle_sys_adjtime(emu: Chomper):
 def handle_sys_getpgid(emu: Chomper):
     pid = emu.get_arg(0)
 
-    if pid == 0 or pid == emu.ios_os.pid:
-        return emu.ios_os.pgid
+    if pid == 0 or pid == emu.os.getpid():
+        return emu.os.getpgid()
     elif pid == 1:
         return 1
 
@@ -694,7 +702,19 @@ def handle_sys_quotactl(emu: Chomper):
 @register_syscall_handler(const.SYS_CSOPS, "SYS_csops")
 def handle_sys_csops(emu: Chomper):
     useraddr = emu.get_arg(2)
-    emu.write_u32(useraddr, 0x4000800)
+
+    flags = 0
+
+    # CS_DEV_CODE
+    # flags |= 0x04000000
+
+    # CS_RESTRICT
+    flags |= 0x00000800
+
+    # jit-allow
+    flags |= 0x00000300
+
+    emu.write_u32(useraddr, flags)
 
     return 0
 
@@ -841,6 +861,16 @@ def handle_sys_setpgid(emu: Chomper):
     return 0
 
 
+@register_syscall_handler(const.SYS_DUP2, "SYS_dup2")
+def handle_sys_dup2(emu: Chomper):
+    old_fd = emu.get_arg(0)
+    new_fd = emu.get_arg(1)
+
+    emu.os.dup2(old_fd, new_fd)
+
+    return 0
+
+
 @register_syscall_handler(const.SYS_FCNTL, "SYS_fcntl")
 @register_syscall_handler(const.SYS_FCNTL_NOCANCEL, "SYS_fcntl_nocancel")
 def handle_sys_fcntl(emu: Chomper):
@@ -972,7 +1002,7 @@ def handle_sys_sysctlbyname(emu: Chomper):
 
 @register_syscall_handler(const.SYS_GETTID, "SYS_gettid")
 def handle_sys_gettid(emu: Chomper):
-    return emu.os.tid
+    return emu.os.getpid()
 
 
 @register_syscall_handler(const.SYS_IDENTITYSVC, "SYS_identitysvc")
@@ -1016,17 +1046,17 @@ def handle_sys_proc_info(emu: Chomper):
     flavor = emu.get_arg(2)
     buffer = emu.get_arg(4)
 
-    if pid != emu.ios_os.pid:
+    if pid != emu.os.getpid():
         emu.os.raise_permission_denied()
 
     emu.logger.info(f"pid={pid}, flavor={flavor}")
 
     if flavor == const.PROC_PIDTBSDINFO:
         bsd_info = ProcBsdinfo(
-            pbi_pid=emu.ios_os.pid,
+            pbi_pid=emu.os.getpid(),
             pbi_ppid=1,
-            pbi_uid=emu.ios_os.uid,
-            pbi_gid=emu.ios_os.gid,
+            pbi_uid=emu.os.getuid(),
+            pbi_gid=emu.os.getgid(),
         )
         result = struct_to_bytes(bsd_info)
     elif flavor == const.PROC_PIDPATHINFO:
@@ -1034,10 +1064,10 @@ def handle_sys_proc_info(emu: Chomper):
         result = emu.ios_os.executable_path.encode("utf-8")
     elif flavor == const.PROC_PIDT_SHORTBSDINFO:
         bsd_short_info = ProcBsdshortinfo(
-            pbsi_pid=emu.ios_os.pid,
+            pbsi_pid=emu.os.getpid(),
             pbsi_ppid=1,
-            pbsi_uid=emu.ios_os.uid,
-            pbsi_gid=emu.ios_os.gid,
+            pbsi_uid=emu.os.getuid(),
+            pbsi_gid=emu.os.getgid(),
         )
         result = struct_to_bytes(bsd_short_info)
     elif flavor == const.PROC_PIDUNIQIDENTIFIERINFO:

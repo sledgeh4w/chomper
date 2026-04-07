@@ -82,6 +82,13 @@ class ObjcObject(ObjcType):
         # if not self.value:
         #     raise ValueError(f"Invalid value for ObjcObject: {hex(self.value)}")
 
+    def __str__(self):
+        if not self.value:
+            return "nil"
+
+        desc = self.call_method("description")
+        return self._emu.read_string(desc.call_method("UTF8String"))
+
     @cached_property
     def class_(self) -> ObjcClass:
         retval = self._emu.call_symbol("_object_getClass", self.value)

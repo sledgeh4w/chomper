@@ -6,10 +6,10 @@ def test_create_ns_objects(emu_ios, objc):
         result = objc.create_ns_number(1)
         assert result
 
-        result = objc.create_ns_string("chomper")
+        result = objc.create_ns_string("Mocha")
         assert result
 
-        result = objc.create_ns_data(b"chomper")
+        result = objc.create_ns_data(b"Mocha")
         assert result
 
         result = objc.create_ns_array([1, 2, 3])
@@ -17,7 +17,7 @@ def test_create_ns_objects(emu_ios, objc):
 
         result = objc.create_ns_dictionary(
             {
-                "name": "chomper",
+                "name": "Mocha",
             },
         )
         assert result
@@ -28,10 +28,10 @@ def test_create_cf_objects(emu_ios, objc):
         result = objc.create_cf_number(1)
         assert result
 
-        result = objc.create_cf_string("chomper")
+        result = objc.create_cf_string("Mocha")
         assert result
 
-        result = objc.create_cf_data(b"chomper")
+        result = objc.create_cf_data(b"Mocha")
         assert result
 
         result = objc.create_cf_array([1, 2, 3])
@@ -39,7 +39,7 @@ def test_create_cf_objects(emu_ios, objc):
 
         result = objc.create_cf_dictionary(
             {
-                "name": "chomper",
+                "name": "Mocha",
             },
         )
         assert result

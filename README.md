@@ -55,18 +55,18 @@ emu = Chomper(
 # Load program
 discover = emu.load_module("examples/binaries/ios/com.xingin.discover/8.74/discover")
 
-s = "chomper"
+s = "Mocha"
 
 # Construct arguments
-a1 = emu.create_string(s)
-a2 = len(s)
-a3 = emu.create_buffer(120)
-a4 = 120
-a5 = emu.create_buffer(8)
+input_str = emu.create_string(s)
+input_len = len(s)
+result_buf = emu.create_buffer(120)
+buf_size = 120
+result_len_ptr = emu.create_buffer(8)
 
 # Call function
-emu.call_address(discover.base + 0x324ef10, a1, a2, a3, a4, a5)
-result = emu.read_string(a3)
+emu.call_address(discover.base + 0x324EF10, input_str, input_len, result_buf, buf_size, result_len_ptr)
+result = emu.read_string(result_buf)
 ```
 
 Working with Objective-C.
@@ -92,10 +92,10 @@ with objc.autorelease_pool():
     zsch_rsa_class = objc.find_class("ZSCHRSA")
 
     # Create NSString object
-    a1 = objc.create_ns_string("chomper")
+    input_str = objc.create_ns_string("Mocha")
 
     # Call Objective-C method
-    req_sign = zsch_rsa_class.call_method("getReqSign:", a1)
+    req_sign = zsch_rsa_class.call_method("getReqSign:", input_str)
 
     # Convert NSString object to C string
     result_ptr = req_sign.call_method("UTF8String")
@@ -119,14 +119,14 @@ emu.load_module("rootfs/android/system/lib64/libz.so")
 
 libszstone = emu.load_module("examples/binaries/android/com.shizhuang.duapp/libszstone.so")
 
-s = "chomper"
+s = "Mocha"
 
-a1 = emu.create_string(s)
-a2 = len(s)
-a3 = emu.create_buffer(1024)
+input_str = emu.create_string(s)
+input_len = len(s)
+result_buf = emu.create_buffer(1024)
 
-result_size = emu.call_address(libszstone.base + 0x2F1C8, a1, a2, a3)
-result = emu.read_bytes(a3, result_size)
+result_len = emu.call_address(libszstone.base + 0x2F1C8, input_str, input_len, result_buf)
+result = emu.read_bytes(result_buf, result_len)
 ```
 
 ## Examples

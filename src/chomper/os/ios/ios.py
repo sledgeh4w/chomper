@@ -4,6 +4,7 @@ import plistlib
 import random
 import shutil
 import socket
+import string
 import sys
 import time
 import uuid
@@ -208,13 +209,12 @@ class IosOs(PosixOs):
         self.loader = MachoLoader(self.emu)
 
         # mobile user
-        self.uid = 501
-        self.gid = self.uid
+        self._uid = 501
 
-        self.pid = random.randint(1000, 2000)
-        self.pgid = self.pid
+        self._pid = random.randint(1000, 2000)
+        self._tid = random.randint(10000, 20000)
 
-        self.tid = random.randint(10000, 20000)
+        self._boot_hash = self._random_boot_hash()
 
         self.executable_path = (
             f"/private/var/containers/Bundle/Application"
@@ -258,7 +258,12 @@ class IosOs(PosixOs):
         self.emu.write_s32(errno_ptr, value)
 
     @staticmethod
-    def _construct_stat(st: os.stat_result) -> bytes:
+    def _random_boot_hash() -> str:
+        return "".join(
+            [random.choice(string.digits + string.ascii_uppercase) for _ in range(40)]
+        )
+
+    def _construct_stat(self, st: os.stat_result) -> bytes:
         if sys.platform == "win32":
             block_size = 4096
 
@@ -298,8 +303,7 @@ class IosOs(PosixOs):
 
         return struct_to_bytes(st)
 
-    @staticmethod
-    def _construct_device_stat() -> bytes:
+    def _construct_device_stat(self) -> bytes:
         atimespec = Timespec.from_time_ns(0)
         mtimespec = Timespec.from_time_ns(0)
         ctimespec = Timespec.from_time_ns(0)
@@ -323,8 +327,7 @@ class IosOs(PosixOs):
 
         return struct_to_bytes(st)
 
-    @staticmethod
-    def _construct_statfs() -> bytes:
+    def _construct_statfs(self) -> bytes:
         st = Statfs64(
             f_bsize=4096,
             f_iosize=1048576,
@@ -340,7 +343,8 @@ class IosOs(PosixOs):
             f_fssubtype=0,
             f_fstypename=b"apfs",
             f_mntonname=b"/",
-            f_mntfromname=b"/dev/disk0s1s1",
+            f_mntfromname=b"com.apple.os.update-%s@/dev/disk0s1s1"
+            % self._boot_hash.encode("utf-8"),
         )
         return struct_to_bytes(st)
 
@@ -353,6 +357,21 @@ class IosOs(PosixOs):
             sin_addr=int.from_bytes(socket.inet_aton(address), "little"),
         )
         return struct_to_bytes(sa)
+
+    def getuid(self) -> int:
+        return self._uid
+
+    def getgid(self) -> int:
+        return self._uid
+
+    def getpid(self) -> int:
+        return self._pid
+
+    def getpgid(self) -> int:
+        return self._pid
+
+    def gettid(self) -> int:
+        return self._tid
 
     @log_call
     def getdirentries(self, fd: int, offset: int) -> Optional[bytes]:
@@ -396,7 +415,7 @@ class IosOs(PosixOs):
 
         self.emu.write_pointer(TLS_ADDRESS - 0xE0, TLS_ADDRESS - 0xE0)
 
-        self.emu.write_u64(TLS_ADDRESS - 0x8, self.tid)
+        self.emu.write_u64(TLS_ADDRESS - 0x8, self.gettid())
 
         self.emu.write_pointer(TLS_ADDRESS + 0x8, errno_ptr)
         self.emu.write_u32(TLS_ADDRESS + 0x18, 5)
@@ -795,9 +814,9 @@ class IosOs(PosixOs):
             self.emu.write_u32(fp + 16, flags)
             return fp
 
-    def _setup_standard_io(self):
-        """Convert standard I/O file descriptors to FILE objects and assign them
-        to target symbols.
+    def _setup_stdio(self):
+        """Convert standard Input/Output file descriptors to FILE objects and assign
+        them to target symbols.
         """
         stdin = self.emu.get_symbol("___stdinp")
         stdout = self.emu.get_symbol("___stdoutp")
@@ -980,4 +999,4 @@ class IosOs(PosixOs):
         self.resolve_modules(modules)
         self._init_system_symbols()
 
-        self._setup_standard_io()
+        self._setup_stdio()

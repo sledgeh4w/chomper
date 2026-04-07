@@ -38,12 +38,9 @@ class AndroidOs(PosixOs):
 
         self.loader = ELFLoader(self.emu)
 
-        self.uid = random.randint(10000, 20000)
-        self.gid = self.uid
+        self._uid = random.randint(10000, 20000)
 
-        self.pid = random.randint(1000, 2000)
-
-        self.tid = self.pid
+        self._pid = random.randint(1000, 2000)
 
         # Used by `getdents`
         self._dir_read_offset = {}
@@ -56,8 +53,7 @@ class AndroidOs(PosixOs):
         """Set the `errno`."""
         self.emu.write_s32(TLS_ADDRESS + 0x10, value)
 
-    @staticmethod
-    def _construct_stat(st: os.stat_result) -> bytes:
+    def _construct_stat(self, st: os.stat_result) -> bytes:
         if sys.platform == "win32":
             block_size = 4096
 
@@ -91,8 +87,7 @@ class AndroidOs(PosixOs):
 
         return struct_to_bytes(st)
 
-    @staticmethod
-    def _construct_device_stat() -> bytes:
+    def _construct_device_stat(self) -> bytes:
         atim = Timespec.from_time_ns(0)
         mtim = Timespec.from_time_ns(0)
         ctim = Timespec.from_time_ns(0)
@@ -114,6 +109,24 @@ class AndroidOs(PosixOs):
         )
 
         return struct_to_bytes(st)
+
+    def _construct_statfs(self) -> bytes:
+        return b""
+
+    def getuid(self) -> int:
+        return self._uid
+
+    def getgid(self) -> int:
+        return self._uid
+
+    def getpid(self) -> int:
+        return self._pid
+
+    def getpgid(self) -> int:
+        return 1
+
+    def gettid(self) -> int:
+        return self._pid
 
     @log_call
     def getdents(self, fd: int) -> Optional[bytes]:
@@ -167,8 +180,8 @@ class AndroidOs(PosixOs):
             thread_ptr = self.emu.create_buffer(0x18)
             errno_ptr = self.emu.create_buffer(0x4)
 
-            self.emu.write_u32(thread_ptr + 0x10, self.tid)
-            self.emu.write_u32(thread_ptr + 0x14, self.pid)
+            self.emu.write_u32(thread_ptr + 0x10, self.gettid())
+            self.emu.write_u32(thread_ptr + 0x14, self.getpid())
 
             self.emu.write_pointer(TLS_ADDRESS + 0x8, thread_ptr)
             self.emu.write_pointer(TLS_ADDRESS + 0x10, errno_ptr)
@@ -205,9 +218,9 @@ class AndroidOs(PosixOs):
             self.emu.write_u32(fp + 16, flags)
             return fp
 
-    def _setup_standard_io(self):
-        """Convert standard I/O file descriptors to FILE objects and assign them
-        to target symbols.
+    def _setup_stdio(self):
+        """Convert standard Input/Output file descriptors to FILE objects and assign
+        them to target symbols.
         """
         stdin = self.emu.get_symbol("stdin")
         stdout = self.emu.get_symbol("stdout")
@@ -247,5 +260,5 @@ class AndroidOs(PosixOs):
         self._setup_tls()
 
         if self._enable_libc():
-            self._setup_standard_io()
+            self._setup_stdio()
             self._setup_environ()

@@ -38,7 +38,7 @@ def test_create_buffer(emu_arm64):
 
 
 def test_create_string(emu_arm64):
-    result = emu_arm64.create_string("chomper")
+    result = emu_arm64.create_string("Mocha")
     assert result
 
     emu_arm64.free(result)
@@ -61,7 +61,7 @@ def test_read_and_write_int(emu_arm64):
 
 
 def test_read_and_write_bytes(emu_arm64):
-    sample_bytes = b"chomper"
+    sample_bytes = b"Mocha"
 
     with emu_arm64.mem_context() as ctx:
         buf = ctx.create_buffer(1024)
@@ -72,7 +72,7 @@ def test_read_and_write_bytes(emu_arm64):
 
 
 def test_read_and_write_string(emu_arm64):
-    sample_str = "chomper"
+    sample_str = "Mocha"
 
     with emu_arm64.mem_context() as ctx:
         buf = ctx.create_buffer(1024)
