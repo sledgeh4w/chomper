@@ -1,12 +1,17 @@
+from __future__ import annotations
+
 import abc
 from abc import ABC
-from typing import Callable, Dict
+from typing import Callable, Dict, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from chomper.core import Chomper
 
 
 class BaseSyscallHandler(ABC):
     """Base class for Handling system calls."""
 
-    def __init__(self, emu):
+    def __init__(self, emu: Chomper):
         self.emu = emu
 
         self._names: Dict[int, str] = {}

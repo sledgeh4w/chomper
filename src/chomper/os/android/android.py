@@ -47,11 +47,11 @@ class AndroidOs(PosixOs):
         self._dir_read_offset = {}
 
     @property
-    def loader(self):
+    def loader(self) -> ELFLoader:
         return self._loader
 
     @property
-    def syscall_handler(self):
+    def syscall_handler(self) -> AndroidSyscallHandler:
         return self._syscall_handler
 
     def get_errno(self) -> int:

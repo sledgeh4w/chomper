@@ -247,11 +247,11 @@ class IosOs(PosixOs):
         self._xpc_message_handler = XpcMessageHandler(self.emu)
 
     @property
-    def loader(self):
+    def loader(self) -> MachoLoader:
         return self._loader
 
     @property
-    def syscall_handler(self):
+    def syscall_handler(self) -> IosSyscallHandler:
         return self._syscall_handler
 
     def get_errno(self) -> int:
