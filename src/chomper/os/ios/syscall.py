@@ -4,14 +4,13 @@ import ctypes
 import os
 import random
 import time
-from functools import wraps
-from typing import Dict, Optional, TYPE_CHECKING
+from typing import Callable
 
 from unicorn import arm64_const
 
 from chomper.exceptions import SystemOperationFailed, ProgramTerminated
 from chomper.os.posix import SyscallError
-from chomper.typing import SyscallHandleCallable
+from chomper.os.syscall import BaseSyscallHandler
 from chomper.utils import to_signed, struct_to_bytes, bytes_to_struct
 
 from . import const
@@ -24,9 +23,6 @@ from .structs import (
     ProcUniqidentifierinfo,
 )
 from .sysctl import sysctl, sysctlbyname
-
-if TYPE_CHECKING:
-    from chomper.core import Chomper
 
 
 SYSCALL_ERRORS = {
@@ -55,1685 +51,1698 @@ RESOURCE_LIMITS = {
     const.RLIMIT_NOFILE: (0x1C00, const.RLIM_INFINITY),
 }
 
-syscall_handlers: Dict[int, SyscallHandleCallable] = {}
-syscall_names: Dict[int, str] = {}
 
-
-def get_syscall_handlers() -> Dict[int, SyscallHandleCallable]:
-    """Get the default system call handlers."""
-    return syscall_handlers.copy()
-
-
-def get_syscall_names() -> Dict[int, str]:
-    """Get the system call name mapping."""
-    return syscall_names.copy()
-
-
-def register_syscall_handler(syscall_no: int, syscall_name: Optional[str] = None):
-    """Decorator to register a system call handler."""
-
-    def wrapper(f):
-        @wraps(f)
-        def decorator(emu: Chomper):
-            retval = -1
-            error_type = None
-
-            try:
-                retval = f(emu)
-            except (FileNotFoundError, PermissionError):
-                error_type = SyscallError.ENOENT
-            except FileExistsError:
-                error_type = SyscallError.EEXIST
-            except UnicodeDecodeError:
-                error_type = SyscallError.EPERM
-            except OSError:
-                error_type = SyscallError.EINVAL
-            except SystemOperationFailed as e:
-                error_type = e.error_type
-
-            if error_type in SYSCALL_ERRORS:
-                error_no, error_name = SYSCALL_ERRORS[error_type]
-
-                emu.logger.info(f"Set errno {error_name}({error_no})")
-                emu.os.set_errno(error_no)
-            else:
-                emu.os.set_errno(0)
-
-            # Clear the carry flag after called, many functions will
-            # check it after system calls.
-            nzcv = emu.uc.reg_read(arm64_const.UC_ARM64_REG_NZCV)
-            emu.uc.reg_write(arm64_const.UC_ARM64_REG_NZCV, nzcv & ~(1 << 29))
-
-            return retval
-
-        syscall_handlers[syscall_no] = decorator
-
-        if syscall_name:
-            syscall_names[syscall_no] = syscall_name
-
-        return f
-
-    return wrapper
-
-
-@register_syscall_handler(const.SYS_EXIT, "SYS_exit")
-def handle_sys_exit(emu: Chomper):
-    status = emu.get_arg(0)
-
-    raise ProgramTerminated("Program terminated with status: %s" % status)
-
-
-@register_syscall_handler(const.SYS_FORK, "SYS_fork")
-def handle_sys_fork(emu: Chomper):
-    emu.os.raise_permission_denied()
-
-    return 0
-
-
-@register_syscall_handler(const.SYS_READ, "SYS_read")
-@register_syscall_handler(const.SYS_READ_NOCANCEL, "SYS_read_nocancel")
-def handle_sys_read(emu: Chomper):
-    fd = emu.get_arg(0)
-    buf = emu.get_arg(1)
-    size = emu.get_arg(2)
-
-    data = emu.os.read(fd, size)
-    emu.write_bytes(buf, data)
-
-    return len(data)
-
-
-@register_syscall_handler(const.SYS_WRITE, "SYS_write")
-@register_syscall_handler(const.SYS_WRITE_NOCANCEL, "SYS_write_nocancel")
-def handle_sys_write(emu: Chomper):
-    fd = emu.get_arg(0)
-    buf = emu.get_arg(1)
-    size = emu.get_arg(2)
-
-    return emu.os.write(fd, buf, size)
-
-
-@register_syscall_handler(const.SYS_OPEN, "SYS_open")
-@register_syscall_handler(const.SYS_OPEN_NOCANCEL, "SYS_open_nocancel")
-def handle_sys_open(emu: Chomper):
-    path = emu.read_string(emu.get_arg(0))
-    flags = emu.get_arg(1)
-    mode = emu.get_arg(2)
-
-    return emu.os.open(path, flags, mode)
-
-
-@register_syscall_handler(const.SYS_CLOSE, "SYS_close")
-@register_syscall_handler(const.SYS_CLOSE_NOCANCEL, "SYS_close_nocancel")
-def handle_sys_close(emu: Chomper):
-    fd = emu.get_arg(0)
-
-    emu.os.close(fd)
-
-    return 0
-
-
-@register_syscall_handler(const.SYS_LINK, "SYS_link")
-def handle_sys_link(emu: Chomper):
-    src_path = emu.read_string(emu.get_arg(0))
-    dst_path = emu.read_string(emu.get_arg(1))
-
-    emu.os.link(src_path, dst_path)
-
-    return 0
-
-
-@register_syscall_handler(const.SYS_UNLINK, "SYS_unlink")
-def handle_sys_unlink(emu: Chomper):
-    path = emu.read_string(emu.get_arg(0))
-
-    emu.os.unlink(path)
-
-    return 0
-
-
-@register_syscall_handler(const.SYS_CHDIR, "SYS_chdir")
-def handle_sys_chdir(emu: Chomper):
-    path = emu.read_string(emu.get_arg(0))
-
-    emu.os.chdir(path)
-
-    return 0
-
-
-@register_syscall_handler(const.SYS_FCHDIR, "SYS_fchdir")
-def handle_sys_fchdir(emu: Chomper):
-    fd = emu.get_arg(0)
-
-    emu.os.fchdir(fd)
-
-    return 0
-
-
-@register_syscall_handler(const.SYS_CHMOD, "SYS_chmod")
-def handle_sys_chmod(emu: Chomper):
-    path = emu.read_string(emu.get_arg(0))
-    mode = emu.get_arg(1)
-
-    emu.os.chmod(path, mode)
-
-    return 0
-
-
-@register_syscall_handler(const.SYS_CHOWN, "SYS_chown")
-def handle_sys_chown(emu: Chomper):
-    path = emu.read_string(emu.get_arg(0))
-    uid = emu.get_arg(1)
-    gid = emu.get_arg(2)
-
-    emu.os.chown(path, uid, gid)
-
-    return 0
-
-
-@register_syscall_handler(const.SYS_GETPID, "SYS_getpid")
-def handle_sys_getpid(emu: Chomper):
-    return emu.os.getpid()
-
-
-@register_syscall_handler(const.SYS_GETUID, "SYS_getuid")
-def handle_sys_getuid(emu: Chomper):
-    return emu.os.getuid()
-
-
-@register_syscall_handler(const.SYS_GETEUID, "SYS_geteuid")
-def handle_sys_geteuid(emu: Chomper):
-    return emu.os.getuid()
-
-
-@register_syscall_handler(const.SYS_SENDMSG, "SYS_sendmsg")
-@register_syscall_handler(const.SYS_SENDMSG_NOCANCEL, "SYS_sendmsg_nocancel")
-def handle_sys_sendmsg(emu: Chomper):
-    sock = emu.get_arg(0)
-    buffer = emu.get_arg(1)
-    flags = emu.get_arg(2)
-
-    return emu.os.sendmsg(sock, buffer, flags)
-
-
-@register_syscall_handler(const.SYS_RECVFROM, "SYS_recvfrom")
-@register_syscall_handler(const.SYS_RECVFROM_NOCANCEL, "SYS_recvfrom_nocancel")
-def handle_sys_recvfrom(emu: Chomper):
-    sock = emu.get_arg(0)
-    buffer = emu.get_arg(1)
-    length = emu.get_arg(2)
-    flags = emu.get_arg(3)
-    address = emu.get_arg(4)
-    address_len = emu.get_arg(5)
-
-    return emu.os.recvfrom(sock, buffer, length, flags, address, address_len)
-
-
-@register_syscall_handler(const.SYS_GETPEERNAME, "SYS_getpeername")
-def handle_sys_getpeername(emu: Chomper):
-    sock = emu.get_arg(0)
-    address = emu.get_arg(1)
-    # address_len = emu.get_arg(2)
-
-    result = emu.os.getpeername(sock)
-    if address and result:
-        emu.write_bytes(address, result)
-
-    return 0
-
-
-@register_syscall_handler(const.SYS_GETSOCKNAME, "SYS_getsockname")
-def handle_sys_getsockname(emu: Chomper):
-    sock = emu.get_arg(0)
-    address = emu.get_arg(1)
-    # address_len = emu.get_arg(2)
-
-    result = emu.os.getsockname(sock)
-    if address and result:
-        emu.write_bytes(address, result)
-
-    return 0
-
-
-@register_syscall_handler(const.SYS_KILL, "SYS_kill")
-def handle_sys_kill(emu: Chomper):
-    return -1
-
-
-@register_syscall_handler(const.SYS_ACCESS, "SYS_access")
-def handle_sys_access(emu: Chomper):
-    path = emu.read_string(emu.get_arg(0))
-    mode = emu.get_arg(1)
-
-    if not emu.os.access(path, mode):
+class IosSyscallHandler(BaseSyscallHandler):
+    """Handle iOS system calls."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        names = {
+            const.SYS_EXIT: "SYS_exit",
+            const.SYS_FORK: "SYS_fork",
+            const.SYS_READ: "SYS_read",
+            const.SYS_READ_NOCANCEL: "SYS_read_nocancel",
+            const.SYS_WRITE: "SYS_write",
+            const.SYS_WRITE_NOCANCEL: "SYS_write_nocancel",
+            const.SYS_OPEN: "SYS_open",
+            const.SYS_OPEN_NOCANCEL: "SYS_open_nocancel",
+            const.SYS_CLOSE: "SYS_close",
+            const.SYS_CLOSE_NOCANCEL: "SYS_close_nocancel",
+            const.SYS_LINK: "SYS_link",
+            const.SYS_UNLINK: "SYS_unlink",
+            const.SYS_CHDIR: "SYS_chdir",
+            const.SYS_FCHDIR: "SYS_fchdir",
+            const.SYS_CHMOD: "SYS_chmod",
+            const.SYS_CHOWN: "SYS_chown",
+            const.SYS_GETPID: "SYS_getpid",
+            const.SYS_GETUID: "SYS_getuid",
+            const.SYS_GETEUID: "SYS_geteuid",
+            const.SYS_SENDMSG: "SYS_sendmsg",
+            const.SYS_SENDMSG_NOCANCEL: "SYS_sendmsg_nocancel",
+            const.SYS_RECVFROM: "SYS_recvfrom",
+            const.SYS_RECVFROM_NOCANCEL: "SYS_recvfrom_nocancel",
+            const.SYS_GETPEERNAME: "SYS_getpeername",
+            const.SYS_GETSOCKNAME: "SYS_getsockname",
+            const.SYS_KILL: "SYS_kill",
+            const.SYS_ACCESS: "SYS_access",
+            const.SYS_CHFLAGS: "SYS_chflags",
+            const.SYS_FCHFLAGS: "SYS_fchflags",
+            const.SYS_GETPPID: "SYS_getppid",
+            const.SYS_DUP: "SYS_dup",
+            const.SYS_PIPE: "SYS_pipe",
+            const.SYS_SIGACTION: "SYS_sigaction",
+            const.SYS_SIGPROCMASK: "SYS_sigprocmask",
+            const.SYS_GETLOGIN: "SYS_getlogin",
+            const.SYS_SETLOGIN: "SYS_setlogin",
+            const.SYS_SIGALTSTACK: "SYS_sigaltstack",
+            const.SYS_IOCTL: "SYS_ioctl",
+            const.SYS_REBOOT: "SYS_reboot",
+            const.SYS_SYMLINK: "SYS_symlink",
+            const.SYS_READLINK: "SYS_readlink",
+            const.SYS_MSYNC: "SYS_msync",
+            const.SYS_MUNMAP: "SYS_munmap",
+            const.SYS_MPROTECT: "SYS_mprotect",
+            const.SYS_MADVISE: "SYS_madvise",
+            const.SYS_GETEGID: "SYS_getegid",
+            const.SYS_GETTIMEOFDAY: "SYS_gettimeofday",
+            const.SYS_GETRUSAGE: "SYS_getrusage",
+            const.SYS_READV: "SYS_readv",
+            const.SYS_READV_NOCANCEL: "SYS_readv_nocancel",
+            const.SYS_WRITEV: "SYS_writev",
+            const.SYS_WRITEV_NOCANCEL: "SYS_writev_nocancel",
+            const.SYS_FCHOWN: "SYS_fchown",
+            const.SYS_FCHMOD: "SYS_fchmod",
+            const.SYS_RENAME: "SYS_rename",
+            const.SYS_SENDTO: "SYS_sendto",
+            const.SYS_SENDTO_NOCANCEL: "SYS_sendto_nocancel",
+            const.SYS_SOCKETPAIR: "SYS_socketpair",
+            const.SYS_MKDIR: "SYS_mkdir",
+            const.SYS_RMDIR: "SYS_rmdir",
+            const.SYS_UTIMES: "SYS_utimes",
+            const.SYS_FUTIMES: "SYS_futimes",
+            const.SYS_ADJTIME: "SYS_adjtime",
+            const.SYS_GETPGID: "SYS_getpgid",
+            const.SYS_PREAD: "SYS_pread",
+            const.SYS_PREAD_NOCANCEL: "SYS_pread_nocancel",
+            const.SYS_PWRITE: "SYS_pwrite",
+            const.SYS_PWRITE_NOCANCEL: "SYS_pwrite_nocancel",
+            const.SYS_QUOTACTL: "SYS_quotactl",
+            const.SYS_CSOPS: "SYS_csops",
+            const.SYS_CSOPS_AUDITTOKEN: "SYS_csops_audittoken",
+            const.SYS_GETRLIMIT: "SYS_getrlimit",
+            const.SYS_SETRLIMIT: "SYS_setrlimit",
+            const.SYS_MMAP: "SYS_mmap",
+            const.SYS_LSEEK: "SYS_lseek",
+            const.SYS_FSYNC: "SYS_fsync",
+            const.SYS_FSYNC_NOCANCEL: "SYS_fsync_nocancel",
+            const.SYS_SETPRIORITY: "SYS_setpriority",
+            const.SYS_SOCKET: "SYS_socket",
+            const.SYS_CONNECT: "SYS_connect",
+            const.SYS_CONNECT_NOCANCEL: "SYS_connect_nocancel",
+            const.SYS_GETPRIORITY: "SYS_getpriority",
+            const.SYS_BIND: "SYS_bind",
+            const.SYS_SETSOCKOPT: "SYS_setsockopt",
+            const.SYS_GETSOCKOPT: "SYS_getsockopt",
+            const.SYS_SIGSUSPEND: "SYS_sigsuspend",
+            const.SYS_SETPGID: "SYS_setpgid",
+            const.SYS_DUP2: "SYS_dup2",
+            const.SYS_FCNTL: "SYS_fcntl",
+            const.SYS_FCNTL_NOCANCEL: "SYS_fcntl_nocancel",
+            const.SYS_SELECT: "SYS_select",
+            const.SYS_SELECT_NOCANCEL: "SYS_select_nocancel",
+            const.SYS_FTRUNCATE: "SYS_ftruncate",
+            const.SYS_SYSCTL: "SYS_sysctl",
+            const.SYS_MLOCK: "SYS_mlock",
+            const.SYS_MUNLOCK: "SYS_munlock",
+            const.SYS_OPEN_DPROTECTED_NP: "SYS_open_dprotected_np",
+            const.SYS_GETATTRLIST: "SYS_getattrlist",
+            const.SYS_SETXATTR: "SYS_setxattr",
+            const.SYS_FSETXATTR: "SYS_fsetxattr",
+            const.SYS_LISTXATTR: "SYS_listxattr",
+            const.SYS_SHM_OPEN: "SYS_shm_open",
+            const.SYS_SYSCTLBYNAME: "SYS_sysctlbyname",
+            const.SYS_GETTID: "SYS_gettid",
+            const.SYS_IDENTITYSVC: "SYS_identitysvc",
+            const.SYS_PSYNCH_MUTEXWAIT: "SYS_psynch_mutexwait",
+            const.SYS_PROCESS_POLICY: "SYS_process_policy",
+            const.SYS_ISSETUGID: "SYS_issetugid",
+            const.SYS_PTHREAD_SIGMASK: "SYS_pthread_sigmask",
+            const.SYS_SEMWAIT_SIGNAL: "SYS_semwait_signal",
+            const.SYS_SEMWAIT_SIGNAL_NOCANCEL: "SYS_semwait_signal_nocancel",
+            const.SYS_PROC_INFO: "SYS_proc_info",
+            const.SYS_STAT64: "SYS_stat64",
+            const.SYS_FSTAT64: "SYS_fstat64",
+            const.SYS_LSTAT64: "SYS_lstat64",
+            const.SYS_GETDIRENTRIES64: "SYS_getdirentries64",
+            const.SYS_STATFS64: "SYS_statfs64",
+            const.SYS_FSTATFS64: "SYS_fstatfs64",
+            const.SYS_FSSTAT64: "SYS_fsstat64",
+            const.SYS_BSDTHREAD_CREATE: "SYS_bsdthread_create",
+            const.SYS_KQUEUE: "SYS_kqueue",
+            const.SYS_LCHOWN: "SYS_lchown",
+            const.SYS_WORKQ_OPEN: "SYS_workq_open",
+            const.SYS_WORKQ_KERNRETURN: "SYS_workq_kernreturn",
+            const.SYS_KEVENT_QOS: "SYS_kevent_qos",
+            const.SYS_KEVENT_ID: "SYS_kevent_id",
+            const.SYS_MAC_SYSCALL: "SYS_mac_syscall",
+            const.SYS_PERSONA: "SYS_persona",
+            const.SYS_GETENTROPY: "SYS_getentropy",
+            const.SYS_NECP_OPEN: "SYS_necp_open",
+            const.SYS_GUARDED_OPEN_NP: "SYS_guarded_open_np",
+            const.SYS_GUARDED_CLOSE_NP: "SYS_guarded_close_np",
+            const.SYS_GETATTRLISTBULK: "SYS_getattrlistbulk",
+            const.SYS_CLONEFILEAT: "SYS_clonefileat",
+            const.SYS_OPENAT: "SYS_openat",
+            const.SYS_OPENAT_NOCANCEL: "SYS_openat_nocancel",
+            const.SYS_FACCESSAT: "SYS_faccessat",
+            const.SYS_FCHMODAT: "SYS_fchmodat",
+            const.SYS_FCHOWNAT: "SYS_fchownat",
+            const.SYS_FSTATAT64: "SYS_fstatat64",
+            const.SYS_RENAMEAT: "SYS_renameat",
+            const.SYS_LINKAT: "SYS_linkat",
+            const.SYS_UNLINKAT: "SYS_unlinkat",
+            const.SYS_READLINKAT: "SYS_readlinkat",
+            const.SYS_SYMLINKAT: "SYS_symlinkat",
+            const.SYS_MKDIRAT: "SYS_mkdirat",
+            const.SYS_BSDTHREAD_CTL: "SYS_bsdthread_ctl",
+            const.SYS_GUARDED_PWRITE_NP: "SYS_guarded_pwrite_np",
+            const.SYS_ULOCK_WAIT: "SYS_ulock_wait",
+            const.SYS_TERMINATE_WITH_PAYLOAD: "SYS_terminate_with_payload",
+            const.SYS_ABORT_WITH_PAYLOAD: "SYS_abort_with_payload",
+            const.SYS_OS_FAULT_WITH_PAYLOAD: "SYS_os_fault_with_payload",
+            const.SYS_PREADV: "SYS_preadv",
+            const.SYS_PREADV_NOCANCEL: "SYS_preadv_nocancel",
+            const.MACH_ABSOLUTE_TIME_TRAP: "MACH_ABSOLUTE_TIME_TRAP",
+            const.KERNELRPC_MACH_VM_ALLOCATE_TRAP: "KERNELRPC_MACH_VM_ALLOCATE_TRAP",
+            const.KERNELRPC_MACH_VM_PURGABLE_CONTROL_TRAP: "KERNELRPC_MACH_VM_PURGABLE_CONTROL_TRAP",
+            const.KERNELRPC_MACH_VM_DEALLOCATE_TRAP: "KERNELRPC_MACH_VM_DEALLOCATE_TRAP",
+            const.KERNELRPC_MACH_VM_PROTECT_TRAP: "KERNELRPC_MACH_VM_PROTECT_TRAP",
+            const.KERNELRPC_MACH_VM_MAP_TRAP: "KERNELRPC_MACH_VM_MAP_TRAP",
+            const.KERNELRPC_MACH_PORT_ALLOCATE_TRAP: "KERNELRPC_MACH_PORT_ALLOCATE_TRAP",
+            const.KERNELRPC_MACH_PORT_DEALLOCATE_TRAP: "KERNELRPC_MACH_PORT_DEALLOCATE_TRAP",
+            const.KERNELRPC_MACH_PORT_MOD_REFS_TRAP: "KERNELRPC_MACH_PORT_MOD_REFS_TRAP",
+            const.KERNELRPC_MACH_PORT_INSERT_MEMBER_TRAP: "KERNELRPC_MACH_PORT_INSERT_MEMBER_TRAP",
+            const.KERNELRPC_MACH_PORT_CONSTRUCT_TRAP: "KERNELRPC_MACH_PORT_CONSTRUCT_TRAP",
+            const.KERNELRPC_MACH_PORT_DESTRUCT_TRAP: "KERNELRPC_MACH_PORT_DESTRUCT_TRAP",
+            const.MACH_REPLY_PORT_TRAP: "MACH_REPLY_PORT_TRAP",
+            const.THREAD_SELF_TRAP: "THREAD_SELF_TRAP",
+            const.TASK_SELF_TRAP: "TASK_SELF_TRAP",
+            const.HOST_SELF_TRAP: "HOST_SELF_TRAP",
+            const.MACH_MSG_TRAP: "MACH_MSG_TRAP",
+            const.SEMAPHORE_SIGNAL_TRAP: "SEMAPHORE_SIGNAL_TRAP",
+            const.SEMAPHORE_WAIT_TRAP: "SEMAPHORE_WAIT_TRAP",
+            const.KERNELRPC_MACH_PORT_GUARD_TRAP: "KERNELRPC_MACH_PORT_GUARD_TRAP",
+            const.MAP_FD_TRAP: "MAP_FD_TRAP",
+            const.THREAD_GET_SPECIAL_REPLY_PORT: "THREAD_GET_SPECIAL_REPLY_PORT",
+            const.HOST_CREATE_MACH_VOUCHER_TRAP: "HOST_CREATE_MACH_VOUCHER_TRAP",
+            const.KERNELRPC_MACH_PORT_TYPE_TRAP: "KERNELRPC_MACH_PORT_TYPE_TRAP",
+            const.KERNELRPC_MACH_PORT_REQUEST_NOTIFICATION_TRAP: "KERNELRPC_MACH_PORT_REQUEST_NOTIFICATION_TRAP",
+            const.MACH_TIMEBASE_INFO_TRAP: "MACH_TIMEBASE_INFO_TRAP",
+            const.MK_TIMER_CREATE_TRAP: "MK_TIMER_CREATE_TRAP",
+            const.MK_TIMER_ARM: "MK_TIMER_ARM",
+        }
+
+        handlers = {
+            const.SYS_EXIT: self._handle_sys_exit,
+            const.SYS_FORK: self._handle_sys_fork,
+            const.SYS_READ: self._handle_sys_read,
+            const.SYS_READ_NOCANCEL: self._handle_sys_read,
+            const.SYS_WRITE: self._handle_sys_write,
+            const.SYS_WRITE_NOCANCEL: self._handle_sys_write,
+            const.SYS_OPEN: self._handle_sys_open,
+            const.SYS_OPEN_NOCANCEL: self._handle_sys_open,
+            const.SYS_CLOSE: self._handle_sys_close,
+            const.SYS_CLOSE_NOCANCEL: self._handle_sys_close,
+            const.SYS_LINK: self._handle_sys_link,
+            const.SYS_UNLINK: self._handle_sys_unlink,
+            const.SYS_CHDIR: self._handle_sys_chdir,
+            const.SYS_FCHDIR: self._handle_sys_fchdir,
+            const.SYS_CHMOD: self._handle_sys_chmod,
+            const.SYS_CHOWN: self._handle_sys_chown,
+            const.SYS_GETPID: self._handle_sys_getpid,
+            const.SYS_GETUID: self._handle_sys_getuid,
+            const.SYS_GETEUID: self._handle_sys_geteuid,
+            const.SYS_SENDMSG: self._handle_sys_sendmsg,
+            const.SYS_SENDMSG_NOCANCEL: self._handle_sys_sendmsg,
+            const.SYS_RECVFROM: self._handle_sys_recvfrom,
+            const.SYS_RECVFROM_NOCANCEL: self._handle_sys_recvfrom,
+            const.SYS_GETPEERNAME: self._handle_sys_getpeername,
+            const.SYS_GETSOCKNAME: self._handle_sys_getsockname,
+            const.SYS_KILL: self._handle_sys_kill,
+            const.SYS_ACCESS: self._handle_sys_access,
+            const.SYS_CHFLAGS: self._handle_sys_chflags,
+            const.SYS_FCHFLAGS: self._handle_sys_fchflags,
+            const.SYS_GETPPID: self._handle_sys_getppid,
+            const.SYS_DUP: self._handle_sys_dup,
+            const.SYS_PIPE: self._handle_sys_pipe,
+            const.SYS_SIGACTION: self._handle_sys_sigaction,
+            const.SYS_SIGPROCMASK: self._handle_sys_sigprocmask,
+            const.SYS_GETLOGIN: self._handle_sys_getlogin,
+            const.SYS_SETLOGIN: self._handle_sys_setlogin,
+            const.SYS_SIGALTSTACK: self._handle_sys_sigaltstack,
+            const.SYS_IOCTL: self._handle_sys_ioctl,
+            const.SYS_REBOOT: self._handle_sys_reboot,
+            const.SYS_SYMLINK: self._handle_sys_symlink,
+            const.SYS_READLINK: self._handle_sys_readlink,
+            const.SYS_MSYNC: self._handle_sys_msync,
+            const.SYS_MUNMAP: self._handle_sys_munmap,
+            const.SYS_MPROTECT: self._handle_sys_mprotect,
+            const.SYS_MADVISE: self._handle_sys_madvise,
+            const.SYS_GETEGID: self._handle_sys_getegid,
+            const.SYS_GETTIMEOFDAY: self._handle_sys_gettimeofday,
+            const.SYS_GETRUSAGE: self._handle_sys_getrusage,
+            const.SYS_READV: self._handle_sys_readv,
+            const.SYS_READV_NOCANCEL: self._handle_sys_readv,
+            const.SYS_WRITEV: self._handle_sys_writev,
+            const.SYS_WRITEV_NOCANCEL: self._handle_sys_writev,
+            const.SYS_FCHOWN: self._handle_sys_fchown,
+            const.SYS_FCHMOD: self._handle_sys_fchmod,
+            const.SYS_RENAME: self._handle_sys_rename,
+            const.SYS_SENDTO: self._handle_sys_sendto,
+            const.SYS_SENDTO_NOCANCEL: self._handle_sys_sendto,
+            const.SYS_SOCKETPAIR: self._handle_sys_socketpair,
+            const.SYS_MKDIR: self._handle_sys_mkdir,
+            const.SYS_RMDIR: self._handle_sys_rmdir,
+            const.SYS_UTIMES: self._handle_sys_utimes,
+            const.SYS_FUTIMES: self._handle_sys_futimes,
+            const.SYS_ADJTIME: self._handle_sys_adjtime,
+            const.SYS_GETPGID: self._handle_sys_getpgid,
+            const.SYS_PREAD: self._handle_sys_pread,
+            const.SYS_PREAD_NOCANCEL: self._handle_sys_pread,
+            const.SYS_PWRITE: self._handle_sys_pwrite,
+            const.SYS_PWRITE_NOCANCEL: self._handle_sys_pwrite,
+            const.SYS_QUOTACTL: self._handle_sys_quotactl,
+            const.SYS_CSOPS: self._handle_sys_csops,
+            const.SYS_CSOPS_AUDITTOKEN: self._handle_sys_csops_audittoken,
+            const.SYS_GETRLIMIT: self._handle_sys_getrlimit,
+            const.SYS_SETRLIMIT: self._handle_sys_setrlimit,
+            const.SYS_MMAP: self._handle_sys_mmap,
+            const.SYS_LSEEK: self._handle_sys_lseek,
+            const.SYS_FSYNC: self._handle_sys_fsync,
+            const.SYS_FSYNC_NOCANCEL: self._handle_sys_fsync,
+            const.SYS_SETPRIORITY: self._handle_sys_setpriority,
+            const.SYS_SOCKET: self._handle_sys_socket,
+            const.SYS_CONNECT: self._handle_sys_connect,
+            const.SYS_CONNECT_NOCANCEL: self._handle_sys_connect,
+            const.SYS_GETPRIORITY: self._handle_sys_getpriority,
+            const.SYS_BIND: self._handle_sys_bind,
+            const.SYS_SETSOCKOPT: self._handle_sys_setsockopt,
+            const.SYS_GETSOCKOPT: self._handle_sys_getsockopt,
+            const.SYS_SIGSUSPEND: self._handle_sys_sigsuspend,
+            const.SYS_SETPGID: self._handle_sys_setpgid,
+            const.SYS_DUP2: self._handle_sys_dup2,
+            const.SYS_FCNTL: self._handle_sys_fcntl,
+            const.SYS_FCNTL_NOCANCEL: self._handle_sys_fcntl,
+            const.SYS_SELECT: self._handle_sys_select,
+            const.SYS_SELECT_NOCANCEL: self._handle_sys_select,
+            const.SYS_FTRUNCATE: self._handle_sys_ftruncate,
+            const.SYS_SYSCTL: self._handle_sys_sysctl,
+            const.SYS_MLOCK: self._handle_sys_mlock,
+            const.SYS_MUNLOCK: self._handle_sys_munlock,
+            const.SYS_OPEN_DPROTECTED_NP: self._handle_sys_open_dprotected_np,
+            const.SYS_GETATTRLIST: self._handle_sys_getattrlist,
+            const.SYS_SETXATTR: self._handle_sys_setxattr,
+            const.SYS_FSETXATTR: self._handle_sys_fsetxattr,
+            const.SYS_LISTXATTR: self._handle_sys_listxattr,
+            const.SYS_SHM_OPEN: self._handle_sys_shm_open,
+            const.SYS_SYSCTLBYNAME: self._handle_sys_sysctlbyname,
+            const.SYS_GETTID: self._handle_sys_gettid,
+            const.SYS_IDENTITYSVC: self._handle_sys_identitysvc,
+            const.SYS_PSYNCH_MUTEXWAIT: self._handle_sys_psynch_mutexwait,
+            const.SYS_PROCESS_POLICY: self._handle_sys_process_policy,
+            const.SYS_ISSETUGID: self._handle_sys_issetugid,
+            const.SYS_PTHREAD_SIGMASK: self._handle_sys_pthread_sigmask,
+            const.SYS_SEMWAIT_SIGNAL: self._handle_sys_semwait_signal,
+            const.SYS_SEMWAIT_SIGNAL_NOCANCEL: self._handle_sys_semwait_signal,
+            const.SYS_PROC_INFO: self._handle_sys_proc_info,
+            const.SYS_STAT64: self._handle_sys_stat64,
+            const.SYS_FSTAT64: self._handle_sys_fstat64,
+            const.SYS_LSTAT64: self._handle_sys_lstat64,
+            const.SYS_GETDIRENTRIES64: self._handle_sys_getdirentries64,
+            const.SYS_STATFS64: self._handle_sys_statfs64,
+            const.SYS_FSTATFS64: self._handle_sys_fstatfs64,
+            const.SYS_FSSTAT64: self._handle_sys_fsstat64,
+            const.SYS_BSDTHREAD_CREATE: self._handle_sys_bsdthread_create,
+            const.SYS_KQUEUE: self._handle_sys_kqueue,
+            const.SYS_LCHOWN: self._handle_sys_lchown,
+            const.SYS_WORKQ_OPEN: self._handle_sys_workq_open,
+            const.SYS_WORKQ_KERNRETURN: self._handle_sys_workq_kernreturn,
+            const.SYS_KEVENT_QOS: self._handle_sys_kevent_qos,
+            const.SYS_KEVENT_ID: self._handle_sys_kevent_id,
+            const.SYS_MAC_SYSCALL: self._handle_sys_mac_syscall,
+            const.SYS_PERSONA: self._handle_sys_persona,
+            const.SYS_GETENTROPY: self._handle_sys_getentropy,
+            const.SYS_NECP_OPEN: self._handle_sys_necp_open,
+            const.SYS_GUARDED_OPEN_NP: self._handle_sys_guarded_open_np,
+            const.SYS_GUARDED_CLOSE_NP: self._handle_sys_guarded_close_np,
+            const.SYS_GETATTRLISTBULK: self._handle_sys_getattrlistbulk,
+            const.SYS_CLONEFILEAT: self._handle_sys_clonefileat,
+            const.SYS_OPENAT: self._handle_sys_openat,
+            const.SYS_OPENAT_NOCANCEL: self._handle_sys_openat,
+            const.SYS_FACCESSAT: self._handle_sys_faccessat,
+            const.SYS_FCHMODAT: self._handle_sys_fchmodat,
+            const.SYS_FCHOWNAT: self._handle_sys_fchownat,
+            const.SYS_FSTATAT64: self._handle_sys_fstatat64,
+            const.SYS_RENAMEAT: self._handle_sys_renameat,
+            const.SYS_LINKAT: self._handle_sys_linkat,
+            const.SYS_UNLINKAT: self._handle_sys_unlinkat,
+            const.SYS_READLINKAT: self._handle_sys_readlinkat,
+            const.SYS_SYMLINKAT: self._handle_sys_symlinkat,
+            const.SYS_MKDIRAT: self._handle_sys_mkdirat,
+            const.SYS_BSDTHREAD_CTL: self._handle_sys_bsdthread_ctl,
+            const.SYS_GUARDED_PWRITE_NP: self._handle_sys_guarded_pwrite_np,
+            const.SYS_ULOCK_WAIT: self._handle_sys_ulock_wait,
+            const.SYS_TERMINATE_WITH_PAYLOAD: self._handle_sys_terminate_with_payload,
+            const.SYS_ABORT_WITH_PAYLOAD: self._handle_sys_abort_with_payload,
+            const.SYS_OS_FAULT_WITH_PAYLOAD: self._handle_sys_os_fault_with_payload,
+            const.SYS_PREADV: self._handle_sys_preadv,
+            const.SYS_PREADV_NOCANCEL: self._handle_sys_preadv,
+            const.MACH_ABSOLUTE_TIME_TRAP: self._handle_mach_absolute_time_trap,
+            const.KERNELRPC_MACH_VM_ALLOCATE_TRAP: self._handle_kernelrpc_mach_vm_allocate_trap,
+            const.KERNELRPC_MACH_VM_PURGABLE_CONTROL_TRAP: self._handle_kernelrpc_mach_vm_purgable_control_trap,
+            const.KERNELRPC_MACH_VM_DEALLOCATE_TRAP: self._handle_kernelrpc_mach_vm_deallocate_trap,
+            const.KERNELRPC_MACH_VM_PROTECT_TRAP: self._handle_kernelrpc_mach_vm_protect_trap,
+            const.KERNELRPC_MACH_VM_MAP_TRAP: self._handle_kernelrpc_mach_vm_map_trap,
+            const.KERNELRPC_MACH_PORT_ALLOCATE_TRAP: self._handle_kernelrpc_mach_port_allocate_trap,
+            const.KERNELRPC_MACH_PORT_DEALLOCATE_TRAP: self._handle_kernelrpc_mach_port_deallocate_trap,
+            const.KERNELRPC_MACH_PORT_MOD_REFS_TRAP: self._handle_kernelrpc_mach_port_mod_refs_trap,
+            const.KERNELRPC_MACH_PORT_INSERT_MEMBER_TRAP: self._handle_kernelrpc_mach_port_insert_member_trap,
+            const.KERNELRPC_MACH_PORT_CONSTRUCT_TRAP: self._handle_kernelrpc_mach_port_construct_trap,
+            const.KERNELRPC_MACH_PORT_DESTRUCT_TRAP: self._handle_kernelrpc_mach_port_destruct_trap,
+            const.MACH_REPLY_PORT_TRAP: self._handle_mach_reply_port_trap,
+            const.THREAD_SELF_TRAP: self._handle_thread_self_trap,
+            const.TASK_SELF_TRAP: self._handle_task_self_trap,
+            const.HOST_SELF_TRAP: self._handle_host_self_trap,
+            const.MACH_MSG_TRAP: self._handle_mach_msg_trap,
+            const.SEMAPHORE_SIGNAL_TRAP: self._handle_semaphore_signal_trap,
+            const.SEMAPHORE_WAIT_TRAP: self._handle_semaphore_wait_trap,
+            const.KERNELRPC_MACH_PORT_GUARD_TRAP: self._handle_kernelrpc_mach_port_guard_trap,
+            const.MAP_FD_TRAP: self._handle_map_fd_trap,
+            const.THREAD_GET_SPECIAL_REPLY_PORT: self._handle_thread_get_special_reply_port,
+            const.HOST_CREATE_MACH_VOUCHER_TRAP: self._handle_host_create_mach_voucher_trap,
+            const.KERNELRPC_MACH_PORT_TYPE_TRAP: self._handle_kernelrpc_mach_port_type_trap,
+            const.KERNELRPC_MACH_PORT_REQUEST_NOTIFICATION_TRAP: self._handle_kernelrpc_mach_port_request_notification_trap,
+            const.MACH_TIMEBASE_INFO_TRAP: self._handle_mach_timebase_info_trap,
+            const.MK_TIMER_CREATE_TRAP: self._handle_mk_timer_create_trap,
+            const.MK_TIMER_ARM: self._handle_mk_timer_arm,
+        }
+
+        self._names.update(names)
+        self._handlers.update(handlers)
+
+    def _syscall_wrapper(self, handler: Callable):
+        retval = -1
+        error_type = None
+
+        try:
+            retval = handler()
+        except (FileNotFoundError, PermissionError):
+            error_type = SyscallError.ENOENT
+        except FileExistsError:
+            error_type = SyscallError.EEXIST
+        except UnicodeDecodeError:
+            error_type = SyscallError.EPERM
+        except OSError:
+            error_type = SyscallError.EINVAL
+        except SystemOperationFailed as e:
+            error_type = e.error_type
+
+        if error_type in SYSCALL_ERRORS:
+            error_no, error_name = SYSCALL_ERRORS[error_type]
+
+            self.emu.logger.info(f"Set errno {error_name}({error_no})")
+            self.emu.os.set_errno(error_no)
+        else:
+            self.emu.os.set_errno(0)
+
+        # Clear the carry flag after called, many functions will
+        # check it after system calls.
+        nzcv = self.emu.uc.reg_read(arm64_const.UC_ARM64_REG_NZCV)
+        self.emu.uc.reg_write(arm64_const.UC_ARM64_REG_NZCV, nzcv & ~(1 << 29))
+
+        return retval
+
+    def _handle_sys_exit(self):
+        status = self.emu.get_arg(0)
+
+        raise ProgramTerminated("Program terminated with status: %s" % status)
+
+    def _handle_sys_fork(self):
+        self.emu.os.raise_permission_denied()
+
+        return 0
+
+    def _handle_sys_read(self):
+        fd = self.emu.get_arg(0)
+        buf = self.emu.get_arg(1)
+        size = self.emu.get_arg(2)
+
+        data = self.emu.os.read(fd, size)
+        self.emu.write_bytes(buf, data)
+
+        return len(data)
+
+    def _handle_sys_write(self):
+        fd = self.emu.get_arg(0)
+        buf = self.emu.get_arg(1)
+        size = self.emu.get_arg(2)
+
+        return self.emu.os.write(fd, buf, size)
+
+    def _handle_sys_open(self):
+        path = self.emu.read_string(self.emu.get_arg(0))
+        flags = self.emu.get_arg(1)
+        mode = self.emu.get_arg(2)
+
+        return self.emu.os.open(path, flags, mode)
+
+    def _handle_sys_close(self):
+        fd = self.emu.get_arg(0)
+
+        self.emu.os.close(fd)
+
+        return 0
+
+    def _handle_sys_link(self):
+        src_path = self.emu.read_string(self.emu.get_arg(0))
+        dst_path = self.emu.read_string(self.emu.get_arg(1))
+
+        self.emu.os.link(src_path, dst_path)
+
+        return 0
+
+    def _handle_sys_unlink(self):
+        path = self.emu.read_string(self.emu.get_arg(0))
+
+        self.emu.os.unlink(path)
+
+        return 0
+
+    def _handle_sys_chdir(self):
+        path = self.emu.read_string(self.emu.get_arg(0))
+
+        self.emu.os.chdir(path)
+
+        return 0
+
+    def _handle_sys_fchdir(self):
+        fd = self.emu.get_arg(0)
+
+        self.emu.os.fchdir(fd)
+
+        return 0
+
+    def _handle_sys_chmod(self):
+        path = self.emu.read_string(self.emu.get_arg(0))
+        mode = self.emu.get_arg(1)
+
+        self.emu.os.chmod(path, mode)
+
+        return 0
+
+    def _handle_sys_chown(self):
+        path = self.emu.read_string(self.emu.get_arg(0))
+        uid = self.emu.get_arg(1)
+        gid = self.emu.get_arg(2)
+
+        self.emu.os.chown(path, uid, gid)
+
+        return 0
+
+    def _handle_sys_getpid(self):
+        return self.emu.os.getpid()
+
+    def _handle_sys_getuid(self):
+        return self.emu.os.getuid()
+
+    def _handle_sys_geteuid(self):
+        return self.emu.os.getuid()
+
+    def _handle_sys_sendmsg(self):
+        sock = self.emu.get_arg(0)
+        buffer = self.emu.get_arg(1)
+        flags = self.emu.get_arg(2)
+
+        return self.emu.os.sendmsg(sock, buffer, flags)
+
+    def _handle_sys_recvfrom(self):
+        sock = self.emu.get_arg(0)
+        buffer = self.emu.get_arg(1)
+        length = self.emu.get_arg(2)
+        flags = self.emu.get_arg(3)
+        address = self.emu.get_arg(4)
+        address_len = self.emu.get_arg(5)
+
+        return self.emu.os.recvfrom(sock, buffer, length, flags, address, address_len)
+
+    def _handle_sys_getpeername(self):
+        sock = self.emu.get_arg(0)
+        address = self.emu.get_arg(1)
+
+        result = self.emu.os.getpeername(sock)
+        if address and result:
+            self.emu.write_bytes(address, result)
+
+        return 0
+
+    def _handle_sys_getsockname(self):
+        sock = self.emu.get_arg(0)
+        address = self.emu.get_arg(1)
+
+        result = self.emu.os.getsockname(sock)
+        if address and result:
+            self.emu.write_bytes(address, result)
+
+        return 0
+
+    @staticmethod
+    def _handle_sys_kill():
         return -1
 
-    return 0
+    def _handle_sys_access(self):
+        path = self.emu.read_string(self.emu.get_arg(0))
+        mode = self.emu.get_arg(1)
 
+        if not self.emu.os.access(path, mode):
+            return -1
 
-@register_syscall_handler(const.SYS_CHFLAGS, "SYS_chflags")
-def handle_sys_chflags(emu: Chomper):
-    emu.os.raise_permission_denied()
+        return 0
 
-    return 0
+    def _handle_sys_chflags(self):
+        self.emu.os.raise_permission_denied()
 
+        return 0
 
-@register_syscall_handler(const.SYS_FCHFLAGS, "SYS_fchflags")
-def handle_sys_fchflags(emu: Chomper):
-    emu.os.raise_permission_denied()
+    def _handle_sys_fchflags(self):
+        self.emu.os.raise_permission_denied()
 
-    return 0
+        return 0
 
-
-@register_syscall_handler(const.SYS_GETPPID, "SYS_getppid")
-def handle_sys_getppid(emu: Chomper):
-    return 1
-
-
-@register_syscall_handler(const.SYS_DUP, "SYS_dup")
-def handle_sys_dup(emu: Chomper):
-    fd = emu.get_arg(0)
-
-    return emu.os.dup(fd)
-
-
-@register_syscall_handler(const.SYS_PIPE, "SYS_pipe")
-def handle_sys_pipe(emu: Chomper):
-    return -1
-
-
-@register_syscall_handler(const.SYS_SIGACTION, "SYS_sigaction")
-def handle_sys_sigaction(emu: Chomper):
-    return 0
-
-
-@register_syscall_handler(const.SYS_SIGPROCMASK, "SYS_sigprocmask")
-def handle_sys_sigprocmask(emu: Chomper):
-    return 0
-
-
-@register_syscall_handler(const.SYS_GETLOGIN, "SYS_getlogin")
-def handle_sys_getlogin(emu: Chomper):
-    return emu.create_const_string("mobile")
-
-
-@register_syscall_handler(const.SYS_SETLOGIN, "SYS_setlogin")
-def handle_sys_setlogin(emu: Chomper):
-    emu.os.raise_permission_denied()
-
-    return 0
-
-
-@register_syscall_handler(const.SYS_SIGALTSTACK, "SYS_sigaltstack")
-def handle_sys_sigaltstack(emu: Chomper):
-    return 0
-
-
-@register_syscall_handler(const.SYS_IOCTL, "SYS_ioctl")
-def handle_sys_ioctl(emu: Chomper):
-    fd = emu.get_arg(0)
-    req = emu.get_arg(1)
-
-    inout = req & ~((0x3FFF << 16) | 0xFF00 | 0xFF)
-    group = (req >> 8) & 0xFF
-    num = req & 0xFF
-    length = (req >> 16) & 0x3FFF
-
-    emu.logger.info(
-        f"Received an ioctl request: fd={fd}, inout={hex(inout)}, "
-        f"group='{chr(group)}', num={num}, length={length}"
-    )
-
-    emu.logger.warning("ioctl request not processed")
-    return 0
-
-
-@register_syscall_handler(const.SYS_REBOOT, "SYS_reboot")
-def handle_sys_reboot(emu: Chomper):
-    emu.os.raise_permission_denied()
-
-    return 0
-
-
-@register_syscall_handler(const.SYS_SYMLINK, "SYS_symlink")
-def handle_sys_symlink(emu: Chomper):
-    src_path = emu.read_string(emu.get_arg(0))
-    dst_path = emu.read_string(emu.get_arg(1))
-
-    emu.os.symlink(src_path, dst_path)
-
-    return 0
-
-
-@register_syscall_handler(const.SYS_READLINK, "SYS_readlink")
-def handle_sys_readlink(emu: Chomper):
-    path = emu.read_string(emu.get_arg(0))
-    buf = emu.get_arg(1)
-    buf_size = emu.get_arg(2)
-
-    result = emu.os.readlink(path)
-    if result is None or len(result) > buf_size:
-        return -1
-
-    emu.write_string(buf, result)
-
-    return 0
-
-
-@register_syscall_handler(const.SYS_MSYNC, "SYS_msync")
-def handle_sys_msync(emu: Chomper):
-    addr = emu.get_arg(0)
-    length = emu.get_arg(1)
-
-    emu.os.msync(addr, length)
-
-    return 0
-
-
-@register_syscall_handler(const.SYS_MUNMAP, "SYS_munmap")
-def handle_sys_munmap(emu: Chomper):
-    addr = emu.get_arg(0)
-
-    emu.os.munmap(addr)
-
-    return 0
-
-
-@register_syscall_handler(const.SYS_MPROTECT, "SYS_mprotect")
-def handle_sys_mprotect(emu: Chomper):
-    return 0
-
-
-@register_syscall_handler(const.SYS_MADVISE, "SYS_madvise")
-def handle_sys_madvise(emu: Chomper):
-    return 0
-
-
-@register_syscall_handler(const.SYS_GETEGID, "SYS_getegid")
-def handle_sys_getegid(emu: Chomper):
-    return emu.os.getgid()
-
-
-@register_syscall_handler(const.SYS_GETTIMEOFDAY, "SYS_gettimeofday")
-def handle_sys_gettimeofday(emu: Chomper):
-    tv = emu.get_arg(0)
-
-    result = emu.os.gettimeofday()
-    emu.write_bytes(tv, result)
-
-    return 0
-
-
-@register_syscall_handler(const.SYS_GETRUSAGE, "SYS_getrusage")
-def handle_sys_getrusage(emu: Chomper):
-    r = emu.get_arg(1)
-
-    rusage = Rusage()
-    emu.write_bytes(r, struct_to_bytes(rusage))
-
-    return 0
-
-
-@register_syscall_handler(const.SYS_READV, "SYS_readv")
-@register_syscall_handler(const.SYS_READV_NOCANCEL, "SYS_readv_nocancel")
-def handle_sys_readv(emu: Chomper):
-    fd = emu.get_arg(0)
-    iov = emu.get_arg(1)
-    iovcnt = emu.get_arg(2)
-
-    result = 0
-
-    for _ in range(iovcnt):
-        iov_base = emu.read_pointer(iov)
-        iov_len = emu.read_u64(iov + 8)
-
-        data = emu.os.read(fd, iov_len)
-        emu.write_bytes(iov_base, data)
-
-        result += len(data)
-
-        if len(data) != iov_len:
-            break
-
-        iov += 16
-
-    return result
-
-
-@register_syscall_handler(const.SYS_WRITEV, "SYS_writev")
-@register_syscall_handler(const.SYS_WRITEV_NOCANCEL, "SYS_writev_nocancel")
-def handle_sys_writev(emu: Chomper):
-    fd = emu.get_arg(0)
-    iov = emu.get_arg(1)
-    iovcnt = emu.get_arg(2)
-
-    result = 0
-
-    for _ in range(iovcnt):
-        iov_base = emu.read_pointer(iov)
-        iov_len = emu.read_u64(iov + 8)
-
-        write_len = emu.os.write(fd, iov_base, iov_len)
-        result += write_len
-
-        if write_len != iov_len:
-            break
-
-        iov += 16
-
-    return result
-
-
-@register_syscall_handler(const.SYS_FCHOWN, "SYS_fchown")
-def handle_sys_fchown(emu: Chomper):
-    fd = emu.get_arg(0)
-    uid = emu.get_arg(1)
-    gid = emu.get_arg(2)
-
-    emu.os.fchown(fd, uid, gid)
-
-    return 0
-
-
-@register_syscall_handler(const.SYS_FCHMOD, "SYS_fchmod")
-def handle_sys_fchmod(emu: Chomper):
-    fd = emu.get_arg(0)
-    mode = emu.get_arg(1)
-
-    emu.os.fchmod(fd, mode)
-
-    return 0
-
-
-@register_syscall_handler(const.SYS_RENAME, "SYS_rename")
-def handle_sys_rename(emu: Chomper):
-    old = emu.read_string(emu.get_arg(0))
-    new = emu.read_string(emu.get_arg(1))
-
-    emu.os.rename(old, new)
-
-    return 0
-
-
-@register_syscall_handler(const.SYS_SENDTO, "SYS_sendto")
-@register_syscall_handler(const.SYS_SENDTO_NOCANCEL, "SYS_sendto_nocancel")
-def handle_sys_sendto(emu: Chomper):
-    sock = emu.get_arg(0)
-    buffer = emu.get_arg(1)
-    length = emu.get_arg(2)
-    flags = emu.get_arg(3)
-    dest_addr = emu.get_arg(4)
-    dest_len = emu.get_arg(5)
-
-    return emu.os.sendto(sock, buffer, length, flags, dest_addr, dest_len)
-
-
-@register_syscall_handler(const.SYS_SOCKETPAIR, "SYS_socketpair")
-def handle_sys_socketpair(emu):
-    domain = emu.get_arg(0)
-    sock_type = emu.get_arg(1)
-    protocol = emu.get_arg(2)
-    socket_vector = emu.get_arg(3)
-
-    result = emu.os.socketpair(domain, sock_type, protocol)
-    if not result:
-        return -1
-
-    emu.write_s32(socket_vector, result[0])
-    emu.write_s32(socket_vector + 4, result[1])
-
-    return 0
-
-
-@register_syscall_handler(const.SYS_MKDIR, "SYS_mkdir")
-def handle_sys_mkdir(emu: Chomper):
-    path = emu.read_string(emu.get_arg(0))
-    mode = emu.get_arg(1)
-
-    emu.os.mkdir(path, mode)
-
-    return 0
-
-
-@register_syscall_handler(const.SYS_RMDIR, "SYS_rmdir")
-def handle_sys_rmdir(emu: Chomper):
-    path = emu.read_string(emu.get_arg(0))
-
-    emu.os.rmdir(path)
-
-    return 0
-
-
-@register_syscall_handler(const.SYS_UTIMES, "SYS_utimes")
-def handle_sys_utimes(emu: Chomper):
-    path = emu.read_string(emu.get_arg(0))
-    times_ptr = emu.get_arg(1)
-
-    if times_ptr:
-        time1 = emu.read_bytes(times_ptr, ctypes.sizeof(Timespec))
-        time2 = emu.read_bytes(
-            times_ptr + ctypes.sizeof(Timespec), ctypes.sizeof(Timespec)
-        )
-        times = (
-            bytes_to_struct(time1, Timespec).to_seconds(),
-            bytes_to_struct(time2, Timespec).to_seconds(),
-        )
-    else:
-        times = None
-
-    emu.os.utimes(path, times)
-
-    return 0
-
-
-@register_syscall_handler(const.SYS_FUTIMES, "SYS_futimes")
-def handle_sys_futimes(emu: Chomper):
-    fd = emu.get_arg(0)
-    times_ptr = emu.get_arg(1)
-
-    if times_ptr:
-        time1 = emu.read_bytes(times_ptr, ctypes.sizeof(Timespec))
-        time2 = emu.read_bytes(
-            times_ptr + ctypes.sizeof(Timespec), ctypes.sizeof(Timespec)
-        )
-        times = (
-            bytes_to_struct(time1, Timespec).to_seconds(),
-            bytes_to_struct(time2, Timespec).to_seconds(),
-        )
-    else:
-        times = None
-
-    emu.os.futimes(fd, times)
-
-    return 0
-
-
-@register_syscall_handler(const.SYS_ADJTIME, "SYS_adjtime")
-def handle_sys_adjtime(emu: Chomper):
-    emu.os.raise_permission_denied()
-
-    return 0
-
-
-@register_syscall_handler(const.SYS_GETPGID, "SYS_getpgid")
-def handle_sys_getpgid(emu: Chomper):
-    pid = emu.get_arg(0)
-
-    if pid == 0 or pid == emu.os.getpid():
-        return emu.os.getpgid()
-    elif pid == 1:
+    @staticmethod
+    def _handle_sys_getppid():
         return 1
 
-    emu.os.raise_permission_denied()
+    def _handle_sys_dup(self):
+        fd = self.emu.get_arg(0)
 
-    return 0
+        return self.emu.os.dup(fd)
 
-
-@register_syscall_handler(const.SYS_PREAD, "SYS_pread")
-@register_syscall_handler(const.SYS_PREAD_NOCANCEL, "SYS_pread_nocancel")
-def handle_sys_pread(emu: Chomper):
-    fd = emu.get_arg(0)
-    buf = emu.get_arg(1)
-    size = emu.get_arg(2)
-    offset = emu.get_arg(3)
-
-    data = emu.os.pread(fd, size, offset)
-    emu.write_bytes(buf, data)
-
-    return len(data)
-
-
-@register_syscall_handler(const.SYS_PWRITE, "SYS_pwrite")
-@register_syscall_handler(const.SYS_PWRITE_NOCANCEL, "SYS_pwrite_nocancel")
-def handle_sys_pwrite(emu: Chomper):
-    fd = emu.get_arg(0)
-    buf = emu.get_arg(1)
-    size = emu.get_arg(2)
-    offset = emu.get_arg(3)
-
-    return emu.os.pwrite(fd, buf, size, offset)
-
-
-@register_syscall_handler(const.SYS_QUOTACTL, "SYS_quotactl")
-def handle_sys_quotactl(emu: Chomper):
-    return 0
-
-
-@register_syscall_handler(const.SYS_CSOPS, "SYS_csops")
-def handle_sys_csops(emu: Chomper):
-    useraddr = emu.get_arg(2)
-
-    flags = 0
-
-    # CS_DEV_CODE
-    # flags |= 0x04000000
-
-    # CS_RESTRICT
-    flags |= 0x00000800
-
-    # jit-allow
-    flags |= 0x00000300
-
-    emu.write_u32(useraddr, flags)
-
-    return 0
-
-
-@register_syscall_handler(const.SYS_CSOPS_AUDITTOKEN, "SYS_csops_audittoken")
-def handle_sys_csops_audittoken(emu: Chomper):
-    return 0
-
-
-@register_syscall_handler(const.SYS_GETRLIMIT, "SYS_getrlimit")
-def handle_sys_getrlimit(emu: Chomper):
-    resource = emu.get_arg(0)
-    rlp = emu.get_arg(1)
-
-    resource &= ~0x1000
-
-    if resource not in RESOURCE_LIMITS:
-        raise SystemOperationFailed("Invalid value", SyscallError.EINVAL)
-
-    rlim_cur, rlim_max = RESOURCE_LIMITS[resource]
-
-    rlimit = Rlimit(
-        rlim_cur=rlim_cur,
-        rlim_max=rlim_max,
-    )
-
-    if rlp:
-        emu.write_bytes(rlp, struct_to_bytes(rlimit))
-
-    return 0
-
-
-@register_syscall_handler(const.SYS_SETRLIMIT, "SYS_setrlimit")
-def handle_sys_setrlimit(emu: Chomper):
-    emu.os.raise_permission_denied()
-
-    return 0
-
-
-@register_syscall_handler(const.SYS_MMAP, "SYS_mmap")
-def handle_sys_mmap(emu: Chomper):
-    length = emu.get_arg(1)
-    fd = to_signed(emu.get_arg(4), 4)
-    offset = emu.get_arg(5)
-
-    return emu.os.mmap(length, fd, offset)
-
-
-@register_syscall_handler(const.SYS_LSEEK, "SYS_lseek")
-def handle_sys_lseek(emu: Chomper):
-    fd = emu.get_arg(0)
-    offset = emu.get_arg(1)
-    whence = emu.get_arg(2)
-
-    offset = to_signed(offset, 8)
-
-    return emu.os.lseek(fd, offset, whence)
-
-
-@register_syscall_handler(const.SYS_FSYNC, "SYS_fsync")
-@register_syscall_handler(const.SYS_FSYNC_NOCANCEL, "SYS_fsync_nocancel")
-def handle_sys_fsync(emu: Chomper):
-    fd = emu.get_arg(0)
-
-    emu.os.fsync(fd)
-
-    return 0
-
-
-@register_syscall_handler(const.SYS_SETPRIORITY, "SYS_setpriority")
-def handle_sys_setpriority(emu):
-    emu.os.raise_permission_denied()
-
-    return 0
-
-
-@register_syscall_handler(const.SYS_SOCKET, "SYS_socket")
-def handle_sys_socket(emu):
-    domain = emu.get_arg(0)
-    sock_type = emu.get_arg(1)
-    protocol = emu.get_arg(2)
-
-    return emu.os.socket(domain, sock_type, protocol)
-
-
-@register_syscall_handler(const.SYS_CONNECT, "SYS_connect")
-@register_syscall_handler(const.SYS_CONNECT_NOCANCEL, "SYS_connect_nocancel")
-def handle_sys_connect(emu):
-    sock = emu.get_arg(0)
-    address = emu.get_arg(1)
-    address_len = emu.get_arg(2)
-
-    return emu.os.connect(sock, address, address_len)
-
-
-@register_syscall_handler(const.SYS_GETPRIORITY, "SYS_getpriority")
-def handle_sys_getpriority(emu):
-    # which = emu.get_arg(0)
-    # who = emu.get_arg(1)
-
-    return 0
-
-
-@register_syscall_handler(const.SYS_BIND, "SYS_bind")
-def handle_sys_bind(emu):
-    sock = emu.get_arg(0)
-    address = emu.get_arg(1)
-    address_len = emu.get_arg(2)
-
-    return emu.os.bind(sock, address, address_len)
-
-
-@register_syscall_handler(const.SYS_SETSOCKOPT, "SYS_setsockopt")
-def handle_sys_setsockopt(emu):
-    sock = emu.get_arg(0)
-    level = emu.get_arg(1)
-    option_name = emu.get_arg(2)
-    option_value = emu.get_arg(3)
-    option_len = emu.get_arg(4)
-
-    return emu.os.setsockopt(sock, level, option_name, option_value, option_len)
-
-
-@register_syscall_handler(const.SYS_GETSOCKOPT, "SYS_getsockopt")
-def handle_sys_getsockopt(emu):
-    sock = emu.get_arg(0)
-    level = emu.get_arg(1)
-    option_name = emu.get_arg(2)
-    option_value = emu.get_arg(3)
-    option_len = emu.get_arg(4)
-
-    return emu.os.getsockopt(sock, level, option_name, option_value, option_len)
-
-
-@register_syscall_handler(const.SYS_SIGSUSPEND, "SYS_sigsuspend")
-def handle_sys_sigsuspend(emu: Chomper):
-    return -1
-
-
-@register_syscall_handler(const.SYS_SETPGID, "SYS_setpgid")
-def handle_sys_setpgid(emu: Chomper):
-    emu.os.raise_permission_denied()
-
-    return 0
-
-
-@register_syscall_handler(const.SYS_DUP2, "SYS_dup2")
-def handle_sys_dup2(emu: Chomper):
-    old_fd = emu.get_arg(0)
-    new_fd = emu.get_arg(1)
-
-    emu.os.dup2(old_fd, new_fd)
-
-    return 0
-
-
-@register_syscall_handler(const.SYS_FCNTL, "SYS_fcntl")
-@register_syscall_handler(const.SYS_FCNTL_NOCANCEL, "SYS_fcntl_nocancel")
-def handle_sys_fcntl(emu: Chomper):
-    fd = emu.get_arg(0)
-    cmd = emu.get_arg(1)
-    arg = emu.get_arg(2)
-
-    return emu.os.fcntl(fd, cmd, arg)
-
-
-@register_syscall_handler(const.SYS_SELECT, "SYS_select")
-@register_syscall_handler(const.SYS_SELECT_NOCANCEL, "SYS_select_nocancel")
-def handle_sys_select(emu: Chomper):
-    nfds = emu.get_arg(0)
-    readfds = emu.get_arg(1)
-    writefds = emu.get_arg(2)
-    errorfds = emu.get_arg(3)
-    timeout = emu.get_arg(4)
-
-    return emu.os.select(nfds, readfds, writefds, errorfds, timeout)
-
-
-@register_syscall_handler(const.SYS_FTRUNCATE, "SYS_ftruncate")
-def handle_sys_ftruncate(emu: Chomper):
-    fd = emu.get_arg(0)
-    length = emu.get_arg(1)
-
-    emu.os.ftruncate(fd, length)
-
-    return 0
-
-
-@register_syscall_handler(const.SYS_SYSCTL, "SYS_sysctl")
-def handle_sys_sysctl(emu: Chomper):
-    name = emu.get_arg(0)
-    oldp = emu.get_arg(2)
-    oldlenp = emu.get_arg(3)
-
-    ctl_type = emu.read_u32(name)
-    ctl_ident = emu.read_u32(name + 4)
-
-    result = sysctl(ctl_type, ctl_ident)
-    if result is None:
-        emu.logger.warning(f"Unhandled sysctl command: {ctl_type}, {ctl_ident}")
+    @staticmethod
+    def _handle_sys_pipe():
         return -1
 
-    if oldp:
-        if isinstance(result, ctypes.Structure):
-            emu.write_bytes(oldp, struct_to_bytes(result))
-        elif isinstance(result, str):
-            emu.write_string(oldp, result)
-        elif isinstance(result, int):
-            emu.write_u64(oldp, result)
+    @staticmethod
+    def _handle_sys_sigaction():
+        return 0
 
-    if oldlenp:
-        if isinstance(result, ctypes.Structure):
-            emu.write_u32(oldlenp, ctypes.sizeof(result))
-        elif isinstance(result, str):
-            emu.write_u32(oldlenp, len(result))
-        elif isinstance(result, int):
-            emu.write_u32(oldlenp, 8)
+    @staticmethod
+    def _handle_sys_sigprocmask():
+        return 0
 
-    return 0
+    def _handle_sys_getlogin(self):
+        return self.emu.create_const_string("mobile")
 
+    def _handle_sys_setlogin(self):
+        self.emu.os.raise_permission_denied()
 
-@register_syscall_handler(const.SYS_OPEN_DPROTECTED_NP, "SYS_open_dprotected_np")
-def handle_sys_open_dprotected_np(emu: Chomper):
-    path = emu.read_string(emu.get_arg(0))
-    flags = emu.get_arg(1)
-    mode = emu.get_arg(4)
+        return 0
 
-    return emu.os.open(path, flags, mode)
+    @staticmethod
+    def _handle_sys_sigaltstack():
+        return 0
 
+    def _handle_sys_ioctl(self):
+        fd = self.emu.get_arg(0)
+        req = self.emu.get_arg(1)
 
-@register_syscall_handler(const.SYS_GETATTRLIST, "SYS_getattrlist")
-def handle_sys_getattrlist(emu: Chomper):
-    return -1
+        inout = req & ~((0x3FFF << 16) | 0xFF00 | 0xFF)
+        group = (req >> 8) & 0xFF
+        num = req & 0xFF
+        length = (req >> 16) & 0x3FFF
 
-
-@register_syscall_handler(const.SYS_SETXATTR, "SYS_setxattr")
-def handle_sys_setxattr(emu: Chomper):
-    return 0
-
-
-@register_syscall_handler(const.SYS_FSETXATTR, "SYS_fsetxattr")
-def handle_sys_fsetxattr(emu: Chomper):
-    return 0
-
-
-@register_syscall_handler(const.SYS_LISTXATTR, "SYS_listxattr")
-def handle_sys_listxattr(emu: Chomper):
-    return 0
-
-
-@register_syscall_handler(const.SYS_SHM_OPEN, "SYS_shm_open")
-def handle_sys_shm_open(emu: Chomper):
-    return 0x80000000
-
-
-@register_syscall_handler(const.SYS_SYSCTLBYNAME, "SYS_sysctlbyname")
-def handle_sys_sysctlbyname(emu: Chomper):
-    name = emu.read_string(emu.get_arg(0))
-    oldp = emu.get_arg(2)
-    oldlenp = emu.get_arg(3)
-
-    result = sysctlbyname(name)
-    if result is None:
-        emu.logger.warning(f"Unhandled sysctl command: {name}")
-        return -1
-
-    if oldp:
-        if isinstance(result, ctypes.Structure):
-            emu.write_bytes(oldp, struct_to_bytes(result))
-        elif isinstance(result, str):
-            emu.write_string(oldp, result)
-        elif isinstance(result, int):
-            emu.write_u64(oldp, result)
-
-    if oldlenp:
-        if isinstance(result, ctypes.Structure):
-            emu.write_u32(oldlenp, ctypes.sizeof(result))
-        elif isinstance(result, str):
-            emu.write_u32(oldlenp, len(result))
-        elif isinstance(result, int):
-            emu.write_u32(oldlenp, 8)
-
-    return 0
-
-
-@register_syscall_handler(const.SYS_GETTID, "SYS_gettid")
-def handle_sys_gettid(emu: Chomper):
-    return emu.os.getpid()
-
-
-@register_syscall_handler(const.SYS_IDENTITYSVC, "SYS_identitysvc")
-def handle_sys_identitysvc(emu: Chomper):
-    emu.os.raise_permission_denied()
-
-    return 0
-
-
-@register_syscall_handler(const.SYS_PSYNCH_MUTEXWAIT, "SYS_psynch_mutexwait")
-def handle_sys_psynch_mutexwait(emu: Chomper):
-    return 0
-
-
-@register_syscall_handler(const.SYS_PROCESS_POLICY, "SYS_process_policy")
-def handle_sys_process_policy(emu: Chomper):
-    return 0
-
-
-@register_syscall_handler(const.SYS_ISSETUGID, "SYS_issetugid")
-def handle_sys_issetugid(emu: Chomper):
-    return 0
-
-
-@register_syscall_handler(const.SYS_PTHREAD_SIGMASK, "SYS_pthread_sigmask")
-def handle_sys_pthread_sigmask(emu: Chomper):
-    return 0
-
-
-@register_syscall_handler(const.SYS_SEMWAIT_SIGNAL, "SYS_semwait_signal")
-@register_syscall_handler(
-    const.SYS_SEMWAIT_SIGNAL_NOCANCEL, "SYS_semwait_signal_nocancel"
-)
-def handle_sys_semwait_signal(emu: Chomper):
-    raise SystemOperationFailed("Wait signal", SyscallError.EXT1)
-
-
-@register_syscall_handler(const.SYS_PROC_INFO, "SYS_proc_info")
-def handle_sys_proc_info(emu: Chomper):
-    pid = emu.get_arg(1)
-    flavor = emu.get_arg(2)
-    buffer = emu.get_arg(4)
-
-    if pid != emu.os.getpid():
-        emu.os.raise_permission_denied()
-
-    emu.logger.info(f"pid={pid}, flavor={flavor}")
-
-    if flavor == const.PROC_PIDTBSDINFO:
-        bsd_info = ProcBsdinfo(
-            pbi_pid=emu.os.getpid(),
-            pbi_ppid=1,
-            pbi_uid=emu.os.getuid(),
-            pbi_gid=emu.os.getgid(),
+        self.emu.logger.info(
+            f"Received an ioctl request: fd={fd}, inout={hex(inout)}, "
+            f"group='{chr(group)}', num={num}, length={length}"
         )
-        result = struct_to_bytes(bsd_info)
-    elif flavor == const.PROC_PIDPATHINFO:
-        emu.write_string(buffer, emu.ios_os.executable_path)
-        result = emu.ios_os.executable_path.encode("utf-8")
-    elif flavor == const.PROC_PIDT_SHORTBSDINFO:
-        bsd_short_info = ProcBsdshortinfo(
-            pbsi_pid=emu.os.getpid(),
-            pbsi_ppid=1,
-            pbsi_uid=emu.os.getuid(),
-            pbsi_gid=emu.os.getgid(),
+
+        self.emu.logger.warning("ioctl request not processed")
+        return 0
+
+    def _handle_sys_reboot(self):
+        self.emu.os.raise_permission_denied()
+
+        return 0
+
+    def _handle_sys_symlink(self):
+        src_path = self.emu.read_string(self.emu.get_arg(0))
+        dst_path = self.emu.read_string(self.emu.get_arg(1))
+
+        self.emu.os.symlink(src_path, dst_path)
+
+        return 0
+
+    def _handle_sys_readlink(self):
+        path = self.emu.read_string(self.emu.get_arg(0))
+        buf = self.emu.get_arg(1)
+        buf_size = self.emu.get_arg(2)
+
+        result = self.emu.os.readlink(path)
+        if result is None or len(result) > buf_size:
+            return -1
+
+        self.emu.write_string(buf, result)
+
+        return 0
+
+    def _handle_sys_msync(self):
+        addr = self.emu.get_arg(0)
+        length = self.emu.get_arg(1)
+
+        self.emu.os.msync(addr, length)
+
+        return 0
+
+    def _handle_sys_munmap(self):
+        addr = self.emu.get_arg(0)
+
+        self.emu.os.munmap(addr)
+
+        return 0
+
+    @staticmethod
+    def _handle_sys_mprotect():
+        return 0
+
+    @staticmethod
+    def _handle_sys_madvise():
+        return 0
+
+    def _handle_sys_getegid(self):
+        return self.emu.os.getgid()
+
+    def _handle_sys_gettimeofday(self):
+        tv = self.emu.get_arg(0)
+
+        result = self.emu.os.gettimeofday()
+        self.emu.write_bytes(tv, result)
+
+        return 0
+
+    def _handle_sys_getrusage(self):
+        r = self.emu.get_arg(1)
+
+        rusage = Rusage()
+        self.emu.write_bytes(r, struct_to_bytes(rusage))
+
+        return 0
+
+    def _handle_sys_readv(self):
+        fd = self.emu.get_arg(0)
+        iov = self.emu.get_arg(1)
+        iovcnt = self.emu.get_arg(2)
+
+        result = 0
+
+        for _ in range(iovcnt):
+            iov_base = self.emu.read_pointer(iov)
+            iov_len = self.emu.read_u64(iov + 8)
+
+            data = self.emu.os.read(fd, iov_len)
+            self.emu.write_bytes(iov_base, data)
+
+            result += len(data)
+
+            if len(data) != iov_len:
+                break
+
+            iov += 16
+
+        return result
+
+    def _handle_sys_writev(self):
+        fd = self.emu.get_arg(0)
+        iov = self.emu.get_arg(1)
+        iovcnt = self.emu.get_arg(2)
+
+        result = 0
+
+        for _ in range(iovcnt):
+            iov_base = self.emu.read_pointer(iov)
+            iov_len = self.emu.read_u64(iov + 8)
+
+            write_len = self.emu.os.write(fd, iov_base, iov_len)
+            result += write_len
+
+            if write_len != iov_len:
+                break
+
+            iov += 16
+
+        return result
+
+    def _handle_sys_fchown(self):
+        fd = self.emu.get_arg(0)
+        uid = self.emu.get_arg(1)
+        gid = self.emu.get_arg(2)
+
+        self.emu.os.fchown(fd, uid, gid)
+
+        return 0
+
+    def _handle_sys_fchmod(self):
+        fd = self.emu.get_arg(0)
+        mode = self.emu.get_arg(1)
+
+        self.emu.os.fchmod(fd, mode)
+
+        return 0
+
+    def _handle_sys_rename(self):
+        old = self.emu.read_string(self.emu.get_arg(0))
+        new = self.emu.read_string(self.emu.get_arg(1))
+
+        self.emu.os.rename(old, new)
+
+        return 0
+
+    def _handle_sys_sendto(self):
+        sock = self.emu.get_arg(0)
+        buffer = self.emu.get_arg(1)
+        length = self.emu.get_arg(2)
+        flags = self.emu.get_arg(3)
+        dest_addr = self.emu.get_arg(4)
+        dest_len = self.emu.get_arg(5)
+
+        return self.emu.os.sendto(sock, buffer, length, flags, dest_addr, dest_len)
+
+    def _handle_sys_socketpair(self):
+        domain = self.emu.get_arg(0)
+        sock_type = self.emu.get_arg(1)
+        protocol = self.emu.get_arg(2)
+        socket_vector = self.emu.get_arg(3)
+
+        result = self.emu.os.socketpair(domain, sock_type, protocol)
+        if not result:
+            return -1
+
+        self.emu.write_s32(socket_vector, result[0])
+        self.emu.write_s32(socket_vector + 4, result[1])
+
+        return 0
+
+    def _handle_sys_mkdir(self):
+        path = self.emu.read_string(self.emu.get_arg(0))
+        mode = self.emu.get_arg(1)
+
+        self.emu.os.mkdir(path, mode)
+
+        return 0
+
+    def _handle_sys_rmdir(self):
+        path = self.emu.read_string(self.emu.get_arg(0))
+
+        self.emu.os.rmdir(path)
+
+        return 0
+
+    def _handle_sys_utimes(self):
+        path = self.emu.read_string(self.emu.get_arg(0))
+        times_ptr = self.emu.get_arg(1)
+
+        if times_ptr:
+            time1 = self.emu.read_bytes(times_ptr, ctypes.sizeof(Timespec))
+            time2 = self.emu.read_bytes(
+                times_ptr + ctypes.sizeof(Timespec), ctypes.sizeof(Timespec)
+            )
+            times = (
+                bytes_to_struct(time1, Timespec).to_seconds(),
+                bytes_to_struct(time2, Timespec).to_seconds(),
+            )
+        else:
+            times = None
+
+        self.emu.os.utimes(path, times)
+
+        return 0
+
+    def _handle_sys_futimes(self):
+        fd = self.emu.get_arg(0)
+        times_ptr = self.emu.get_arg(1)
+
+        if times_ptr:
+            time1 = self.emu.read_bytes(times_ptr, ctypes.sizeof(Timespec))
+            time2 = self.emu.read_bytes(
+                times_ptr + ctypes.sizeof(Timespec), ctypes.sizeof(Timespec)
+            )
+            times = (
+                bytes_to_struct(time1, Timespec).to_seconds(),
+                bytes_to_struct(time2, Timespec).to_seconds(),
+            )
+        else:
+            times = None
+
+        self.emu.os.futimes(fd, times)
+
+        return 0
+
+    def _handle_sys_adjtime(self):
+        self.emu.os.raise_permission_denied()
+
+        return 0
+
+    def _handle_sys_getpgid(self):
+        pid = self.emu.get_arg(0)
+
+        if pid == 0 or pid == self.emu.os.getpid():
+            return self.emu.os.getpgid()
+        elif pid == 1:
+            return 1
+
+        self.emu.os.raise_permission_denied()
+
+        return 0
+
+    def _handle_sys_pread(self):
+        fd = self.emu.get_arg(0)
+        buf = self.emu.get_arg(1)
+        size = self.emu.get_arg(2)
+        offset = self.emu.get_arg(3)
+
+        data = self.emu.os.pread(fd, size, offset)
+        self.emu.write_bytes(buf, data)
+
+        return len(data)
+
+    def _handle_sys_pwrite(self):
+        fd = self.emu.get_arg(0)
+        buf = self.emu.get_arg(1)
+        size = self.emu.get_arg(2)
+        offset = self.emu.get_arg(3)
+
+        return self.emu.os.pwrite(fd, buf, size, offset)
+
+    @staticmethod
+    def _handle_sys_quotactl():
+        return 0
+
+    def _handle_sys_csops(self):
+        useraddr = self.emu.get_arg(2)
+
+        flags = 0
+
+        flags |= 0x00000800
+
+        flags |= 0x00000300
+
+        self.emu.write_u32(useraddr, flags)
+
+        return 0
+
+    @staticmethod
+    def _handle_sys_csops_audittoken():
+        return 0
+
+    def _handle_sys_getrlimit(self):
+        resource = self.emu.get_arg(0)
+        rlp = self.emu.get_arg(1)
+
+        resource &= ~0x1000
+
+        if resource not in RESOURCE_LIMITS:
+            raise SystemOperationFailed("Invalid value", SyscallError.EINVAL)
+
+        rlim_cur, rlim_max = RESOURCE_LIMITS[resource]
+
+        rlimit = Rlimit(
+            rlim_cur=rlim_cur,
+            rlim_max=rlim_max,
         )
-        result = struct_to_bytes(bsd_short_info)
-    elif flavor == const.PROC_PIDUNIQIDENTIFIERINFO:
-        uniq_identifier_info = ProcUniqidentifierinfo()
-        result = struct_to_bytes(uniq_identifier_info)
-    else:
-        emu.logger.warning("Unhandled proc_info call")
+
+        if rlp:
+            self.emu.write_bytes(rlp, struct_to_bytes(rlimit))
+
         return 0
 
-    emu.write_bytes(buffer, result)
-    return len(result)
+    def _handle_sys_setrlimit(self):
+        self.emu.os.raise_permission_denied()
 
-
-@register_syscall_handler(const.SYS_STAT64, "SYS_stat64")
-def handle_sys_stat64(emu: Chomper):
-    path = emu.read_string(emu.get_arg(0))
-    stat = emu.get_arg(1)
-
-    emu.write_bytes(stat, emu.os.stat(path))
-
-    return 0
-
-
-@register_syscall_handler(const.SYS_FSTAT64, "SYS_fstat64")
-def handle_sys_fstat64(emu: Chomper):
-    fd = emu.get_arg(0)
-    stat = emu.get_arg(1)
-
-    emu.write_bytes(stat, emu.os.fstat(fd))
-
-    return 0
-
-
-@register_syscall_handler(const.SYS_LSTAT64, "SYS_lstat64")
-def handle_sys_lstat64(emu: Chomper):
-    path = emu.read_string(emu.get_arg(0))
-    stat = emu.get_arg(1)
-
-    emu.write_bytes(stat, emu.os.lstat(path))
-
-    return 0
-
-
-@register_syscall_handler(const.SYS_GETDIRENTRIES64, "SYS_getdirentries64")
-def handle_sys_getdirentries64(emu: Chomper):
-    fd = emu.get_arg(0)
-    buf = emu.get_arg(1)
-    nbytes = emu.get_arg(2)
-    basep = emu.get_arg(3)
-
-    base = emu.read_u64(basep)
-
-    result = emu.ios_os.getdirentries(fd, base)
-    if result is None:
         return 0
 
-    if nbytes < len(result):
+    def _handle_sys_mmap(self):
+        length = self.emu.get_arg(1)
+        fd = to_signed(self.emu.get_arg(4), 4)
+        offset = self.emu.get_arg(5)
+
+        return self.emu.os.mmap(length, fd, offset)
+
+    def _handle_sys_lseek(self):
+        fd = self.emu.get_arg(0)
+        offset = self.emu.get_arg(1)
+        whence = self.emu.get_arg(2)
+
+        offset = to_signed(offset, 8)
+
+        return self.emu.os.lseek(fd, offset, whence)
+
+    def _handle_sys_fsync(self):
+        fd = self.emu.get_arg(0)
+
+        self.emu.os.fsync(fd)
+
         return 0
 
-    emu.write_bytes(buf, result[:nbytes])
-    emu.write_u64(basep, base + 1)
+    def _handle_sys_setpriority(self):
+        self.emu.os.raise_permission_denied()
 
-    return len(result)
+        return 0
 
+    def _handle_sys_socket(self):
+        domain = self.emu.get_arg(0)
+        sock_type = self.emu.get_arg(1)
+        protocol = self.emu.get_arg(2)
 
-@register_syscall_handler(const.SYS_STATFS64, "SYS_statfs64")
-def handle_sys_statfs64(emu: Chomper):
-    path = emu.read_string(emu.get_arg(0))
-    statfs = emu.get_arg(1)
+        return self.emu.os.socket(domain, sock_type, protocol)
 
-    emu.write_bytes(statfs, emu.os.statfs(path))
+    def _handle_sys_connect(self):
+        sock = self.emu.get_arg(0)
+        address = self.emu.get_arg(1)
+        address_len = self.emu.get_arg(2)
 
-    return 0
+        return self.emu.os.connect(sock, address, address_len)
 
+    @staticmethod
+    def _handle_sys_getpriority():
+        return 0
 
-@register_syscall_handler(const.SYS_FSTATFS64, "SYS_fstatfs64")
-def handle_sys_fstatfs64(emu: Chomper):
-    fd = emu.get_arg(0)
-    statfs = emu.get_arg(1)
+    def _handle_sys_bind(self):
+        sock = self.emu.get_arg(0)
+        address = self.emu.get_arg(1)
+        address_len = self.emu.get_arg(2)
 
-    emu.write_bytes(statfs, emu.os.fstatfs(fd))
+        return self.emu.os.bind(sock, address, address_len)
 
-    return 0
+    def _handle_sys_setsockopt(self):
+        sock = self.emu.get_arg(0)
+        level = self.emu.get_arg(1)
+        option_name = self.emu.get_arg(2)
+        option_value = self.emu.get_arg(3)
+        option_len = self.emu.get_arg(4)
 
+        return self.emu.os.setsockopt(
+            sock, level, option_name, option_value, option_len
+        )
 
-@register_syscall_handler(const.SYS_FSSTAT64, "SYS_fsstat64")
-def handle_sys_fsstat64(emu: Chomper):
-    statfs = emu.get_arg(0)
-    if not statfs:
-        return 1
+    def _handle_sys_getsockopt(self):
+        sock = self.emu.get_arg(0)
+        level = self.emu.get_arg(1)
+        option_name = self.emu.get_arg(2)
+        option_value = self.emu.get_arg(3)
+        option_len = self.emu.get_arg(4)
 
-    emu.write_bytes(statfs, emu.os.statfs("/"))
+        return self.emu.os.getsockopt(
+            sock, level, option_name, option_value, option_len
+        )
 
-    return 0
-
-
-@register_syscall_handler(const.SYS_BSDTHREAD_CREATE, "SYS_bsdthread_create")
-def handle_sys_bsdthread_create(emu: Chomper):
-    emu.logger.warning("Emulator ignored a thread create reqeust.")
-    emu.log_backtrace()
-
-    # start_routine = emu.get_arg(0)
-    # arg = emu.get_arg(1)
-    #
-    # emu.set_arg(0, arg)
-    # emu.call_address(start_routine)
-
-    return 0
-
-
-@register_syscall_handler(const.SYS_KQUEUE, "SYS_kqueue")
-def handle_sys_kqueue(emu: Chomper):
-    return -1
-
-
-@register_syscall_handler(const.SYS_LCHOWN, "SYS_lchown")
-def handle_sys_lchown(emu: Chomper):
-    path = emu.read_string(emu.get_arg(0))
-    uid = emu.get_arg(1)
-    gid = emu.get_arg(2)
-
-    emu.os.lchown(path, uid, gid)
-
-    return 0
-
-
-@register_syscall_handler(const.SYS_WORKQ_OPEN, "SYS_workq_open")
-def handle_sys_workq_open(emu: Chomper):
-    return 0
-
-
-@register_syscall_handler(const.SYS_WORKQ_KERNRETURN, "SYS_workq_kernreturn")
-def handle_sys_workq_kernreturn(emu: Chomper):
-    return 0
-
-
-@register_syscall_handler(const.SYS_KEVENT_QOS, "SYS_kevent_qos")
-def handle_sys_kevent_qos(emu: Chomper):
-    return 0
-
-
-@register_syscall_handler(const.SYS_KEVENT_ID, "SYS_kevent_id")
-def handle_sys_kevent_id(emu: Chomper):
-    return 0
-
-
-@register_syscall_handler(const.SYS_MAC_SYSCALL, "SYS_mac_syscall")
-def handle_sys_mac_syscall(emu: Chomper):
-    cmd = emu.read_string(emu.get_arg(0))
-    emu.logger.info(f"Received a mac syscall command: {cmd}")
-
-    if cmd == "Sandbox":
-        pass
-    else:
-        emu.logger.warning(f"Unhandled mac syscall command: {cmd}")
-
-    return 0
-
-
-@register_syscall_handler(const.SYS_PERSONA, "SYS_persona")
-def handle_sys_persona(emu: Chomper):
-    return 0
-
-
-@register_syscall_handler(const.SYS_GETENTROPY, "SYS_getentropy")
-def handle_sys_getentropy(emu: Chomper):
-    buffer = emu.get_arg(0)
-    size = emu.get_arg(1)
-
-    rand_bytes = bytes([random.randint(0, 255) for _ in range(size)])
-    emu.write_bytes(buffer, rand_bytes)
-
-    return 0
-
-
-@register_syscall_handler(const.SYS_NECP_OPEN, "SYS_necp_open")
-def handle_necp_open(emu: Chomper):
-    return -1
-
-
-@register_syscall_handler(const.SYS_GUARDED_OPEN_NP, "SYS_guarded_open_np")
-def handle_sys_guarded_open_np(emu: Chomper):
-    path = emu.read_string(emu.get_arg(0))
-    flags = emu.get_arg(3)
-    mode = emu.get_arg(4)
-
-    return emu.os.open(path, flags, mode)
-
-
-@register_syscall_handler(const.SYS_GUARDED_CLOSE_NP, "SYS_guarded_close_np")
-def handle_sys_guarded_close_np(emu: Chomper):
-    fd = emu.get_arg(0)
-
-    emu.os.close(fd)
-
-    return 0
-
-
-@register_syscall_handler(const.SYS_GETATTRLISTBULK, "SYS_getattrlistbulk")
-def handle_sys_getattrlistbulk(emu: Chomper):
-    return 0
-
-
-@register_syscall_handler(const.SYS_CLONEFILEAT, "SYS_clonefileat")
-def handle_sys_clonefileat(emu: Chomper):
-    src_dir_fd = to_signed(emu.get_arg(0), 4)
-    src_path = emu.read_string(emu.get_arg(1))
-    dst_dir_fd = to_signed(emu.get_arg(2), 4)
-    dst_path = emu.read_string(emu.get_arg(3))
-
-    emu.ios_os.clonefileat(src_dir_fd, src_path, dst_dir_fd, dst_path)
-
-    return 0
-
-
-@register_syscall_handler(const.SYS_OPENAT, "SYS_openat")
-@register_syscall_handler(const.SYS_OPENAT_NOCANCEL, "SYS_openat_nocancel")
-def handle_sys_openat(emu: Chomper):
-    dir_fd = to_signed(emu.get_arg(0), 4)
-    path = emu.read_string(emu.get_arg(1))
-    flags = emu.get_arg(2)
-    mode = emu.get_arg(3)
-
-    return emu.os.openat(dir_fd, path, flags, mode)
-
-
-@register_syscall_handler(const.SYS_FACCESSAT, "SYS_faccessat")
-def handle_sys_faccessat(emu: Chomper):
-    dir_fd = to_signed(emu.get_arg(0), 4)
-    path = emu.read_string(emu.get_arg(1))
-    mode = emu.get_arg(2)
-
-    if not emu.os.faccessat(dir_fd, path, mode):
+    @staticmethod
+    def _handle_sys_sigsuspend():
         return -1
 
-    return 0
+    def _handle_sys_setpgid(self):
+        self.emu.os.raise_permission_denied()
 
+        return 0
 
-@register_syscall_handler(const.SYS_FCHMODAT, "SYS_fchmodat")
-def handle_sys_fchmodat(emu: Chomper):
-    dir_fd = to_signed(emu.get_arg(0), 4)
-    path = emu.read_string(emu.get_arg(1))
-    mode = emu.get_arg(2)
+    def _handle_sys_dup2(self):
+        old_fd = self.emu.get_arg(0)
+        new_fd = self.emu.get_arg(1)
 
-    emu.os.fchmodat(dir_fd, path, mode)
+        self.emu.os.dup2(old_fd, new_fd)
 
-    return 0
+        return 0
 
+    def _handle_sys_fcntl(self):
+        fd = self.emu.get_arg(0)
+        cmd = self.emu.get_arg(1)
+        arg = self.emu.get_arg(2)
 
-@register_syscall_handler(const.SYS_FCHOWNAT, "SYS_fchownat")
-def handle_sys_fchownat(emu: Chomper):
-    dir_fd = to_signed(emu.get_arg(0), 4)
-    path = emu.read_string(emu.get_arg(1))
-    uid = emu.get_arg(2)
-    gid = emu.get_arg(3)
+        return self.emu.os.fcntl(fd, cmd, arg)
 
-    emu.os.fchownat(dir_fd, path, uid, gid)
+    def _handle_sys_select(self):
+        nfds = self.emu.get_arg(0)
+        readfds = self.emu.get_arg(1)
+        writefds = self.emu.get_arg(2)
+        errorfds = self.emu.get_arg(3)
+        timeout = self.emu.get_arg(4)
 
-    return 0
+        return self.emu.os.select(nfds, readfds, writefds, errorfds, timeout)
 
+    def _handle_sys_ftruncate(self):
+        fd = self.emu.get_arg(0)
+        length = self.emu.get_arg(1)
 
-@register_syscall_handler(const.SYS_FSTATAT64, "SYS_fstatat64")
-def handle_sys_fstatat64(emu: Chomper):
-    dir_fd = to_signed(emu.get_arg(0), 4)
-    path = emu.read_string(emu.get_arg(1))
-    stat = emu.get_arg(2)
+        self.emu.os.ftruncate(fd, length)
 
-    emu.write_bytes(stat, emu.os.fstatat(dir_fd, path))
+        return 0
 
-    return 0
+    def _handle_sys_sysctl(self):
+        name = self.emu.get_arg(0)
+        oldp = self.emu.get_arg(2)
+        oldlenp = self.emu.get_arg(3)
 
+        ctl_type = self.emu.read_u32(name)
+        ctl_ident = self.emu.read_u32(name + 4)
 
-@register_syscall_handler(const.SYS_RENAMEAT, "SYS_renameat")
-def handle_sys_renameat(emu: Chomper):
-    src_fd = emu.get_arg(0)
-    old = emu.read_string(emu.get_arg(1))
-    dst_fd = emu.get_arg(2)
-    new = emu.read_string(emu.get_arg(3))
+        result = sysctl(ctl_type, ctl_ident)
+        if result is None:
+            self.emu.logger.warning(
+                f"Unhandled sysctl command: {ctl_type}, {ctl_ident}"
+            )
+            return -1
 
-    emu.os.renameat(src_fd, old, dst_fd, new)
+        if oldp:
+            if isinstance(result, ctypes.Structure):
+                self.emu.write_bytes(oldp, struct_to_bytes(result))
+            elif isinstance(result, str):
+                self.emu.write_string(oldp, result)
+            elif isinstance(result, int):
+                self.emu.write_u64(oldp, result)
 
-    return 0
+        if oldlenp:
+            if isinstance(result, ctypes.Structure):
+                self.emu.write_u32(oldlenp, ctypes.sizeof(result))
+            elif isinstance(result, str):
+                self.emu.write_u32(oldlenp, len(result))
+            elif isinstance(result, int):
+                self.emu.write_u32(oldlenp, 8)
 
+        return 0
 
-@register_syscall_handler(const.SYS_LINKAT, "SYS_linkat")
-def handle_sys_linkat(emu: Chomper):
-    src_dir_fd = to_signed(emu.get_arg(0), 4)
-    src_path = emu.read_string(emu.get_arg(1))
-    dst_dir_fd = to_signed(emu.get_arg(2), 4)
-    dst_path = emu.read_string(emu.get_arg(3))
+    def _handle_sys_mlock(self):
+        addr = self.emu.get_arg(0)
+        length = self.emu.get_arg(1)
 
-    emu.os.linkat(src_dir_fd, src_path, dst_dir_fd, dst_path)
+        self.emu.os.mlock(addr, length)
 
-    return 0
+        return 0
 
+    def _handle_sys_munlock(self):
+        addr = self.emu.get_arg(0)
+        length = self.emu.get_arg(1)
 
-@register_syscall_handler(const.SYS_UNLINKAT, "SYS_unlinkat")
-def handle_sys_unlinkat(emu: Chomper):
-    dir_fd = to_signed(emu.get_arg(0), 4)
-    path = emu.read_string(emu.get_arg(1))
+        self.emu.os.munlock(addr, length)
 
-    emu.os.unlinkat(dir_fd, path)
+        return 0
 
-    return 0
+    def _handle_sys_open_dprotected_np(self):
+        path = self.emu.read_string(self.emu.get_arg(0))
+        flags = self.emu.get_arg(1)
+        mode = self.emu.get_arg(4)
+
+        return self.emu.os.open(path, flags, mode)
+
+    def _handle_sys_getattrlist(self):
+        return -1
+
+    @staticmethod
+    def _handle_sys_setxattr():
+        return 0
+
+    @staticmethod
+    def _handle_sys_fsetxattr():
+        return 0
+
+    @staticmethod
+    def _handle_sys_listxattr():
+        return 0
+
+    @staticmethod
+    def _handle_sys_shm_open():
+        return 0x80000000
+
+    def _handle_sys_sysctlbyname(self):
+        name = self.emu.read_string(self.emu.get_arg(0))
+        oldp = self.emu.get_arg(2)
+        oldlenp = self.emu.get_arg(3)
+
+        result = sysctlbyname(name)
+        if result is None:
+            self.emu.logger.warning(f"Unhandled sysctl command: {name}")
+            return -1
+
+        if oldp:
+            if isinstance(result, ctypes.Structure):
+                self.emu.write_bytes(oldp, struct_to_bytes(result))
+            elif isinstance(result, str):
+                self.emu.write_string(oldp, result)
+            elif isinstance(result, int):
+                self.emu.write_u64(oldp, result)
+
+        if oldlenp:
+            if isinstance(result, ctypes.Structure):
+                self.emu.write_u32(oldlenp, ctypes.sizeof(result))
+            elif isinstance(result, str):
+                self.emu.write_u32(oldlenp, len(result))
+            elif isinstance(result, int):
+                self.emu.write_u32(oldlenp, 8)
+
+        return 0
+
+    def _handle_sys_gettid(self):
+        return self.emu.os.getpid()
+
+    def _handle_sys_identitysvc(self):
+        self.emu.os.raise_permission_denied()
+
+        return 0
+
+    @staticmethod
+    def _handle_sys_psynch_mutexwait():
+        return 0
+
+    @staticmethod
+    def _handle_sys_process_policy():
+        return 0
+
+    @staticmethod
+    def _handle_sys_issetugid():
+        return 0
+
+    @staticmethod
+    def _handle_sys_pthread_sigmask():
+        return 0
+
+    def _handle_sys_semwait_signal(self):
+        raise SystemOperationFailed("Wait signal", SyscallError.EXT1)
 
+    def _handle_sys_proc_info(self):
+        pid = self.emu.get_arg(1)
+        flavor = self.emu.get_arg(2)
+        buffer = self.emu.get_arg(4)
 
-@register_syscall_handler(const.SYS_READLINKAT, "SYS_readlinkat")
-def handle_sys_readlinkat(emu: Chomper):
-    dir_fd = to_signed(emu.get_arg(0), 4)
-    path = emu.read_string(emu.get_arg(1))
+        if pid != self.emu.os.getpid():
+            self.emu.os.raise_permission_denied()
 
-    emu.os.readlinkat(dir_fd, path)
+        self.emu.logger.info(f"pid={pid}, flavor={flavor}")
 
-    return 0
+        if flavor == const.PROC_PIDTBSDINFO:
+            bsd_info = ProcBsdinfo(
+                pbi_pid=self.emu.os.getpid(),
+                pbi_ppid=1,
+                pbi_uid=self.emu.os.getuid(),
+                pbi_gid=self.emu.os.getgid(),
+            )
+            result = struct_to_bytes(bsd_info)
+        elif flavor == const.PROC_PIDPATHINFO:
+            self.emu.write_string(buffer, self.emu.ios_os.executable_path)
+            result = self.emu.ios_os.executable_path.encode("utf-8")
+        elif flavor == const.PROC_PIDT_SHORTBSDINFO:
+            bsd_short_info = ProcBsdshortinfo(
+                pbsi_pid=self.emu.os.getpid(),
+                pbsi_ppid=1,
+                pbsi_uid=self.emu.os.getuid(),
+                pbsi_gid=self.emu.os.getgid(),
+            )
+            result = struct_to_bytes(bsd_short_info)
+        elif flavor == const.PROC_PIDUNIQIDENTIFIERINFO:
+            uniq_identifier_info = ProcUniqidentifierinfo()
+            result = struct_to_bytes(uniq_identifier_info)
+        else:
+            self.emu.logger.warning("Unhandled proc_info call")
+            return 0
 
+        self.emu.write_bytes(buffer, result)
+        return len(result)
 
-@register_syscall_handler(const.SYS_SYMLINKAT, "SYS_symlinkat")
-def handle_sys_symlinkat(emu: Chomper):
-    src_dir_fd = to_signed(emu.get_arg(0), 4)
-    src_path = emu.read_string(emu.get_arg(1))
-    dst_dir_fd = to_signed(emu.get_arg(2), 4)
-    dst_path = emu.read_string(emu.get_arg(3))
+    def _handle_sys_stat64(self):
+        path = self.emu.read_string(self.emu.get_arg(0))
+        stat = self.emu.get_arg(1)
 
-    emu.os.symlinkat(src_dir_fd, src_path, dst_dir_fd, dst_path)
+        self.emu.write_bytes(stat, self.emu.os.stat(path))
 
-    return 0
+        return 0
 
+    def _handle_sys_fstat64(self):
+        fd = self.emu.get_arg(0)
+        stat = self.emu.get_arg(1)
 
-@register_syscall_handler(const.SYS_MKDIRAT, "SYS_mkdirat")
-def handle_sys_mkdirat(emu: Chomper):
-    dir_fd = to_signed(emu.get_arg(0), 4)
-    path = emu.read_string(emu.get_arg(1))
-    mode = emu.get_arg(2)
+        self.emu.write_bytes(stat, self.emu.os.fstat(fd))
 
-    emu.os.mkdirat(dir_fd, path, mode)
+        return 0
 
-    return 0
+    def _handle_sys_lstat64(self):
+        path = self.emu.read_string(self.emu.get_arg(0))
+        stat = self.emu.get_arg(1)
 
+        self.emu.write_bytes(stat, self.emu.os.lstat(path))
 
-@register_syscall_handler(const.SYS_BSDTHREAD_CTL, "SYS_bsdthread_ctl")
-def handle_sys_bsdthread_ctl(emu: Chomper):
-    return 0
+        return 0
 
+    def _handle_sys_getdirentries64(self):
+        fd = self.emu.get_arg(0)
+        buf = self.emu.get_arg(1)
+        nbytes = self.emu.get_arg(2)
+        basep = self.emu.get_arg(3)
 
-@register_syscall_handler(const.SYS_GUARDED_PWRITE_NP, "SYS_guarded_pwrite_np")
-def handle_sys_guarded_pwrite_np(emu: Chomper):
-    fd = emu.get_arg(0)
-    buf = emu.get_arg(2)
-    size = emu.get_arg(3)
-    offset = emu.get_arg(4)
+        base = self.emu.read_u64(basep)
 
-    return emu.os.pwrite(fd, buf, size, offset)
+        result = self.emu.ios_os.getdirentries(fd, base)
+        if result is None:
+            return 0
 
+        if nbytes < len(result):
+            return 0
 
-@register_syscall_handler(const.SYS_ULOCK_WAIT, "SYS_ulock_wait")
-def handle_sys_ulock_wait(emu: Chomper):
-    return 0
+        self.emu.write_bytes(buf, result[:nbytes])
+        self.emu.write_u64(basep, base + 1)
 
+        return len(result)
 
-@register_syscall_handler(
-    const.SYS_TERMINATE_WITH_PAYLOAD, "SYS_terminate_with_payload"
-)
-def handle_terminate_with_payload(emu: Chomper):
-    payload = emu.get_arg(5)
-    msg = emu.read_string(payload)
+    def _handle_sys_statfs64(self):
+        path = self.emu.read_string(self.emu.get_arg(0))
+        statfs = self.emu.get_arg(1)
 
-    emu.log_backtrace()
+        self.emu.write_bytes(statfs, self.emu.os.statfs(path))
 
-    raise ProgramTerminated("terminate with payload: %s" % msg)
+        return 0
 
+    def _handle_sys_fstatfs64(self):
+        fd = self.emu.get_arg(0)
+        statfs = self.emu.get_arg(1)
 
-@register_syscall_handler(const.SYS_ABORT_WITH_PAYLOAD, "SYS_abort_with_payload")
-def handle_abort_with_payload(emu: Chomper):
-    payload = emu.get_arg(4)
-    msg = emu.read_string(payload)
+        self.emu.write_bytes(statfs, self.emu.os.fstatfs(fd))
 
-    emu.log_backtrace()
+        return 0
 
-    raise ProgramTerminated("abort with payload: %s" % msg)
+    def _handle_sys_fsstat64(self):
+        statfs = self.emu.get_arg(0)
+        if not statfs:
+            return 1
 
+        self.emu.write_bytes(statfs, self.emu.os.statfs("/"))
 
-@register_syscall_handler(const.SYS_OS_FAULT_WITH_PAYLOAD, "SYS_os_fault_with_payload")
-def handle_os_fault_with_payload(emu: Chomper):
-    payload = emu.get_arg(2)
-    msg = emu.read_string(payload)
+        return 0
 
-    emu.log_backtrace()
+    def _handle_sys_bsdthread_create(self):
+        self.emu.logger.warning("Emulator ignored a thread create reqeust.")
+        self.emu.log_backtrace()
 
-    raise ProgramTerminated("OS fault with payload: %s" % msg)
+        return 0
 
+    def _handle_sys_kqueue(self):
+        return -1
 
-@register_syscall_handler(const.SYS_PREADV, "SYS_preadv")
-@register_syscall_handler(const.SYS_PREADV_NOCANCEL, "SYS_preadv_nocancel")
-def handle_sys_preadv(emu: Chomper):
-    fd = emu.get_arg(0)
-    iov = emu.get_arg(1)
-    iovcnt = emu.get_arg(2)
-    offset = emu.get_arg(3)
+    def _handle_sys_lchown(self):
+        path = self.emu.read_string(self.emu.get_arg(0))
+        uid = self.emu.get_arg(1)
+        gid = self.emu.get_arg(2)
 
-    pos = emu.os.lseek(fd, 0, os.SEEK_CUR)
-    emu.os.lseek(fd, offset, os.SEEK_SET)
+        self.emu.os.lchown(path, uid, gid)
 
-    result = 0
+        return 0
 
-    for _ in range(iovcnt):
-        iov_base = emu.read_pointer(iov)
-        iov_len = emu.read_u64(iov + 8)
+    @staticmethod
+    def _handle_sys_workq_open():
+        return 0
 
-        data = emu.os.read(fd, iov_len)
-        emu.write_bytes(iov_base, data)
+    @staticmethod
+    def _handle_sys_workq_kernreturn():
+        return 0
 
-        result += len(data)
+    @staticmethod
+    def _handle_sys_kevent_qos():
+        return 0
 
-        if len(data) != iov_len:
-            break
+    @staticmethod
+    def _handle_sys_kevent_id():
+        return 0
 
-        iov += 16
+    def _handle_sys_mac_syscall(self):
+        cmd = self.emu.read_string(self.emu.get_arg(0))
+        self.emu.logger.info(f"Received a mac syscall command: {cmd}")
 
-    emu.os.lseek(fd, pos, os.SEEK_SET)
+        if cmd == "Sandbox":
+            pass
+        else:
+            self.emu.logger.warning(f"Unhandled mac syscall command: {cmd}")
 
-    return result
+        return 0
 
+    @staticmethod
+    def _handle_sys_persona():
+        return 0
 
-@register_syscall_handler(const.MACH_ABSOLUTE_TIME_TRAP, "MACH_ABSOLUTE_TIME_TRAP")
-def handle_mach_absolute_time_trap(emu: Chomper):
-    return int(time.time_ns() % (3600 * 10**9))
+    def _handle_sys_getentropy(self):
+        buffer = self.emu.get_arg(0)
+        size = self.emu.get_arg(1)
 
+        rand_bytes = bytes([random.randint(0, 255) for _ in range(size)])
+        self.emu.write_bytes(buffer, rand_bytes)
 
-@register_syscall_handler(
-    const.KERNELRPC_MACH_VM_ALLOCATE_TRAP, "KERNELRPC_MACH_VM_ALLOCATE_TRAP"
-)
-def handle_kernelrpc_mach_vm_allocate_trap(emu: Chomper):
-    address = emu.get_arg(1)
-    size = emu.get_arg(2)
+        return 0
 
-    mem = emu.memory_manager.alloc(size)
-    emu.write_bytes(mem, bytes(size))
+    def _handle_sys_necp_open(self):
+        return -1
 
-    emu.write_pointer(address, mem)
+    def _handle_sys_guarded_open_np(self):
+        path = self.emu.read_string(self.emu.get_arg(0))
+        flags = self.emu.get_arg(3)
+        mode = self.emu.get_arg(4)
 
-    return 0
+        return self.emu.os.open(path, flags, mode)
 
+    def _handle_sys_guarded_close_np(self):
+        fd = self.emu.get_arg(0)
 
-@register_syscall_handler(
-    const.KERNELRPC_MACH_VM_PURGABLE_CONTROL_TRAP,
-    "KERNELRPC_MACH_VM_PURGABLE_CONTROL_TRAP",
-)
-def handle_kernelrpc_mach_vm_purgable_control_trap(emu: Chomper):
-    return 0
+        self.emu.os.close(fd)
 
+        return 0
 
-@register_syscall_handler(
-    const.KERNELRPC_MACH_VM_DEALLOCATE_TRAP, "KERNELRPC_MACH_VM_DEALLOCATE_TRAP"
-)
-def handle_kernelrpc_mach_vm_deallocate_trap(emu: Chomper):
-    mem = emu.get_arg(1)
+    @staticmethod
+    def _handle_sys_getattrlistbulk():
+        return 0
 
-    emu.memory_manager.free(mem)
+    def _handle_sys_clonefileat(self):
+        src_dir_fd = to_signed(self.emu.get_arg(0), 4)
+        src_path = self.emu.read_string(self.emu.get_arg(1))
+        dst_dir_fd = to_signed(self.emu.get_arg(2), 4)
+        dst_path = self.emu.read_string(self.emu.get_arg(3))
 
-    return 0
+        self.emu.ios_os.clonefileat(src_dir_fd, src_path, dst_dir_fd, dst_path)
 
+        return 0
 
-@register_syscall_handler(
-    const.KERNELRPC_MACH_VM_PROTECT_TRAP, "KERNELRPC_MACH_VM_PROTECT_TRAP"
-)
-def handle_kernelrpc_mach_vm_protect_trap(emu: Chomper):
-    return 0
+    def _handle_sys_openat(self):
+        dir_fd = to_signed(self.emu.get_arg(0), 4)
+        path = self.emu.read_string(self.emu.get_arg(1))
+        flags = self.emu.get_arg(2)
+        mode = self.emu.get_arg(3)
 
+        return self.emu.os.openat(dir_fd, path, flags, mode)
 
-@register_syscall_handler(
-    const.KERNELRPC_MACH_VM_MAP_TRAP, "KERNELRPC_MACH_VM_MAP_TRAP"
-)
-def handle_kernelrpc_mach_vm_map_trap(emu: Chomper):
-    address = emu.get_arg(1)
-    size = emu.get_arg(2)
+    def _handle_sys_faccessat(self):
+        dir_fd = to_signed(self.emu.get_arg(0), 4)
+        path = self.emu.read_string(self.emu.get_arg(1))
+        mode = self.emu.get_arg(2)
 
-    mem = emu.memory_manager.alloc(size)
-    emu.write_pointer(address, mem)
+        if not self.emu.os.faccessat(dir_fd, path, mode):
+            return -1
 
-    return 0
+        return 0
 
+    def _handle_sys_fchmodat(self):
+        dir_fd = to_signed(self.emu.get_arg(0), 4)
+        path = self.emu.read_string(self.emu.get_arg(1))
+        mode = self.emu.get_arg(2)
 
-@register_syscall_handler(
-    const.KERNELRPC_MACH_PORT_ALLOCATE_TRAP, "KERNELRPC_MACH_PORT_ALLOCATE_TRAP"
-)
-def handle_kernelrpc_mach_port_allocate_trap(emu: Chomper):
-    name = emu.get_arg(2)
+        self.emu.os.fchmodat(dir_fd, path, mode)
 
-    port = emu.ios_os.mach_port_construct()
-    emu.write_u32(name, port)
+        return 0
 
-    return 0
+    def _handle_sys_fchownat(self):
+        dir_fd = to_signed(self.emu.get_arg(0), 4)
+        path = self.emu.read_string(self.emu.get_arg(1))
+        uid = self.emu.get_arg(2)
+        gid = self.emu.get_arg(3)
 
+        self.emu.os.fchownat(dir_fd, path, uid, gid)
 
-@register_syscall_handler(
-    const.KERNELRPC_MACH_PORT_DEALLOCATE_TRAP, "KERNELRPC_MACH_PORT_DEALLOCATE_TRAP"
-)
-def handle_kernelrpc_mach_port_deallocate_trap(emu: Chomper):
-    name = emu.get_arg(1)
+        return 0
 
-    emu.ios_os.mach_port_destruct(name)
+    def _handle_sys_fstatat64(self):
+        dir_fd = to_signed(self.emu.get_arg(0), 4)
+        path = self.emu.read_string(self.emu.get_arg(1))
+        stat = self.emu.get_arg(2)
 
-    return 0
+        self.emu.write_bytes(stat, self.emu.os.fstatat(dir_fd, path))
 
+        return 0
 
-@register_syscall_handler(
-    const.KERNELRPC_MACH_PORT_MOD_REFS_TRAP, "KERNELRPC_MACH_PORT_MOD_REFS_TRAP"
-)
-def handle_kernelrpc_mach_port_mod_refs_trap(emu: Chomper):
-    return 0
+    def _handle_sys_renameat(self):
+        src_fd = self.emu.get_arg(0)
+        old = self.emu.read_string(self.emu.get_arg(1))
+        dst_fd = self.emu.get_arg(2)
+        new = self.emu.read_string(self.emu.get_arg(3))
 
+        self.emu.os.renameat(src_fd, old, dst_fd, new)
 
-@register_syscall_handler(
-    const.KERNELRPC_MACH_PORT_INSERT_MEMBER_TRAP,
-    "KERNELRPC_MACH_PORT_INSERT_MEMBER_TRAP",
-)
-def handle_kernelrpc_mach_port_insert_member_trap(emu: Chomper):
-    return 0
+        return 0
 
+    def _handle_sys_linkat(self):
+        src_dir_fd = to_signed(self.emu.get_arg(0), 4)
+        src_path = self.emu.read_string(self.emu.get_arg(1))
+        dst_dir_fd = to_signed(self.emu.get_arg(2), 4)
+        dst_path = self.emu.read_string(self.emu.get_arg(3))
 
-@register_syscall_handler(
-    const.KERNELRPC_MACH_PORT_CONSTRUCT_TRAP, "KERNELRPC_MACH_PORT_CONSTRUCT_TRAP"
-)
-def handle_kernelrpc_mach_port_construct_trap(emu: Chomper):
-    name = emu.get_arg(3)
+        self.emu.os.linkat(src_dir_fd, src_path, dst_dir_fd, dst_path)
 
-    port = emu.ios_os.mach_port_construct()
-    emu.write_u32(name, port)
+        return 0
 
-    return 0
+    def _handle_sys_unlinkat(self):
+        dir_fd = to_signed(self.emu.get_arg(0), 4)
+        path = self.emu.read_string(self.emu.get_arg(1))
 
+        self.emu.os.unlinkat(dir_fd, path)
 
-@register_syscall_handler(
-    const.KERNELRPC_MACH_PORT_DESTRUCT_TRAP, "KERNELRPC_MACH_PORT_DESTRUCT_TRAP"
-)
-def handle_kernelrpc_mach_port_destruct_trap(emu: Chomper):
-    name = emu.get_arg(1)
+        return 0
 
-    emu.ios_os.mach_port_destruct(name)
+    def _handle_sys_readlinkat(self):
+        dir_fd = to_signed(self.emu.get_arg(0), 4)
+        path = self.emu.read_string(self.emu.get_arg(1))
 
-    return 0
+        self.emu.os.readlinkat(dir_fd, path)
 
+        return 0
 
-@register_syscall_handler(const.MACH_REPLY_PORT_TRAP, "MACH_REPLY_PORT_TRAP")
-def handle_mach_reply_port_trap(emu: Chomper):
-    return emu.ios_os.MACH_PORT_REPLY
+    def _handle_sys_symlinkat(self):
+        src_dir_fd = to_signed(self.emu.get_arg(0), 4)
+        src_path = self.emu.read_string(self.emu.get_arg(1))
+        dst_dir_fd = to_signed(self.emu.get_arg(2), 4)
+        dst_path = self.emu.read_string(self.emu.get_arg(3))
 
+        self.emu.os.symlinkat(src_dir_fd, src_path, dst_dir_fd, dst_path)
 
-@register_syscall_handler(const.THREAD_SELF_TRAP, "THREAD_SELF_TRAP")
-def handle_thread_self_trap(emu: Chomper):
-    return emu.ios_os.MACH_PORT_THREAD
+        return 0
 
+    def _handle_sys_mkdirat(self):
+        dir_fd = to_signed(self.emu.get_arg(0), 4)
+        path = self.emu.read_string(self.emu.get_arg(1))
+        mode = self.emu.get_arg(2)
 
-@register_syscall_handler(const.TASK_SELF_TRAP, "TASK_SELF_TRAP")
-def handle_task_self_trap(emu: Chomper):
-    return emu.ios_os.MACH_PORT_TASK
+        self.emu.os.mkdirat(dir_fd, path, mode)
 
+        return 0
 
-@register_syscall_handler(const.HOST_SELF_TRAP, "HOST_SELF_TRAP")
-def handle_host_self_trap(emu: Chomper):
-    return emu.ios_os.MACH_PORT_HOST
+    @staticmethod
+    def _handle_sys_bsdthread_ctl():
+        return 0
 
+    def _handle_sys_guarded_pwrite_np(self):
+        fd = self.emu.get_arg(0)
+        buf = self.emu.get_arg(2)
+        size = self.emu.get_arg(3)
+        offset = self.emu.get_arg(4)
 
-@register_syscall_handler(const.MACH_MSG_TRAP, "MACH_MSG_TRAP")
-def handle_mach_msg_trap(emu: Chomper):
-    msg = emu.get_arg(0)
-    option = emu.get_arg(1)
-    send_size = emu.get_arg(2)
-    rcv_size = emu.get_arg(3)
-    rcv_name = emu.get_arg(4)
-    timeout = emu.get_arg(5)
-    notify = emu.get_arg(6)
+        return self.emu.os.pwrite(fd, buf, size, offset)
 
-    return emu.ios_os.mach_msg(
-        msg,
-        option,
-        send_size,
-        rcv_size,
-        rcv_name,
-        timeout,
-        notify,
-    )
+    @staticmethod
+    def _handle_sys_ulock_wait():
+        return 0
 
+    def _handle_sys_terminate_with_payload(self):
+        payload = self.emu.get_arg(5)
+        msg = self.emu.read_string(payload)
 
-@register_syscall_handler(const.SEMAPHORE_SIGNAL_TRAP, "SEMAPHORE_SIGNAL_TRAP")
-def handle_semaphore_signal_trap(emu: Chomper):
-    semaphore = emu.get_arg(0)
-    return emu.ios_os.semaphore_signal(semaphore)
+        self.emu.log_backtrace()
 
+        raise ProgramTerminated("terminate with payload: %s" % msg)
 
-@register_syscall_handler(const.SEMAPHORE_WAIT_TRAP, "SEMAPHORE_WAIT_TRAP")
-def handle_semaphore_wait_trap(emu: Chomper):
-    semaphore = emu.get_arg(0)
+    def _handle_sys_abort_with_payload(self):
+        payload = self.emu.get_arg(4)
+        msg = self.emu.read_string(payload)
 
-    emu.logger.info("Waiting semaphore...")
-    return emu.ios_os.semaphore_wait(semaphore)
+        self.emu.log_backtrace()
 
+        raise ProgramTerminated("abort with payload: %s" % msg)
 
-@register_syscall_handler(
-    const.KERNELRPC_MACH_PORT_GUARD_TRAP, "KERNELRPC_MACH_PORT_GUARD_TRAP"
-)
-def handle_kernelrpc_mach_port_guard_trap(emu: Chomper):
-    return 0
+    def _handle_sys_os_fault_with_payload(self):
+        payload = self.emu.get_arg(2)
+        msg = self.emu.read_string(payload)
 
+        self.emu.log_backtrace()
 
-@register_syscall_handler(const.MAP_FD_TRAP, "MAP_FD_TRAP")
-def handle_map_fd_trap(emu: Chomper):
-    activity_id = emu.get_arg(2)
+        raise ProgramTerminated("OS fault with payload: %s" % msg)
 
-    emu.write_u64(activity_id, random.getrandbits(64))
+    def _handle_sys_preadv(self):
+        fd = self.emu.get_arg(0)
+        iov = self.emu.get_arg(1)
+        iovcnt = self.emu.get_arg(2)
+        offset = self.emu.get_arg(3)
 
-    return 0
+        pos = self.emu.os.lseek(fd, 0, os.SEEK_CUR)
+        self.emu.os.lseek(fd, offset, os.SEEK_SET)
 
+        result = 0
 
-@register_syscall_handler(
-    const.THREAD_GET_SPECIAL_REPLY_PORT, "THREAD_GET_SPECIAL_REPLY_PORT"
-)
-def handle_thread_get_special_reply_port(emu: Chomper):
-    return emu.ios_os.MACH_PORT_REPLY
+        for _ in range(iovcnt):
+            iov_base = self.emu.read_pointer(iov)
+            iov_len = self.emu.read_u64(iov + 8)
 
+            data = self.emu.os.read(fd, iov_len)
+            self.emu.write_bytes(iov_base, data)
 
-@register_syscall_handler(
-    const.HOST_CREATE_MACH_VOUCHER_TRAP, "HOST_CREATE_MACH_VOUCHER_TRAP"
-)
-def handle_host_create_mach_voucher_trap(emu: Chomper):
-    return 0
+            result += len(data)
 
+            if len(data) != iov_len:
+                break
 
-@register_syscall_handler(
-    const.KERNELRPC_MACH_PORT_TYPE_TRAP, "KERNELRPC_MACH_PORT_TYPE_TRAP"
-)
-def handle_kernelrpc_mach_port_type_trap(emu: Chomper):
-    ptype = emu.get_arg(2)
+            iov += 16
 
-    value = 0
-    value |= const.MACH_PORT_TYPE_SEND
-    value |= const.MACH_PORT_TYPE_RECEIVE
+        self.emu.os.lseek(fd, pos, os.SEEK_SET)
 
-    emu.write_u32(ptype, value)
+        return result
 
-    return 0
+    def _handle_mach_absolute_time_trap(self):
+        return int(time.time_ns() % (3600 * 10**9))
 
+    def _handle_kernelrpc_mach_vm_allocate_trap(self):
+        address = self.emu.get_arg(1)
+        size = self.emu.get_arg(2)
 
-@register_syscall_handler(
-    const.KERNELRPC_MACH_PORT_REQUEST_NOTIFICATION_TRAP,
-    "KERNELRPC_MACH_PORT_REQUEST_NOTIFICATION_TRAP",
-)
-def handle_kernelrpc_mach_port_request_notification_trap(emu: Chomper):
-    return 0
+        mem = self.emu.memory_manager.alloc(size)
+        self.emu.write_bytes(mem, bytes(size))
 
+        self.emu.write_pointer(address, mem)
 
-@register_syscall_handler(const.MACH_TIMEBASE_INFO_TRAP, "MACH_TIMEBASE_INFO_TRAP")
-def handle_mach_timebase_info_trap(emu: Chomper):
-    info = emu.get_arg(0)
+        return 0
 
-    emu.write_u32(info, 1)
-    emu.write_u32(info + 4, 1)
+    @staticmethod
+    def _handle_kernelrpc_mach_vm_purgable_control_trap():
+        return 0
 
-    return 0
+    def _handle_kernelrpc_mach_vm_deallocate_trap(self):
+        mem = self.emu.get_arg(1)
 
+        self.emu.memory_manager.free(mem)
 
-@register_syscall_handler(const.MK_TIMER_CREATE_TRAP, "MK_TIMER_CREATE_TRAP")
-def handle_mk_timer_create_trap(emu: Chomper):
-    return emu.ios_os.MACH_PORT_TIMER
+        return 0
 
+    @staticmethod
+    def _handle_kernelrpc_mach_vm_protect_trap():
+        return 0
 
-@register_syscall_handler(const.MK_TIMER_ARM, "MK_TIMER_ARM")
-def handle_mk_timer_arm(emu: Chomper):
-    return 0
+    def _handle_kernelrpc_mach_vm_map_trap(self):
+        address = self.emu.get_arg(1)
+        size = self.emu.get_arg(2)
+
+        mem = self.emu.memory_manager.alloc(size)
+        self.emu.write_pointer(address, mem)
+
+        return 0
+
+    def _handle_kernelrpc_mach_port_allocate_trap(self):
+        name = self.emu.get_arg(2)
+
+        port = self.emu.ios_os.mach_port_construct()
+        self.emu.write_u32(name, port)
+
+        return 0
+
+    def _handle_kernelrpc_mach_port_deallocate_trap(self):
+        name = self.emu.get_arg(1)
+
+        self.emu.ios_os.mach_port_destruct(name)
+
+        return 0
+
+    @staticmethod
+    def _handle_kernelrpc_mach_port_mod_refs_trap():
+        return 0
+
+    @staticmethod
+    def _handle_kernelrpc_mach_port_insert_member_trap():
+        return 0
+
+    def _handle_kernelrpc_mach_port_construct_trap(self):
+        name = self.emu.get_arg(3)
+
+        port = self.emu.ios_os.mach_port_construct()
+        self.emu.write_u32(name, port)
+
+        return 0
+
+    def _handle_kernelrpc_mach_port_destruct_trap(self):
+        name = self.emu.get_arg(1)
+
+        self.emu.ios_os.mach_port_destruct(name)
+
+        return 0
+
+    def _handle_mach_reply_port_trap(self):
+        return self.emu.ios_os.MACH_PORT_REPLY
+
+    def _handle_thread_self_trap(self):
+        return self.emu.ios_os.MACH_PORT_THREAD
+
+    def _handle_task_self_trap(self):
+        return self.emu.ios_os.MACH_PORT_TASK
+
+    def _handle_host_self_trap(self):
+        return self.emu.ios_os.MACH_PORT_HOST
+
+    def _handle_mach_msg_trap(self):
+        msg = self.emu.get_arg(0)
+        option = self.emu.get_arg(1)
+        send_size = self.emu.get_arg(2)
+        rcv_size = self.emu.get_arg(3)
+        rcv_name = self.emu.get_arg(4)
+        timeout = self.emu.get_arg(5)
+        notify = self.emu.get_arg(6)
+
+        return self.emu.ios_os.mach_msg(
+            msg,
+            option,
+            send_size,
+            rcv_size,
+            rcv_name,
+            timeout,
+            notify,
+        )
+
+    def _handle_semaphore_signal_trap(self):
+        semaphore = self.emu.get_arg(0)
+        return self.emu.ios_os.semaphore_signal(semaphore)
+
+    def _handle_semaphore_wait_trap(self):
+        semaphore = self.emu.get_arg(0)
+
+        self.emu.logger.info("Waiting semaphore...")
+        return self.emu.ios_os.semaphore_wait(semaphore)
+
+    @staticmethod
+    def _handle_kernelrpc_mach_port_guard_trap():
+        return 0
+
+    def _handle_map_fd_trap(self):
+        activity_id = self.emu.get_arg(2)
+
+        self.emu.write_u64(activity_id, random.getrandbits(64))
+
+        return 0
+
+    def _handle_thread_get_special_reply_port(self):
+        return self.emu.ios_os.MACH_PORT_REPLY
+
+    @staticmethod
+    def _handle_host_create_mach_voucher_trap():
+        return 0
+
+    def _handle_kernelrpc_mach_port_type_trap(self):
+        ptype = self.emu.get_arg(2)
+
+        value = 0
+        value |= const.MACH_PORT_TYPE_SEND
+        value |= const.MACH_PORT_TYPE_RECEIVE
+
+        self.emu.write_u32(ptype, value)
+
+        return 0
+
+    @staticmethod
+    def _handle_kernelrpc_mach_port_request_notification_trap():
+        return 0
+
+    def _handle_mach_timebase_info_trap(self):
+        info = self.emu.get_arg(0)
+
+        self.emu.write_u32(info, 1)
+        self.emu.write_u32(info + 4, 1)
+
+        return 0
+
+    def _handle_mk_timer_create_trap(self):
+        return self.emu.ios_os.MACH_PORT_TIMER
+
+    @staticmethod
+    def _handle_mk_timer_arm():
+        return 0
