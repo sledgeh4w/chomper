@@ -13,12 +13,14 @@ from enum import Enum
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Type, TYPE_CHECKING
 
+from chomper.loader import BaseLoader
 from chomper.exceptions import SystemOperationFailed
 from chomper.log import get_logger
 from chomper.utils import log_call, safe_join, to_signed
 
 from .device import DeviceFile
 from .handle import HandleManager
+from .syscall import BaseSyscallHandler
 
 if TYPE_CHECKING:
     from chomper.core import Chomper
@@ -118,6 +120,18 @@ class PosixOs(ABC):
         self._mapping_files: Dict[int, str] = {}
 
         self._file_properties: List[FileProperty] = []
+
+    @property
+    @abc.abstractmethod
+    def loader(self) -> BaseLoader:
+        """Executable file loader."""
+        pass
+
+    @property
+    @abc.abstractmethod
+    def syscall_handler(self) -> BaseSyscallHandler:
+        """System calls handler."""
+        pass
 
     @abc.abstractmethod
     def get_errno(self) -> int:
@@ -1183,3 +1197,11 @@ class PosixOs(ABC):
 
         with open(real_path, "wb") as f:
             f.write(data)
+
+    @log_call
+    def mlock(self, addr: int, length: int):
+        pass
+
+    @log_call
+    def munlock(self, addr: int, length: int):
+        pass

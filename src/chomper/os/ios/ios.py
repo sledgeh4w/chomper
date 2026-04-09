@@ -22,7 +22,7 @@ from .fixup import SystemModuleFixer
 from .hooks import get_hooks
 from .mach import MachMsgHandler
 from .structs import Dirent, Stat64, Statfs64, Timespec, SockaddrIn
-from .syscall import get_syscall_handlers, get_syscall_names
+from .syscall import IosSyscallHandler
 from .xpc import XpcMessageHandler
 
 
@@ -207,7 +207,8 @@ class IosOs(PosixOs):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-        self.loader = MachoLoader(self.emu)
+        self._loader = MachoLoader(self.emu)
+        self._syscall_handler = IosSyscallHandler(self.emu)
 
         # mobile user
         self._uid = 501
@@ -245,13 +246,19 @@ class IosOs(PosixOs):
         # Xpc message
         self._xpc_message_handler = XpcMessageHandler(self.emu)
 
+    @property
+    def loader(self) -> MachoLoader:
+        return self._loader
+
+    @property
+    def syscall_handler(self) -> IosSyscallHandler:
+        return self._syscall_handler
+
     def get_errno(self) -> int:
-        """Get the `errno`."""
         errno = self.emu.get_symbol("_errno")
         return self.emu.read_s32(errno.address)
 
     def set_errno(self, value: int):
-        """Set the `errno`."""
         errno = self.emu.get_symbol("_errno")
         self.emu.write_s32(errno.address, value)
 
@@ -968,10 +975,6 @@ class IosOs(PosixOs):
     def initialize(self):
         # Setup hooks
         self.emu.hooks.update(get_hooks())
-
-        # Setup syscall handles
-        self.emu.syscall_handlers.update(get_syscall_handlers())
-        self.emu.syscall_names.update(get_syscall_names())
 
         self._setup_tls()
 

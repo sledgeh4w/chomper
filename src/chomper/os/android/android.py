@@ -15,7 +15,7 @@ from chomper.utils import log_call, struct_to_bytes, to_unsigned
 
 from .hooks import get_hooks
 from .structs import Dirent, Stat64, Timespec
-from .syscall import get_syscall_handlers, get_syscall_names
+from .syscall import AndroidSyscallHandler
 
 
 ENVIRON_VARIABLES = """"""
@@ -36,7 +36,8 @@ class AndroidOs(PosixOs):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-        self.loader = ELFLoader(self.emu)
+        self._loader = ELFLoader(self.emu)
+        self._syscall_handler = AndroidSyscallHandler(self.emu)
 
         self._uid = random.randint(10000, 20000)
 
@@ -45,12 +46,18 @@ class AndroidOs(PosixOs):
         # Used by `getdents`
         self._dir_read_offset = {}
 
+    @property
+    def loader(self) -> ELFLoader:
+        return self._loader
+
+    @property
+    def syscall_handler(self) -> AndroidSyscallHandler:
+        return self._syscall_handler
+
     def get_errno(self) -> int:
-        """Get the `errno`."""
         return self.emu.read_s32(TLS_ADDRESS + 0x10)
 
     def set_errno(self, value: int):
-        """Set the `errno`."""
         self.emu.write_s32(TLS_ADDRESS + 0x10, value)
 
     def _construct_stat(self, st: os.stat_result) -> bytes:
@@ -247,12 +254,6 @@ class AndroidOs(PosixOs):
     def initialize(self):
         # Setup hooks
         self.emu.hooks.update(get_hooks())
-
-        # Setup syscall handles
-        if self.emu.arch == arm64_arch:
-            # Only compatible with arm64 now
-            self.emu.syscall_handlers.update(get_syscall_handlers())
-            self.emu.syscall_names.update(get_syscall_names())
 
         # Mount virtual device files
         self.mount_devices(DEVICES_FILES)

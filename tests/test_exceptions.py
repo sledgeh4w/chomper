@@ -1,6 +1,5 @@
 import pytest
 
-from chomper.os.ios.const import SYS_GETUID
 from chomper.exceptions import (
     EmulatorCrashed,
     SymbolMissing,
@@ -11,14 +10,7 @@ from chomper.exceptions import (
 
 def test_unhandled_system_call_exception(emu_ios):
     with pytest.raises(EmulatorCrashed, match=r"Unhandled system call.*"):
-        syscall_handlers = emu_ios.syscall_handlers.copy()
-
-        try:
-            emu_ios.syscall_handlers.pop(SYS_GETUID)
-
-            emu_ios.call_symbol("_getuid")
-        finally:
-            emu_ios.syscall_handlers = syscall_handlers
+        emu_ios.os.syscall_handler.handle_syscall(0x1000)
 
 
 def test_symbol_missing_exception(emu_ios):
