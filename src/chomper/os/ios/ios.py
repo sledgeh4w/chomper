@@ -141,8 +141,8 @@ SYMBOLIC_LINKS = {
 }
 
 # Default bundle values until an executable with Info.plist is loaded
-BUNDLE_UUID = "00000000-0000-0000-0000-000000000000"
-BUNDLE_IDENTIFIER = "com.sh4w.chomper"
+BUNDLE_UUID = "2305AA14-F491-40E0-BF02-88BDBABF51AE"
+BUNDLE_NAME = "Chomper"
 BUNDLE_EXECUTABLE = "Chomper"
 
 PREFERENCES = {
@@ -221,7 +221,7 @@ class IosOs(PosixOs):
         self.executable_path = (
             f"/private/var/containers/Bundle/Application"
             f"/{BUNDLE_UUID}"
-            f"/{BUNDLE_IDENTIFIER}"
+            f"/{BUNDLE_NAME}.app"
             f"/{BUNDLE_EXECUTABLE}"
         )
         self.executable_file = ""
@@ -738,7 +738,7 @@ class IosOs(PosixOs):
             "Application",
             BUNDLE_UUID,
         )
-        local_bundle_path = os.path.join(local_container_path, BUNDLE_IDENTIFIER)
+        local_bundle_path = os.path.join(local_container_path, f"{BUNDLE_NAME}.app")
 
         self.forward_path(container_path, local_container_path)
         self.forward_path(bundle_path, local_bundle_path)
@@ -763,10 +763,10 @@ class IosOs(PosixOs):
             with open(info_path, "rb") as f:
                 info_data = plistlib.load(f)
 
-            bundle_identifier = info_data["CFBundleIdentifier"]
+            bundle_name = info_data["CFBundleName"]
             bundle_executable = info_data["CFBundleExecutable"]
 
-            bundle_path = f"{container_path}/{bundle_identifier}"
+            bundle_path = f"{container_path}/{bundle_name}.app"
             self.executable_path = f"{bundle_path}/{bundle_executable}"
 
             self._setup_bundle_dir()
