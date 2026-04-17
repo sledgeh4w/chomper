@@ -10,7 +10,7 @@ from chomper.const import TLS_ADDRESS
 from chomper.exceptions import SystemOperationFailed
 from chomper.loader import ELFLoader
 from chomper.os.device import NullDevice, RandomDevice, UrandomDevice
-from chomper.os.posix import PosixOs, SyscallError
+from chomper.os.posix import FileProperty, PosixOs, SyscallError
 from chomper.utils import log_call, struct_to_bytes, to_unsigned
 
 from .hooks import get_hooks
@@ -26,6 +26,11 @@ DEVICES_FILES = {
     "/dev/random": RandomDevice,
     "/dev/urandom": UrandomDevice,
 }
+
+FILE_PROPERTIES = [
+    # path, is_dir, readable, writeable, executable
+    ("/", True, True, True, False),
+]
 
 
 class AndroidOs(PosixOs):
@@ -59,6 +64,36 @@ class AndroidOs(PosixOs):
 
     def set_errno(self, value: int):
         self.emu.write_s32(TLS_ADDRESS + 0x10, value)
+
+    @staticmethod
+    def _resolve_flags(flags: int) -> int:
+        """Create flags that will be actually passed into the host machine.
+
+        On Windows, the meaning of flags is different with Unix-like operating systems.
+        """
+        _flags = 0
+
+        access_mode = flags & 3
+        if access_mode == 0:
+            _flags |= os.O_RDONLY
+        elif access_mode == 1:
+            _flags |= os.O_WRONLY
+        elif access_mode == 2:
+            _flags |= os.O_RDWR
+
+        if flags & 0x400:
+            _flags |= os.O_APPEND
+        if flags & 0x40:
+            _flags |= os.O_CREAT
+        if flags & 0x200:
+            _flags |= os.O_TRUNC
+        if flags & 0x80:
+            _flags |= os.O_EXCL
+
+        if sys.platform == "win32":
+            _flags |= os.O_BINARY
+
+        return _flags
 
     def _construct_stat(self, st: os.stat_result) -> bytes:
         if sys.platform == "win32":
@@ -118,6 +153,9 @@ class AndroidOs(PosixOs):
         return struct_to_bytes(st)
 
     def _construct_statfs(self) -> bytes:
+        return b""
+
+    def _construct_sockaddr_in(self, address: str, port: int) -> bytes:
         return b""
 
     def getuid(self) -> int:
@@ -193,6 +231,18 @@ class AndroidOs(PosixOs):
             self.emu.write_pointer(TLS_ADDRESS + 0x8, thread_ptr)
             self.emu.write_pointer(TLS_ADDRESS + 0x10, errno_ptr)
 
+    def _setup_file_properties(self):
+        """Initialize file properties."""
+        for path, is_dir, readable, writeable, executable in FILE_PROPERTIES:
+            file_prop = FileProperty(
+                path=path,
+                is_dir=is_dir,
+                readable=readable,
+                writeable=writeable,
+                executable=executable,
+            )
+            self.add_file_property(file_prop)
+
     def _enable_libc(self) -> bool:
         """Attempt to load libc."""
         if not self.rootfs_path:
@@ -213,8 +263,8 @@ class AndroidOs(PosixOs):
 
     def _create_fp(self, fd: int, mode: str, unbuffered: bool = False) -> int:
         """Wrap file descriptor to file object by calling `fdopen`."""
-        with self.emu.mem_context() as ctx:
-            mode_ptr = ctx.create_string(mode)
+        with self.emu.memory_scope() as mem:
+            mode_ptr = mem.create_string(mode)
 
             fp = self.emu.call_symbol("fdopen", fd, mode_ptr)
             flags = self.emu.read_u32(fp + 16)
@@ -259,6 +309,7 @@ class AndroidOs(PosixOs):
         self.mount_devices(DEVICES_FILES)
 
         self._setup_tls()
+        self._setup_file_properties()
 
         if self._enable_libc():
             self._setup_stdio()

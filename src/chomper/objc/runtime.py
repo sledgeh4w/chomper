@@ -21,8 +21,8 @@ class ObjcRuntime:
 
     def selector(self, sel_name: str) -> int:
         """Get selector by name."""
-        with self.emu.mem_context() as ctx:
-            name_buf = ctx.create_string(sel_name)
+        with self.emu.memory_scope() as mem:
+            name_buf = mem.create_string(sel_name)
 
             return self.emu.call_symbol("_sel_registerName", name_buf)
 
@@ -35,8 +35,8 @@ class ObjcRuntime:
         Raises:
             ValueError: If class not found.
         """
-        with self.emu.mem_context() as ctx:
-            name_buf = ctx.create_string(name)
+        with self.emu.memory_scope() as mem:
+            name_buf = mem.create_string(name)
 
             class_value = self.emu.call_symbol("_objc_getClass", name_buf)
             if not class_value:
@@ -53,8 +53,8 @@ class ObjcRuntime:
         Raises:
             ValueError: If protocol not found.
         """
-        with self.emu.mem_context() as ctx:
-            name_buf = ctx.create_string(name)
+        with self.emu.memory_scope() as mem:
+            name_buf = mem.create_string(name)
 
             protocol_value = self.emu.call_symbol("_objc_getProtocol", name_buf)
             if not protocol_value:
@@ -122,11 +122,11 @@ class ObjcRuntime:
         new_args: List[int] = []
         new_va_list: List[int] = []
 
-        with self.emu.mem_context() as ctx:
+        with self.emu.memory_scope() as mem:
             for old, new in zip((args, va_list or []), (new_args, new_va_list)):
                 for arg in old:
                     if isinstance(arg, str):
-                        buf = ctx.create_string(arg)
+                        buf = mem.create_string(arg)
                         new.append(buf)
                     elif isinstance(arg, ObjcType):
                         new.append(arg.value)
@@ -182,7 +182,7 @@ class ObjcRuntime:
         Raises:
             TypeError: If object type is not supported.
         """
-        with self.emu.mem_context() as ctx:
+        with self.emu.memory_scope() as mem:
             if isinstance(value, dict):
                 ns_obj = self.msg_send("NSMutableDictionary", "dictionary")
                 assert ns_obj
@@ -203,7 +203,7 @@ class ObjcRuntime:
                 ns_obj = self.msg_send("NSString", "stringWithUTF8String:", value)
             elif isinstance(value, bytes):
                 if value:
-                    buffer = ctx.create_buffer(len(value))
+                    buffer = mem.create_buffer(len(value))
                     self.emu.write_bytes(buffer, value)
                 else:
                     buffer = 0
@@ -246,7 +246,7 @@ class ObjcRuntime:
 
         cf_strs = []
 
-        with self.emu.mem_context() as ctx:
+        with self.emu.memory_scope() as mem:
             if isinstance(value, dict):
                 cf_copy_string_dictionary_key_callbacks = self.emu.get_symbol(
                     "_kCFCopyStringDictionaryKeyCallBacks"
@@ -287,7 +287,7 @@ class ObjcRuntime:
                     cf_item = self._create_cf_object(item)
                     self.emu.call_symbol("_CFArrayAppendValue", cf_obj, cf_item)
             elif isinstance(value, str):
-                str_ptr = ctx.create_string(value)
+                str_ptr = mem.create_string(value)
                 cf_obj = self.emu.call_symbol(
                     "_CFStringCreateWithCString",
                     cf_allocator_system_default.address,
@@ -296,7 +296,7 @@ class ObjcRuntime:
                 )
             elif isinstance(value, bytes):
                 if value:
-                    buffer = ctx.create_buffer(len(value))
+                    buffer = mem.create_buffer(len(value))
                     self.emu.write_bytes(buffer, value)
                 else:
                     buffer = 0
@@ -308,7 +308,7 @@ class ObjcRuntime:
                     len(value),
                 )
             elif isinstance(value, int):
-                buffer = ctx.create_buffer(8)
+                buffer = mem.create_buffer(8)
                 self.emu.write_s64(buffer, value)
 
                 cf_obj = self.emu.call_symbol(

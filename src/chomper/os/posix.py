@@ -15,6 +15,7 @@ from typing import Dict, List, Optional, Tuple, Type, TYPE_CHECKING
 
 from chomper.loader import BaseLoader
 from chomper.exceptions import SystemOperationFailed
+from chomper.feature import Feature
 from chomper.log import get_logger
 from chomper.utils import log_call, safe_join, to_signed
 
@@ -36,8 +37,7 @@ class SyscallError(Enum):
     ENOTDIR = 7
     EINVAL = 8
     EMFILE = 9
-
-    EXT1 = 1000
+    ETIMEDOUT = 10
 
 
 class FdType(Enum):
@@ -45,6 +45,9 @@ class FdType(Enum):
     DIR = 2
     DEV = 3
     SOCK = 4
+
+    # iOS only
+    KQUEUE = 100
 
 
 @dataclass
@@ -64,9 +67,6 @@ class PosixOs(ABC):
         rootfs_path: As the root directory of the mapping file system.
     """
 
-    # Experimental support for socket
-    FEATURE_SOCKET_ENABLED = False
-
     FD_START_VALUE = 1
     FD_MAX_NUM = 10000
 
@@ -74,11 +74,13 @@ class PosixOs(ABC):
 
     AF_UNIX = 1
     AF_INET = 2
+    AF_INET6 = 30
 
     SOCK_STREAM = 1
 
     IPPROTO_IP = 0
     IPPROTO_ICMP = 1
+    IPPROTO_TCP = 6
 
     F_GETFL = 3
     F_GETPATH = 50
@@ -186,14 +188,15 @@ class PosixOs(ABC):
         elif path == "..":
             path = Path(self._working_dir).parent.as_posix()
 
-        path = self._resolve_link(path)
+        path = posixpath.abspath(path)
+        resolved_path = self._resolve_link(path)
 
-        if not path.startswith("/"):
-            relative_path = os.path.join(self._working_dir, path)
+        if not resolved_path.startswith("/"):
+            absolute_path = os.path.join(self._working_dir, resolved_path)
         else:
-            relative_path = path
+            absolute_path = resolved_path
 
-        return relative_path
+        return absolute_path
 
     def _get_real_path(self, path: str) -> str:
         """Mapping a path used by emulated programs to a real path.
@@ -342,34 +345,9 @@ class PosixOs(ABC):
             raise SystemOperationFailed(f"Bad socket: {sock}", SyscallError.EBADF)
 
     @staticmethod
+    @abc.abstractmethod
     def _resolve_flags(flags: int) -> int:
-        """Create flags that will be actually passed into the host machine.
-
-        On Windows, the meaning of flags is different with Unix-like operating systems.
-        """
-        _flags = 0
-
-        access_mode = flags & 3
-        if access_mode == 0:
-            _flags |= os.O_RDONLY
-        elif access_mode == 1:
-            _flags |= os.O_WRONLY
-        elif access_mode == 2:
-            _flags |= os.O_RDWR
-
-        if flags & 0x8:
-            _flags |= os.O_APPEND
-        if flags & 0x200:
-            _flags |= os.O_CREAT
-        if flags & 0x400:
-            _flags |= os.O_TRUNC
-        if flags & 0x800:
-            _flags |= os.O_EXCL
-
-        if sys.platform == "win32":
-            _flags |= os.O_BINARY
-
-        return _flags
+        pass
 
     def _resolve_dir_fd(self, dir_fd: int, path: str) -> str:
         """Returns the full path constructed by combining with `dir_fd`."""
@@ -430,15 +408,23 @@ class PosixOs(ABC):
         for prop in self._file_properties:
             if path == prop.path:
                 return prop
+
+        # Recursively get parent directory properties
+        if path != "/":
+            dir_path = posixpath.dirname(path)
+            return self._get_file_property(dir_path)
+
         return None
 
     def add_file_property(self, prop: FileProperty):
         self._file_properties.append(prop)
 
     def _check_dir_writeable(self, path: str):
-        dir_path = posixpath.dirname(path)
+        absolute_path = self._get_absolute_path(path)
+        dir_path = posixpath.dirname(absolute_path)
+
         file_prop = self._get_file_property(dir_path)
-        if file_prop and file_prop.is_dir and not file_prop.writeable:
+        if not file_prop or not file_prop.is_dir or not file_prop.writeable:
             self.raise_permission_denied()
 
     @abc.abstractmethod
@@ -474,7 +460,7 @@ class PosixOs(ABC):
             )
 
         # Check file creation permissions
-        if flags | os.O_CREAT:
+        if flags & os.O_CREAT:
             self._check_dir_writeable(path)
 
         real_fd = os.open(real_path, flags, mode)
@@ -494,7 +480,10 @@ class PosixOs(ABC):
 
         if self._is_file_fd(fd):
             real_fd = self._get_fd_real_fd(fd)
-            os.close(real_fd)
+            try:
+                os.close(real_fd)
+            except OSError:
+                pass
 
         self._file_manager.free(fd)
 
@@ -508,14 +497,14 @@ class PosixOs(ABC):
 
         self.set_symbolic_link(src_path, dst_path)
 
-    @staticmethod
-    def _unlink(path: str):
+    def _unlink(self, path: str):
         exist = os.path.exists(path)
         if not exist:
             raise SystemOperationFailed(f"No such file: {path}", SyscallError.ENOENT)
-        raise SystemOperationFailed(
-            f"Banned file deletion: {path}", SyscallError.EACCES
-        )
+
+        self._check_dir_writeable(path)
+
+        os.remove(path)
 
     def _readlink(self, path: str) -> Optional[str]:
         return self._symbolic_links.get(path)
@@ -531,13 +520,21 @@ class PosixOs(ABC):
     def _rename(self, old: str, new: str):
         self._check_dir_writeable(new)
 
-        old = self._get_real_path(old)
-        new = self._get_real_path(new)
+        real_old = self._get_real_path(old)
+        real_new = self._get_real_path(new)
+
+        # On Windows, a file cannot be deleted before its file descriptor is closed.
+        if sys.platform == "win32":
+            for fd in self._file_manager.iter_handles():
+                path = self._file_manager.get_prop(fd, "path")
+                if path and path == self._get_absolute_path(old):
+                    real_fd = self._get_fd_real_fd(fd)
+                    os.close(real_fd)
 
         try:
-            os.rename(old, new)
+            os.rename(real_old, real_new)
         except PermissionError:
-            shutil.copy(old, new)
+            shutil.copy(real_old, real_new)
 
     def _mkdir(self, path: str, mode: int):
         self._check_dir_writeable(path)
@@ -770,9 +767,9 @@ class PosixOs(ABC):
                 f"No such directory: {real_path}", SyscallError.ENOENT
             )
 
-        raise SystemOperationFailed(
-            f"Banned directory deletion: {path}", SyscallError.EACCES
-        )
+        self._check_dir_writeable(path)
+
+        os.rmdir(real_path)
 
     @log_call
     def pread(self, fd: int, size: int, offset: int) -> bytes:
@@ -866,11 +863,12 @@ class PosixOs(ABC):
 
     @log_call
     def socket(self, domain: int, sock_type: int, protocol: int) -> int:
-        if not self.FEATURE_SOCKET_ENABLED:
+        if not Feature.SOCKET_ENABLED:
             self.raise_permission_denied()
 
         domain_map = {
             self.AF_INET: socket.AF_INET,
+            self.AF_INET6: socket.AF_INET6,
         }
 
         type_map = {
@@ -880,6 +878,7 @@ class PosixOs(ABC):
         protocol_map = {
             self.IPPROTO_IP: socket.IPPROTO_IP,
             self.IPPROTO_ICMP: socket.IPPROTO_ICMP,
+            self.IPPROTO_TCP: socket.IPPROTO_TCP,
         }
 
         # Unix sockets
@@ -901,9 +900,27 @@ class PosixOs(ABC):
 
         return self._new_fd(FdType.SOCK, sock=sock)
 
+    def _read_inet_host(self, address: int) -> Tuple[str, int]:
+        port_n = self.emu.read_u16(address + 2)
+        host_bytes = self.emu.read_bytes(address + 4, 4)
+
+        port = socket.ntohs(port_n)
+        host = socket.inet_ntoa(host_bytes)
+
+        return host, port
+
+    def _read_inet64_host(self, address: int) -> Tuple[str, int]:
+        port_n = self.emu.read_u16(address + 2)
+        host_bytes = self.emu.read_bytes(address + 8, 16)
+
+        port = socket.ntohs(port_n)
+        host = socket.inet_ntop(socket.AF_INET6, host_bytes)
+
+        return host, port
+
     @log_call
     def connect(self, sock: int, address: int, address_len: int) -> int:
-        if not self.FEATURE_SOCKET_ENABLED:
+        if not Feature.SOCKET_ENABLED:
             self.raise_permission_denied()
 
         self._check_sock(sock)
@@ -915,34 +932,65 @@ class PosixOs(ABC):
                 self._file_manager.set_prop(sock, "family", family)
                 self._file_manager.set_prop(sock, "path", path)
                 return 0
-        elif family == self.AF_INET:
+        elif family in (self.AF_INET, self.AF_INET6):
             self._file_manager.set_prop(sock, "family", family)
 
-            port = self.emu.read_u16(address + 2)
-            host_bytes = self.emu.read_bytes(address + 4, 4)
-
-            port = socket.ntohs(port)
-            host = socket.inet_ntoa(host_bytes)
+            if family == self.AF_INET6:
+                host, port = self._read_inet64_host(address)
+            else:
+                host, port = self._read_inet_host(address)
 
             self.logger.info(
                 f"Establishing socket connection: host={host}, port={port}"
             )
+
             real_sock = self._get_fd_sock(sock)
             real_sock.connect((host, port))
 
             return 0
         else:
             self.logger.warning("Unsupported protocol family: %s", family)
-            return -1
 
         return -1
 
     @log_call
-    def bind(self, sock: int, address: int, address_len: int):
-        if not self.FEATURE_SOCKET_ENABLED:
+    def bind(self, sock: int, address: int, address_len: int) -> int:
+        if not Feature.SOCKET_ENABLED:
             self.raise_permission_denied()
 
+        self._check_sock(sock)
+
+        family = self.emu.read_u8(address + 1)
+        if family in (self.AF_INET, self.AF_INET6):
+            self._file_manager.set_prop(sock, "family", family)
+
+            if family == self.AF_INET6:
+                host, port = self._read_inet64_host(address)
+            else:
+                host, port = self._read_inet_host(address)
+
+            self.logger.info(f"Bind socket to: host={host}, port={port}")
+
+            real_sock = self._get_fd_sock(sock)
+            real_sock.bind((host, port))
+
+            return 0
+        else:
+            self.logger.warning("Unsupported protocol family: %s", family)
+
         return -1
+
+    @log_call
+    def listen(self, sock: int, backlog: int) -> int:
+        if not Feature.SOCKET_ENABLED:
+            self.raise_permission_denied()
+
+        self._check_sock(sock)
+
+        real_sock = self._get_fd_sock(sock)
+        real_sock.listen(backlog)
+
+        return 0
 
     @log_call
     def socketpair(
@@ -951,7 +999,7 @@ class PosixOs(ABC):
         sock_type: int,
         protocol: int,
     ) -> Optional[Tuple[int, int]]:
-        if not self.FEATURE_SOCKET_ENABLED:
+        if not Feature.SOCKET_ENABLED:
             return None
 
         read_fd = self._new_fd(FdType.SOCK)
@@ -994,21 +1042,24 @@ class PosixOs(ABC):
         dest_addr: int,
         dest_len: int,
     ) -> int:
-        if not self.FEATURE_SOCKET_ENABLED:
+        if not Feature.SOCKET_ENABLED:
             self.raise_permission_denied()
 
         self._check_sock(sock)
 
-        real_sock = self._get_fd_sock(sock)
         data = self.emu.read_bytes(buffer, length)
 
+        if self._get_fd_family(sock) == self.AF_UNIX:
+            return len(data)
+
+        real_sock = self._get_fd_sock(sock)
         real_sock.send(data)
 
         return len(data)
 
     @log_call
     def sendmsg(self, sock: int, buffer: int, flags: int) -> int:
-        if not self.FEATURE_SOCKET_ENABLED:
+        if not Feature.SOCKET_ENABLED:
             self.raise_permission_denied()
 
         msg_iov = self.emu.read_pointer(buffer + 16)
@@ -1037,14 +1088,17 @@ class PosixOs(ABC):
         address: int,
         address_len: int,
     ) -> int:
-        if not self.FEATURE_SOCKET_ENABLED:
+        if not Feature.SOCKET_ENABLED:
             self.raise_permission_denied()
 
         self._check_sock(sock)
 
-        real_sock = self._get_fd_sock(sock)
+        if self._get_fd_family(sock) == self.AF_UNIX:
+            return 0
 
+        real_sock = self._get_fd_sock(sock)
         recv_bytes = real_sock.recv(length)
+
         self.emu.write_bytes(buffer, recv_bytes)
 
         return len(recv_bytes)
@@ -1068,7 +1122,7 @@ class PosixOs(ABC):
         errorfds: int,
         timeout: int,
     ) -> int:
-        if not self.FEATURE_SOCKET_ENABLED:
+        if not Feature.SOCKET_ENABLED:
             self.raise_permission_denied()
 
         count = 0
@@ -1086,13 +1140,13 @@ class PosixOs(ABC):
 
         return count
 
-    @staticmethod
-    def _construct_sockaddr_in(address: str, port: int) -> bytes:
-        raise NotImplementedError("construct_sockaddr_in")
+    @abc.abstractmethod
+    def _construct_sockaddr_in(self, address: str, port: int) -> bytes:
+        pass
 
     @log_call
     def getpeername(self, sock: int) -> bytes:
-        if not self.FEATURE_SOCKET_ENABLED:
+        if not Feature.SOCKET_ENABLED:
             self.raise_permission_denied()
 
         self._check_sock(sock)
@@ -1104,7 +1158,7 @@ class PosixOs(ABC):
 
     @log_call
     def getsockname(self, sock: int) -> bytes:
-        if not self.FEATURE_SOCKET_ENABLED:
+        if not Feature.SOCKET_ENABLED:
             self.raise_permission_denied()
 
         self._check_sock(sock)

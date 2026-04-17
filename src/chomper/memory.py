@@ -1,8 +1,13 @@
-from typing import List
+from __future__ import annotations
+
+from typing import List, TYPE_CHECKING
 
 from unicorn import Uc
 
 from .utils import aligned
+
+if TYPE_CHECKING:
+    from chomper.core import Chomper
 
 
 class MemoryPool:
@@ -149,3 +154,35 @@ class MemoryManager:
             if pool.address <= address < pool.address + pool.size:
                 index = (address - pool.address) // pool.block_size
                 pool.blocks[index] = 0
+
+
+class MemoryScope:
+    """Track memory allocations and release on exit."""
+
+    def __init__(self, emu: Chomper):
+        self.emu = emu
+
+        # Tracking memory
+        self._tracks: List[int] = []
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        for address in self._tracks:
+            self.emu.free(address)
+
+        return False
+
+    def _add_track(self, address: int):
+        self._tracks.append(address)
+
+    def create_buffer(self, size: int) -> int:
+        address = self.emu.create_buffer(size)
+        self._add_track(address)
+        return address
+
+    def create_string(self, string: str) -> int:
+        address = self.emu.create_string(string)
+        self._add_track(address)
+        return address

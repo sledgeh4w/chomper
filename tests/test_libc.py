@@ -48,9 +48,9 @@ def test_memcpy(request, emu_name):
 
     s = "Mocha"
 
-    with emu.mem_context() as ctx:
-        v1 = ctx.create_buffer(16)
-        v2 = ctx.create_string(s)
+    with emu.memory_scope() as mem:
+        v1 = mem.create_buffer(16)
+        v2 = mem.create_string(s)
 
         call_symbol(emu, "memcpy", v1, v2, len(s) + 1)
         result = emu.read_string(v1)
@@ -63,10 +63,10 @@ def test_memcmp(request, emu_name):
 
     s = "Mocha"
 
-    with emu.mem_context() as ctx:
-        v1 = ctx.create_string(s)
-        v2 = ctx.create_string(s)
-        v3 = ctx.create_string(s[::-1])
+    with emu.memory_scope() as mem:
+        v1 = mem.create_string(s)
+        v2 = mem.create_string(s)
+        v3 = mem.create_string(s[::-1])
 
         result = call_symbol(emu, "memcmp", v1, v2, len(s))
         assert result == 0
@@ -82,8 +82,8 @@ def test_memset(request, emu_name):
     s = "Mocha"
     n = len(s)
 
-    with emu.mem_context() as ctx:
-        v1 = ctx.create_string(s)
+    with emu.memory_scope() as mem:
+        v1 = mem.create_string(s)
 
         call_symbol(emu, "memset", v1, 0, n)
         result = emu.read_bytes(v1, n)
@@ -97,10 +97,10 @@ def test_strncpy(request, emu_name):
     s = "Mocha"
     n = 3
 
-    with emu.mem_context() as ctx:
-        v1 = ctx.create_buffer(16)
+    with emu.memory_scope() as mem:
+        v1 = mem.create_buffer(16)
         emu.write_bytes(v1, bytes(16))
-        v2 = ctx.create_string(s)
+        v2 = mem.create_string(s)
 
         call_symbol(emu, "strncpy", v1, v2, n)
         result = emu.read_string(v1)
@@ -113,9 +113,9 @@ def test_strncmp(request, emu_name):
 
     s = "Mocha"
 
-    with emu.mem_context() as ctx:
-        v1 = ctx.create_string(s)
-        v2 = ctx.create_string(s[:-1] + "0")
+    with emu.memory_scope() as mem:
+        v1 = mem.create_string(s)
+        v2 = mem.create_string(s[:-1] + "0")
 
         result = call_symbol(emu, "strncmp", v1, v2, len(s) - 1)
         assert result == 0
@@ -131,9 +131,9 @@ def test_strncat(request, emu_name):
     s = "Mocha"
     n = 3
 
-    with emu.mem_context() as ctx:
-        v1 = ctx.create_buffer(32)
-        v2 = ctx.create_string(s)
+    with emu.memory_scope() as mem:
+        v1 = mem.create_buffer(32)
+        v2 = mem.create_string(s)
 
         emu.write_string(v1, s)
 
@@ -148,9 +148,9 @@ def test_strcpy(request, emu_name):
 
     s = "Mocha"
 
-    with emu.mem_context() as ctx:
-        v1 = ctx.create_buffer(16)
-        v2 = ctx.create_string(s)
+    with emu.memory_scope() as mem:
+        v1 = mem.create_buffer(16)
+        v2 = mem.create_string(s)
 
         call_symbol(emu, "strcpy", v1, v2)
         result = emu.read_string(v1)
@@ -163,10 +163,10 @@ def test_strcmp(request, emu_name):
 
     s = "Mocha"
 
-    with emu.mem_context() as ctx:
-        v1 = ctx.create_string(s)
-        v2 = ctx.create_string(s)
-        v3 = ctx.create_string(s + "0")
+    with emu.memory_scope() as mem:
+        v1 = mem.create_string(s)
+        v2 = mem.create_string(s)
+        v3 = mem.create_string(s + "0")
 
         result = call_symbol(emu, "strcmp", v1, v2)
         assert result == 0
@@ -181,9 +181,9 @@ def test_strcat(request, emu_name):
 
     s = "Mocha"
 
-    with emu.mem_context() as ctx:
-        v1 = ctx.create_buffer(32)
-        v2 = ctx.create_string(s)
+    with emu.memory_scope() as mem:
+        v1 = mem.create_buffer(32)
+        v2 = mem.create_string(s)
 
         emu.write_string(v1, s)
 
@@ -198,8 +198,8 @@ def test_strlen(request, emu_name):
 
     s = "Mocha"
 
-    with emu.mem_context() as ctx:
-        v1 = ctx.create_string(s)
+    with emu.memory_scope() as mem:
+        v1 = mem.create_string(s)
 
         result = call_symbol(emu, "strlen", v1)
         assert result == len(s)
@@ -212,11 +212,11 @@ def test_sprintf(request, emu_name):
     s = "Mocha"
     fmt = "%d%s"
 
-    with emu.mem_context() as ctx:
-        v1 = ctx.create_buffer(16)
-        v2 = ctx.create_string(fmt)
+    with emu.memory_scope() as mem:
+        v1 = mem.create_buffer(16)
+        v2 = mem.create_string(fmt)
         v3 = len(s)
-        v4 = ctx.create_string(s)
+        v4 = mem.create_string(s)
 
         if emu.os_type == OS_IOS:
             call_symbol(emu, "sprintf", v1, v2, va_list=(v3, v4))
@@ -235,11 +235,11 @@ def test_sscanf(request, emu_name):
     n = len(s)
     fmt = "%d%s"
 
-    with emu.mem_context() as ctx:
-        v1 = ctx.create_string(f"{n}{s}")
-        v2 = ctx.create_string(fmt)
-        v3 = ctx.create_buffer(4)
-        v4 = ctx.create_buffer(64)
+    with emu.memory_scope() as mem:
+        v1 = mem.create_string(f"{n}{s}")
+        v2 = mem.create_string(fmt)
+        v3 = mem.create_buffer(4)
+        v4 = mem.create_buffer(64)
 
         call_symbol(emu, "sscanf", v1, v2, va_list=(v3, v4))
 
@@ -257,10 +257,10 @@ def test_printf(request, emu_name):
     s = "Mocha"
     fmt = "%d%s"
 
-    with emu.mem_context() as ctx:
-        v1 = ctx.create_string(fmt)
+    with emu.memory_scope() as mem:
+        v1 = mem.create_string(fmt)
         v2 = len(s)
-        v3 = ctx.create_string(s)
+        v3 = mem.create_string(s)
 
         call_symbol(emu, "printf", v1, v2, v3)
 
@@ -279,8 +279,8 @@ def test_getcwd(request, emu_name):
 
     size = 1024
 
-    with emu.mem_context() as ctx:
-        buf = ctx.create_buffer(size)
+    with emu.memory_scope() as mem:
+        buf = mem.create_buffer(size)
 
         result = call_symbol(emu, "getcwd", buf, size)
         result_str = emu.read_string(result)
@@ -315,11 +315,11 @@ def test_arc4random(request, emu_name):
 def test_localtime_r(request, emu_name):
     emu = request.getfixturevalue(emu_name)
 
-    with emu.mem_context() as ctx:
-        clock = ctx.create_buffer(8)
+    with emu.memory_scope() as mem:
+        clock = mem.create_buffer(8)
         emu.write_u64(clock, int(time.time()))
 
-        result = ctx.create_buffer(100)
+        result = mem.create_buffer(100)
 
         result = call_symbol(emu, "localtime_r", clock, result)
         assert result
@@ -339,8 +339,8 @@ def test_nanosleep(request, emu_name):
 
     duration = Timespec.from_time_ns(0)
 
-    with emu.mem_context() as ctx:
-        duration_buf = ctx.create_buffer(sizeof(Timespec))
+    with emu.memory_scope() as mem:
+        duration_buf = mem.create_buffer(sizeof(Timespec))
         emu.write_bytes(duration_buf, struct_to_bytes(duration))
 
         result = call_symbol(emu, "nanosleep", duration_buf, 0)
@@ -369,8 +369,8 @@ def test_gethostname(request, emu_name):
 
     buf_len = 256
 
-    with emu.mem_context() as ctx:
-        buf = ctx.create_buffer(buf_len)
+    with emu.memory_scope() as mem:
+        buf = mem.create_buffer(buf_len)
 
         result = call_symbol(emu, "gethostname", buf, buf_len)
         assert result == 0
@@ -380,8 +380,8 @@ def test_gethostname(request, emu_name):
 def test_getmntinfo(request, emu_name):
     emu = request.getfixturevalue(emu_name)
 
-    with emu.mem_context() as ctx:
-        buf = ctx.create_buffer(9)
+    with emu.memory_scope() as mem:
+        buf = mem.create_buffer(9)
 
         result = call_symbol(emu, "getmntinfo", buf, 0)
         assert result == 0
@@ -399,9 +399,9 @@ def test_read(request, emu_name):
     with open(real_path, "w") as f:
         f.write(s)
 
-    with emu.mem_context() as ctx:
-        path = ctx.create_string(filepath)
-        buf = ctx.create_buffer(100)
+    with emu.memory_scope() as mem:
+        path = mem.create_string(filepath)
+        buf = mem.create_buffer(100)
 
         fd = call_symbol(emu, "open", path, 0)
         assert fd
@@ -423,9 +423,9 @@ def test_write(request, emu_name):
 
     real_path = f"{emu.os.rootfs_path}/{filepath[1:]}"
 
-    with emu.mem_context() as ctx:
-        path = ctx.create_string(filepath)
-        buf = ctx.create_string(s)
+    with emu.memory_scope() as mem:
+        path = mem.create_string(filepath)
+        buf = mem.create_string(s)
 
         if emu.os_type == OS_IOS:
             fd = call_symbol(emu, "open", path, 0x601, va_list=(0o666,))
@@ -457,8 +457,8 @@ def test_readdir(request, emu_name):
 
     filenames = os.listdir(real_path)
 
-    with emu.mem_context() as ctx:
-        path = ctx.create_string(dir_path)
+    with emu.memory_scope() as mem:
+        path = mem.create_string(dir_path)
 
         dirp = call_symbol(emu, "opendir", path)
 
@@ -484,8 +484,8 @@ def test_mkdir(request, emu_name):
     dir_path = "/private/var/tmp/test_mkdir"
     real_path = os.path.join(emu.os.rootfs_path, dir_path[1:])
 
-    with emu.mem_context() as ctx:
-        path = ctx.create_string(dir_path)
+    with emu.memory_scope() as mem:
+        path = mem.create_string(dir_path)
 
         call_symbol(emu, "mkdir", path, 0o755)
 
@@ -500,8 +500,8 @@ def test_access(request, emu_name):
 
     dir_path = "/private/var/tmp"
 
-    with emu.mem_context() as ctx:
-        path = ctx.create_string(dir_path)
+    with emu.memory_scope() as mem:
+        path = mem.create_string(dir_path)
 
         result = call_symbol(emu, "access", path, 0x4)
         assert result == 0
@@ -545,8 +545,8 @@ def test_getenv(request, emu_name):
 
     name = "HOME"
 
-    with emu.mem_context() as ctx:
-        v1 = ctx.create_string(name)
+    with emu.memory_scope() as mem:
+        v1 = mem.create_string(name)
 
         call_symbol(emu, "getenv", v1)
 
@@ -561,11 +561,11 @@ def test_link(request, emu_name):
     dst = "libobjc.A.dylib.1"
     dst2 = "libobjc.A.dylib.2"
 
-    with emu.mem_context() as ctx:
-        work_dir_str = ctx.create_string(work_dir)
-        src_str = ctx.create_string(src)
-        dst_str = ctx.create_string(dst)
-        dst2_str = ctx.create_string(dst2)
+    with emu.memory_scope() as mem:
+        work_dir_str = mem.create_string(work_dir)
+        src_str = mem.create_string(src)
+        dst_str = mem.create_string(dst)
+        dst2_str = mem.create_string(dst2)
 
         call_symbol(emu, "chdir", work_dir_str)
 
@@ -600,8 +600,8 @@ def test_getprogname(request, emu_name):
 def test_uname(request, emu_name):
     emu = request.getfixturevalue(emu_name)
 
-    with emu.mem_context() as ctx:
-        utsname_buf = ctx.create_buffer(sizeof(Utsname))
+    with emu.memory_scope() as mem:
+        utsname_buf = mem.create_buffer(sizeof(Utsname))
 
         result = call_symbol(emu, "uname", utsname_buf)
         assert result == 0
@@ -628,9 +628,9 @@ def test_tmpfile(request, emu_name):
 def test_pthread_mutex(request, emu_name):
     emu = request.getfixturevalue(emu_name)
 
-    with emu.mem_context() as ctx:
-        mutex = ctx.create_buffer(64)
-        lock_attr = ctx.create_buffer(64)
+    with emu.memory_scope() as mem:
+        mutex = mem.create_buffer(64)
+        lock_attr = mem.create_buffer(64)
 
         result = call_symbol(emu, "pthread_mutexattr_init", lock_attr)
         assert result == 0

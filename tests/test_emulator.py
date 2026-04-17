@@ -52,8 +52,8 @@ def test_free(emu_arm64):
 def test_read_and_write_int(emu_arm64):
     value = 105
 
-    with emu_arm64.mem_context() as ctx:
-        buf = ctx.create_buffer(1024)
+    with emu_arm64.memory_scope() as mem:
+        buf = mem.create_buffer(1024)
         emu_arm64.write_int(buf, value, size=4)
 
         result = emu_arm64.read_int(buf, size=4)
@@ -63,8 +63,8 @@ def test_read_and_write_int(emu_arm64):
 def test_read_and_write_bytes(emu_arm64):
     sample_bytes = b"Mocha"
 
-    with emu_arm64.mem_context() as ctx:
-        buf = ctx.create_buffer(1024)
+    with emu_arm64.memory_scope() as mem:
+        buf = mem.create_buffer(1024)
         emu_arm64.write_bytes(buf, sample_bytes)
 
         result = emu_arm64.read_bytes(buf, len(sample_bytes))
@@ -74,8 +74,8 @@ def test_read_and_write_bytes(emu_arm64):
 def test_read_and_write_string(emu_arm64):
     sample_str = "Mocha"
 
-    with emu_arm64.mem_context() as ctx:
-        buf = ctx.create_buffer(1024)
+    with emu_arm64.memory_scope() as mem:
+        buf = mem.create_buffer(1024)
         emu_arm64.write_string(buf, sample_str)
 
         result = emu_arm64.read_string(buf)

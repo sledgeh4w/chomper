@@ -8,20 +8,22 @@ import string
 import sys
 import time
 import uuid
+from contextlib import contextmanager
 from typing import List, Optional
 
 from chomper.const import STACK_ADDRESS, STACK_SIZE, TLS_ADDRESS
 from chomper.exceptions import EmulatorCrashed, SystemOperationFailed
+from chomper.feature import Feature
 from chomper.loader import MachoLoader, Module
 from chomper.os.device import NullDevice, RandomDevice, UrandomDevice
-from chomper.os.posix import FileProperty, PosixOs, SyscallError
+from chomper.os.posix import FileProperty, FdType, PosixOs, SyscallError
 from chomper.os.handle import HandleManager
-from chomper.utils import log_call, struct_to_bytes, to_unsigned
+from chomper.utils import log_call, struct_to_bytes, to_unsigned, read_struct
 
 from .fixup import SystemModuleFixer
 from .hooks import get_hooks
 from .mach import MachMsgHandler
-from .structs import Dirent, Stat64, Statfs64, Timespec, SockaddrIn
+from .structs import Dirent, Stat64, Statfs64, Timespec, SockaddrIn, Kevent
 from .syscall import IosSyscallHandler
 from .xpc import XpcMessageHandler
 
@@ -53,6 +55,7 @@ SYSTEM_MODULES = [
     "/usr/lib/system/libsystem_platform.dylib",
     "/usr/lib/system/libsystem_c.dylib",
     "/usr/lib/system/libsystem_featureflags.dylib",
+    "/usr/lib/system/libsystem_malloc.dylib",
     "/usr/lib/system/libsystem_pthread.dylib",
     "/usr/lib/libc++abi.dylib",
     "/usr/lib/libc++.1.dylib",
@@ -163,15 +166,12 @@ DEVICES_FILES = {
 FILE_PROPERTIES = [
     # path, is_dir, readable, writeable, executable
     ("/", True, True, False, False),
-    ("/private", True, True, False, False),
+    ("/private/var/tmp", True, True, True, False),
 ]
 
 
 class IosOs(PosixOs):
     """Provide iOS environment."""
-
-    # Experimental support for Swift
-    FEATURE_SWIFT_ENABLED = False
 
     AT_FDCWD = to_unsigned(-2, size=4)
 
@@ -214,7 +214,7 @@ class IosOs(PosixOs):
         self._uid = 501
 
         self._pid = random.randint(1000, 2000)
-        self._tid = random.randint(10000, 20000)
+        self._tid = random.randint(10000, 20000) | 1
 
         self._boot_hash = self._random_boot_hash()
 
@@ -270,6 +270,36 @@ class IosOs(PosixOs):
         return "".join(
             [random.choice(string.digits + string.ascii_uppercase) for _ in range(40)]
         )
+
+    @staticmethod
+    def _resolve_flags(flags: int) -> int:
+        """Create flags that will be actually passed into the host machine.
+
+        On Windows, the meaning of flags is different with Unix-like operating systems.
+        """
+        _flags = 0
+
+        access_mode = flags & 3
+        if access_mode == 0:
+            _flags |= os.O_RDONLY
+        elif access_mode == 1:
+            _flags |= os.O_WRONLY
+        elif access_mode == 2:
+            _flags |= os.O_RDWR
+
+        if flags & 0x8:
+            _flags |= os.O_APPEND
+        if flags & 0x200:
+            _flags |= os.O_CREAT
+        if flags & 0x400:
+            _flags |= os.O_TRUNC
+        if flags & 0x800:
+            _flags |= os.O_EXCL
+
+        if sys.platform == "win32":
+            _flags |= os.O_BINARY
+
+        return _flags
 
     def _construct_stat(self, st: os.stat_result) -> bytes:
         if sys.platform == "win32":
@@ -356,11 +386,10 @@ class IosOs(PosixOs):
         )
         return struct_to_bytes(st)
 
-    @classmethod
-    def _construct_sockaddr_in(cls, address: str, port: int) -> bytes:
+    def _construct_sockaddr_in(self, address: str, port: int) -> bytes:
         sa = SockaddrIn(
             sin_len=ctypes.sizeof(SockaddrIn),
-            sin_family=cls.AF_INET,
+            sin_family=self.AF_INET,
             sin_port=socket.htons(port),
             sin_addr=int.from_bytes(socket.inet_aton(address), "little"),
         )
@@ -380,6 +409,15 @@ class IosOs(PosixOs):
 
     def gettid(self) -> int:
         return self._tid
+
+    def _check_kqueue(self, kq: int):
+        """Check kqueue."""
+        self._check_fd(kq)
+
+        fd_type = self._file_manager.get_prop(kq, "type")
+
+        if fd_type != FdType.KQUEUE:
+            raise SystemOperationFailed(f"Bad kqueue: {kq}", SyscallError.EBADF)
 
     @log_call
     def getdirentries(self, fd: int, offset: int) -> Optional[bytes]:
@@ -407,7 +445,11 @@ class IosOs(PosixOs):
 
     @log_call
     def clonefileat(
-        self, src_dir_fd: int, src_path: str, dst_dir_fd: int, dst_path: str
+        self,
+        src_dir_fd: int,
+        src_path: str,
+        dst_dir_fd: int,
+        dst_path: str,
     ):
         src_path = self._resolve_dir_fd(src_dir_fd, src_path)
         dst_path = self._resolve_dir_fd(dst_dir_fd, dst_path)
@@ -417,16 +459,49 @@ class IosOs(PosixOs):
 
         shutil.copy2(real_src_path, real_dst_path)
 
+    @log_call
+    def kqueue(self) -> int:
+        return self._new_fd(FdType.KQUEUE)
+
+    @log_call
+    def kevent(
+        self,
+        kq: int,
+        change_ptr: int,
+        n_changes: int,
+        event_ptr: int,
+        n_event: int,
+        timeout: int,
+    ) -> int:
+        self._check_kqueue(kq)
+
+        change_list = []
+        event_list = []
+
+        if n_changes and change_ptr:
+            for _ in range(n_changes):
+                event = read_struct(self.emu, change_ptr, Kevent)
+                change_list.append(event)
+                change_ptr += ctypes.sizeof(Kevent)
+
+        if n_event and event_ptr:
+            for _ in range(n_event):
+                event = read_struct(self.emu, event_ptr, Kevent)
+                event_list.append(event)
+                event_ptr += ctypes.sizeof(Kevent)
+
+        return -1
+
     def _setup_tls(self):
         """Initialize thread local storage (TLS)."""
         errno_ptr = self.emu.create_buffer(0x8)
 
-        self.emu.write_pointer(TLS_ADDRESS - 0xE0, TLS_ADDRESS - 0xE0)
+        self.emu.write_pointer(TLS_ADDRESS + 0x8, errno_ptr)
+        self.emu.write_u32(TLS_ADDRESS + 0x18, self.gettid())
 
         self.emu.write_u64(TLS_ADDRESS - 0x8, self.gettid())
 
-        self.emu.write_pointer(TLS_ADDRESS + 0x8, errno_ptr)
-        self.emu.write_u32(TLS_ADDRESS + 0x18, 5)
+        self.emu.write_pointer(TLS_ADDRESS - 0xE0, TLS_ADDRESS - 0xE0)
 
     def _setup_system_registers(self):
         """Initialize MMIO for system registers."""
@@ -508,8 +583,14 @@ class IosOs(PosixOs):
         nx_argc_pointer = self.emu.get_symbol("_NXArgc_pointer")
         self.emu.write_pointer(nx_argc_pointer.address, argc)
 
+        argv_val = self.emu.create_buffer(8)
+        self.emu.write_string(argv_val, "")
+
+        argv = self.emu.create_buffer(8)
+        self.emu.write_pointer(argv, argv_val)
+
         nx_argv_pointer = self.emu.get_symbol("_NXArgv_pointer")
-        self.emu.write_pointer(nx_argv_pointer.address, self.emu.create_string(""))
+        self.emu.write_pointer(nx_argv_pointer.address, argv)
 
         environ = self.emu.create_buffer(8)
         self.emu.write_pointer(environ, self._create_environ(ENVIRON_VARIABLES))
@@ -555,6 +636,25 @@ class IosOs(PosixOs):
 
         mach_task_self = self.emu.get_symbol("_mach_task_self_")
         self.emu.write_u32(mach_task_self.address, self.MACH_PORT_TASK)
+
+    def _init_lib_system_malloc(self):
+        functions_ptr = self.emu.create_buffer(8 * 13)
+
+        system_malloc = self.emu.find_module("libsystem_malloc.dylib")
+
+        for symbol in system_malloc.symbols:
+            if symbol.name == "_malloc":
+                self.emu.write_pointer(functions_ptr + 8 * 2, symbol.address)
+            elif symbol.name == "_free":
+                self.emu.write_pointer(functions_ptr + 8 * 3, symbol.address)
+            elif symbol.name == "_realloc":
+                self.emu.write_pointer(functions_ptr + 8 * 4, symbol.address)
+
+        libkernel_functions = self.emu.get_symbol("__libkernel_functions")
+        self.emu.write_pointer(libkernel_functions.address, functions_ptr)
+
+        malloc_engaged_nano = self.emu.get_symbol("__malloc_engaged_nano")
+        self.emu.write_u32(malloc_engaged_nano.address, 1)
 
     def _init_lib_objc(self):
         prototypes = self.emu.get_symbol("__ZL10prototypes")
@@ -612,6 +712,8 @@ class IosOs(PosixOs):
             self._init_lib_dyld()
         elif name == "libsystem_pthread.dylib":
             self._init_lib_system_pthread()
+        elif name == "libsystem_malloc.dylib":
+            self._init_lib_system_malloc()
         elif name == "libsystem_trace.dylib":
             self.emu.call_symbol("__libtrace_init")
         elif name == "libobjc.A.dylib":
@@ -743,6 +845,16 @@ class IosOs(PosixOs):
         self.forward_path(container_path, local_container_path)
         self.forward_path(bundle_path, local_bundle_path)
 
+        # Setting bundle dir permissions
+        file_prop = FileProperty(
+            path=bundle_path,
+            is_dir=True,
+            readable=True,
+            writeable=True,
+            executable=True,
+        )
+        self.add_file_property(file_prop)
+
     def set_executable_file(self, path: str):
         """Set program path and name to global variables while forwarding
         the file access to executable.
@@ -796,6 +908,16 @@ class IosOs(PosixOs):
             dst_path=info_path,
         )
 
+        # Setting bundle dir permissions
+        file_prop = FileProperty(
+            path=bundle_path,
+            is_dir=True,
+            readable=True,
+            writeable=True,
+            executable=True,
+        )
+        self.add_file_property(file_prop)
+
     def get_executable_file(self) -> str:
         return self.executable_file
 
@@ -810,8 +932,8 @@ class IosOs(PosixOs):
         Returns:
             File object pointer.
         """
-        with self.emu.mem_context() as ctx:
-            mode_ptr = ctx.create_string(mode)
+        with self.emu.memory_scope() as mem:
+            mode_ptr = mem.create_string(mode)
 
             fp = self.emu.call_symbol("_fdopen", fd, mode_ptr)
             flags = self.emu.read_u32(fp + 16)
@@ -881,6 +1003,10 @@ class IosOs(PosixOs):
         """
         self.emu.write_u64(TLS_ADDRESS + 0xA0, queue)
         self.emu.write_u64(TLS_ADDRESS + 0xA8, 0)
+
+    def get_dispatch_queue(self) -> int:
+        """Get current async dispatch queue from TLS."""
+        return self.emu.read_u64(TLS_ADDRESS + 0xA0)
 
     def semaphore_create(self, value: int) -> int:
         sem = 1
@@ -972,17 +1098,37 @@ class IosOs(PosixOs):
             message,
         )
 
+    def _set_tid(self, tid: int):
+        self._tid = tid
+        self.emu.write_u32(TLS_ADDRESS + 0x18, tid)
+
+    @contextmanager
+    def worker_thread(self, tid: Optional[int] = None, queue: Optional[int] = None):
+        """Manage worker thread environment, automatically switch tid and dispatch
+        queue."""
+        original_tid = self._tid
+        original_queue = self.get_dispatch_queue()
+
+        tid = tid or (random.randint(20000 + 1, 30000) | 1)
+        self._set_tid(tid)
+
+        if queue:
+            self.set_dispatch_queue(queue)
+
+        yield
+
+        self._set_tid(original_tid)
+        self.set_dispatch_queue(original_queue)
+
     def initialize(self):
         # Setup hooks
         self.emu.hooks.update(get_hooks())
 
-        self._setup_tls()
-
         # Mount virtual device files
         self.mount_devices(DEVICES_FILES)
 
+        self._setup_tls()
         self._setup_file_properties()
-
         self._setup_system_registers()
 
         # Setup symbolic links
@@ -996,7 +1142,7 @@ class IosOs(PosixOs):
 
         modules = SYSTEM_MODULES.copy()
 
-        if self.FEATURE_SWIFT_ENABLED:
+        if Feature.SWIFT_ENABLED:
             modules.extend(SWIFT_MODULES)
 
         # Setup system modules

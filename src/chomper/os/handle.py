@@ -47,6 +47,11 @@ class HandleManager:
         """Check if a resource handle is valid."""
         return handle in self._handles
 
+    def iter_handles(self) -> Iterator:
+        """Iterate all resource handles."""
+        for handle in self._handles:
+            yield handle
+
     def set_prop(self, handle: int, name: str, value: Any):
         """Set property value for a resource."""
         if handle not in self._handles:
