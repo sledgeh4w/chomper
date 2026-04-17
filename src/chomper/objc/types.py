@@ -46,10 +46,10 @@ class ObjcType:
         objc_type_class: Type[ObjcTypeT],
         *args,
     ) -> ObjcTypeT:
-        with self._emu.mem_context() as ctx:
-            name_buf = ctx.create_string(name)
+        with self._emu.memory_scope() as mem:
+            name_ptr = mem.create_string(name)
 
-            ivar_value = self._emu.call_symbol(get_func, self.value, name_buf, *args)
+            ivar_value = self._emu.call_symbol(get_func, self.value, name_ptr, *args)
             return objc_type_class(self._runtime, ivar_value)
 
     def _copy_list(
@@ -287,8 +287,8 @@ class ObjcMethod(ObjcType):
 
         dst_len = 256
 
-        with self._emu.mem_context() as ctx:
-            dst = ctx.create_buffer(dst_len)
+        with self._emu.memory_scope() as mem:
+            dst = mem.create_buffer(dst_len)
 
             for index in range(number_of_arguments):
                 self._emu.call_symbol(
@@ -304,8 +304,8 @@ class ObjcMethod(ObjcType):
     def return_type(self) -> str:
         dst_len = 256
 
-        with self._emu.mem_context() as ctx:
-            dst = ctx.create_buffer(dst_len)
+        with self._emu.memory_scope() as mem:
+            dst = mem.create_buffer(dst_len)
 
             self._emu.call_symbol("_method_getReturnType", self.value, dst, dst_len)
             return self._emu.read_string(dst)

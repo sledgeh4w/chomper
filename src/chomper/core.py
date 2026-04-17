@@ -20,11 +20,10 @@ from unicorn import (
 
 from . import const
 from .arch import arm_arch, arm64_arch
-from .context import MemoryContextManager
 from .exceptions import EmulatorCrashed, SymbolMissing
 from .loader import Module, Symbol
 from .log import get_logger
-from .memory import MemoryManager
+from .memory import MemoryManager, MemoryScope
 from .objc import ObjcType
 from .os import AndroidOs, IosOs
 from .typing import (
@@ -207,8 +206,8 @@ class Chomper:
             b"\xe8\xee\x10\x3a"  # vmsr fpexc, r3
         )
 
-        with self.mem_context() as ctx:
-            address = ctx.create_buffer(1024)
+        with self.memory_scope() as mem:
+            address = mem.create_buffer(1024)
             self.uc.mem_write(address, inst_code)
 
             self.uc.emu_start(address | 1, address + len(inst_code))
@@ -956,15 +955,15 @@ class Chomper:
             return_type=return_type,
         )
 
-    def mem_context(self) -> MemoryContextManager:
+    def memory_scope(self) -> MemoryScope:
         """Automatically release memory allocated through the context.
 
         Examples:
 
         ```python
-        with emu.mem_context() as ctx:
+        with emu.memory_scope() as mem:
             # This memory does not require manual release
-            ctx.create_buffer(64)
+            mem.create_buffer(64)
         ```
         """
-        return MemoryContextManager(self)  # type: ignore
+        return MemoryScope(self)  # type: ignore

@@ -258,12 +258,17 @@ def test_ns_method_signature(emu_ios, objc):
 
 
 def test_ns_write_to_file_atomically(emu_ios, objc):
-    with objc.autorelease_pool():
-        string = objc.create_ns_string("chomper")
-        filename = objc.create_ns_string("test_ns_write_atomically")
+    filepath = "/private/var/tmp/test_ns_write"
+    real_path = f"{emu_ios.os.rootfs_path}/{filepath[1:]}"
 
-        result = objc.msg_send(string, "writeToFile:atomically:", filename, 1)
+    with objc.autorelease_pool():
+        string = objc.create_ns_string("Mocha")
+        tmp_file = objc.create_ns_string(filepath)
+
+        result = objc.msg_send(string, "writeToFile:atomically:", tmp_file, 1)
         assert result
+
+    os.remove(real_path)
 
 
 def test_ns_file_manager(emu_ios, objc):
@@ -389,11 +394,11 @@ def test_cf_run_loop(emu_ios, objc):
 
 
 def test_system_configuration(emu_ios, objc):
-    with emu_ios.mem_context() as ctx, objc.autorelease_pool():
+    with emu_ios.memory_scope() as mem, objc.autorelease_pool():
         name = "apple.com"
 
-        name_ptr = ctx.create_string(name)
-        flags_ptr = ctx.create_buffer(8)
+        name_ptr = mem.create_string(name)
+        flags_ptr = mem.create_buffer(8)
 
         reachability = emu_ios.call_symbol(
             "_SCNetworkReachabilityCreateWithName", 0, name_ptr
@@ -424,8 +429,8 @@ def test_dispatch_semaphore(emu_ios):
 def test_clock(emu_ios):
     clock_port = emu_ios.ios_os.MACH_PORT_CLOCK
 
-    with emu_ios.mem_context() as ctx:
-        cur_time_ptr = ctx.create_buffer(sizeof(MachTimespec))
+    with emu_ios.memory_scope() as mem:
+        cur_time_ptr = mem.create_buffer(sizeof(MachTimespec))
 
         result = emu_ios.call_symbol("_clock_get_time", clock_port, cur_time_ptr)
         assert result == 0
@@ -442,9 +447,9 @@ def test_clonefile(emu_ios):
     if os.path.exists(dst_path):
         os.remove(dst_path)
 
-    with emu_ios.mem_context() as ctx:
-        src_str = ctx.create_string(src)
-        dst_str = ctx.create_string(dst)
+    with emu_ios.memory_scope() as mem:
+        src_str = mem.create_string(src)
+        dst_str = mem.create_string(dst)
 
         emu_ios.call_symbol("_clonefile", src_str, dst_str, 0)
 
@@ -452,8 +457,8 @@ def test_clonefile(emu_ios):
 
 
 def test_mach_ports(emu_ios):
-    with emu_ios.mem_context() as ctx:
-        port_ptr = ctx.create_buffer(4)
+    with emu_ios.memory_scope() as mem:
+        port_ptr = mem.create_buffer(4)
 
         port = emu_ios.call_symbol("_mach_host_self")
         assert port == emu_ios.ios_os.MACH_PORT_HOST
@@ -487,7 +492,7 @@ def test_mach_ports(emu_ios):
         )
         assert emu_ios.read_u32(port_ptr) == emu_ios.ios_os.MACH_PORT_BOOTSTRAP
 
-        io_master_ptr = ctx.create_buffer(4)
+        io_master_ptr = mem.create_buffer(4)
         emu_ios.call_symbol(
             "_host_get_io_master", emu_ios.ios_os.MACH_PORT_HOST, io_master_ptr
         )
@@ -496,11 +501,11 @@ def test_mach_ports(emu_ios):
         port = emu_ios.call_symbol("__os_trace_create_debug_control_port")
         assert port
 
-        masks_ptr = ctx.create_buffer(4 * 14)
-        masks_cnt_ptr = ctx.create_buffer(4)
-        handlers_ptr = ctx.create_buffer(4 * 14)
-        behaviors_ptr = ctx.create_buffer(4 * 14)
-        flavors_ptr = ctx.create_buffer(4 * 14)
+        masks_ptr = mem.create_buffer(4 * 14)
+        masks_cnt_ptr = mem.create_buffer(4)
+        handlers_ptr = mem.create_buffer(4 * 14)
+        behaviors_ptr = mem.create_buffer(4 * 14)
+        flavors_ptr = mem.create_buffer(4 * 14)
 
         result = emu_ios.call_symbol(
             "_task_get_exception_ports",
@@ -526,8 +531,8 @@ def test_xpc_connection(emu_ios):
 
 
 def test_resolv(emu_ios):
-    with emu_ios.mem_context() as ctx:
-        res = ctx.create_buffer(552)
+    with emu_ios.memory_scope() as mem:
+        res = mem.create_buffer(552)
 
         result = emu_ios.call_symbol("_res_9_ninit", res)
         assert result == 0

@@ -28,17 +28,17 @@ class XpcMessageHandler:
         return self.emu.read_string(desc_ptr)
 
     def _dictionary_get_int64(self, obj: int, key: str) -> int:
-        with self.emu.mem_context() as ctx:
+        with self.emu.memory_scope() as mem:
             return self.emu.call_symbol(
                 "_xpc_dictionary_get_int64",
                 obj,
-                ctx.create_string(key),
+                mem.create_string(key),
             )
 
     def _dictionary_get_data(self, obj: int, key: str) -> Optional[bytes]:
-        with self.emu.mem_context() as ctx:
-            key_ptr = ctx.create_string(key)
-            length_out = ctx.create_buffer(4)
+        with self.emu.memory_scope() as mem:
+            key_ptr = mem.create_string(key)
+            length_out = mem.create_buffer(4)
 
             result = self.emu.call_symbol(
                 "_xpc_dictionary_get_data",
@@ -150,10 +150,10 @@ class XpcMessageHandler:
         plist_writer.write(self._add_type_info(obj), with_type_info=True)
         reply_data = write_io.getvalue()
 
-        with self.emu.mem_context() as ctx:
-            key_root = ctx.create_string("root")
+        with self.emu.memory_scope() as mem:
+            key_root = mem.create_string("root")
 
-            reply_buf = ctx.create_buffer(len(reply_data))
+            reply_buf = mem.create_buffer(len(reply_data))
             self.emu.write_bytes(reply_buf, reply_data)
 
             reply = self.emu.call_symbol("_xpc_dictionary_create_empty")

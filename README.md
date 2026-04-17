@@ -66,7 +66,9 @@ result_len_ptr = emu.create_buffer(8)
 
 # Call function
 emu.call_address(discover.base + 0x324EF10, input_str, input_len, result_buf, buf_size, result_len_ptr)
-result = emu.read_string(result_buf)
+
+result_len = emu.read_u64(result_len_ptr)
+result = emu.read_bytes(result_buf, result_len)
 ```
 
 Working with Objective-C.

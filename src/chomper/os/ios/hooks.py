@@ -44,114 +44,76 @@ def hook_pthread_self(uc: Uc, address: int, size: int, user_data: HookContext):
     return emu.read_pointer(emu.get_symbol("__main_thread_ptr").address)
 
 
-@register_hook("_malloc")
-def hook_malloc(uc: Uc, address: int, size: int, user_data: HookContext):
-    emu = user_data["emu"]
-
-    size = emu.get_arg(0)
-    mem = emu.memory_manager.alloc(size)
-
-    return mem
-
-
-@register_hook("_calloc")
-def hook_calloc(uc: Uc, address: int, size: int, user_data: HookContext):
-    emu = user_data["emu"]
-
-    numitems = emu.get_arg(0)
-    size = emu.get_arg(1)
-
-    mem = emu.memory_manager.alloc(numitems * size)
-    emu.write_bytes(mem, b"\x00" * (numitems * size))
-
-    return mem
-
-
 @register_hook("_realloc")
 def hook_realloc(uc: Uc, address: int, size: int, user_data: HookContext):
     emu = user_data["emu"]
 
-    ptr = emu.get_arg(0)
+    addr = emu.get_arg(0)
     size = emu.get_arg(1)
 
-    return emu.memory_manager.realloc(ptr, size)
+    return emu.memory_manager.realloc(addr, size)
 
 
 @register_hook("_free")
 def hook_free(uc: Uc, address: int, size: int, user_data: HookContext):
     emu = user_data["emu"]
 
-    mem = emu.get_arg(0)
-    emu.memory_manager.free(mem)
+    addr = emu.get_arg(0)
+    emu.memory_manager.free(addr)
 
 
 @register_hook("_malloc_size")
 def hook_malloc_size(uc: Uc, address: int, size: int, user_data: HookContext):
     emu = user_data["emu"]
 
-    mem = emu.get_arg(0)
+    addr = emu.get_arg(0)
 
     for pool in emu.memory_manager.pools:
-        if pool.address <= mem < pool.address + pool.size:
+        if pool.address <= addr < pool.address + pool.size:
             return pool.block_size
 
     return 0
 
 
-@register_hook("_malloc_default_zone")
-def hook_malloc_default_zone(uc: Uc, address: int, size: int, user_data: HookContext):
-    return 0
-
-
-@register_hook("_malloc_create_zone")
-def hook_malloc_create_zone(uc: Uc, address: int, size: int, user_data: HookContext):
-    return 0
-
-
-@register_hook("_malloc_set_zone_name")
-def hook_malloc_set_zone_name(uc: Uc, address: int, size: int, user_data: HookContext):
-    return 0
-
-
-@register_hook("_malloc_zone_malloc")
+@register_hook("__malloc_zone_malloc")
 def hook_malloc_zone_malloc(uc: Uc, address: int, size: int, user_data: HookContext):
     emu = user_data["emu"]
 
     size = emu.get_arg(1)
-    mem = emu.memory_manager.alloc(size)
+    addr = emu.memory_manager.alloc(size)
 
-    return mem
+    return addr
 
 
-@register_hook("_malloc_zone_calloc")
+@register_hook("__malloc_zone_calloc")
 def hook_malloc_zone_calloc(uc: Uc, address: int, size: int, user_data: HookContext):
     emu = user_data["emu"]
 
     numitems = emu.get_arg(1)
     size = emu.get_arg(2)
 
-    mem = emu.memory_manager.alloc(numitems * size)
-    emu.write_bytes(mem, b"\x00" * (numitems * size))
+    addr = emu.memory_manager.alloc(numitems * size)
+    emu.write_bytes(addr, b"\x00" * (numitems * size))
 
-    return mem
+    return addr
 
 
 @register_hook("_malloc_zone_realloc")
 def hook_malloc_zone_realloc(uc: Uc, address: int, size: int, user_data: HookContext):
     emu = user_data["emu"]
 
-    ptr = emu.get_arg(1)
+    addr = emu.get_arg(1)
     size = emu.get_arg(2)
 
-    return emu.memory_manager.realloc(ptr, size)
+    return emu.memory_manager.realloc(addr, size)
 
 
 @register_hook("_malloc_zone_free")
 def hook_malloc_zone_free(uc: Uc, address: int, size: int, user_data: HookContext):
     emu = user_data["emu"]
 
-    mem = emu.get_arg(1)
-    emu.memory_manager.free(mem)
+    addr = emu.get_arg(1)
+    emu.memory_manager.free(addr)
 
 
 @register_hook("_malloc_zone_from_ptr")
@@ -165,9 +127,9 @@ def hook_malloc_zone_memalign(uc: Uc, address: int, size: int, user_data: HookCo
 
     alignment = emu.get_arg(1)
     size = emu.get_arg(2)
-    mem = emu.memory_manager.memalign(alignment, size)
+    addr = emu.memory_manager.memalign(alignment, size)
 
-    return mem
+    return addr
 
 
 @register_hook("_malloc_good_size")
@@ -179,11 +141,6 @@ def hook_malloc_good_size(uc: Uc, address: int, size: int, user_data: HookContex
     return size
 
 
-@register_hook("_malloc_engaged_nano")
-def hook_malloc_engaged_nano(uc: Uc, address: int, size: int, user_data: HookContext):
-    return 1
-
-
 @register_hook("_posix_memalign")
 def hook_posix_memalign(uc: Uc, address: int, size: int, user_data: HookContext):
     emu = user_data["emu"]
@@ -192,8 +149,8 @@ def hook_posix_memalign(uc: Uc, address: int, size: int, user_data: HookContext)
     alignment = emu.get_arg(1)
     size = emu.get_arg(2)
 
-    mem = emu.memory_manager.memalign(alignment, size)
-    emu.write_pointer(memptr, mem)
+    addr = emu.memory_manager.memalign(alignment, size)
+    emu.write_pointer(memptr, addr)
 
     return 0
 
@@ -366,8 +323,8 @@ def hook_dispatch_async(uc: Uc, address: int, size: int, user_data: HookContext)
     if do_invoke:
         emu.logger.info("Invoke block: %s", emu.debug_symbol(invoke))
 
-        emu.ios_os.set_dispatch_queue(queue)
-        emu.call_address(invoke, block)
+        with emu.ios_os.worker_thread(queue=queue):
+            emu.call_address(invoke, block)
 
         return 0
 
@@ -434,8 +391,8 @@ def hook_cf_bundle_create_info_dict_from_main_executable(
     with open(info_path, "rb") as f:
         info_content = f.read()
 
-    with emu.mem_context() as ctx:
-        info_data = ctx.create_buffer(len(info_content) + 100)
+    with emu.memory_scope() as mem:
+        info_data = mem.create_buffer(len(info_content) + 100)
         emu.write_bytes(info_data, info_content)
 
         cf_bundle = emu.call_symbol(

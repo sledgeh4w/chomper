@@ -390,3 +390,14 @@ class Rlimit(ctypes.Structure):
         ("rlim_cur", ctypes.c_uint64),
         ("rlim_max", ctypes.c_uint64),
     ]
+
+
+class Kevent(ctypes.Structure):
+    _fields_ = [
+        ("ident", ctypes.c_uint64),
+        ("filter", ctypes.c_int16),
+        ("flags", ctypes.c_uint16),
+        ("fflags", ctypes.c_uint32),
+        ("data", ctypes.c_uint64),
+        ("udata", ctypes.c_uint64),
+    ]
