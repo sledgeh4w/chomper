@@ -21,7 +21,7 @@ from chomper.os.handle import HandleManager
 from chomper.utils import log_call, struct_to_bytes, to_unsigned, read_struct
 
 from .fixup import SystemModuleFixer
-from .hooks import get_hooks
+from .hooks import get_hooks, hook_read_class
 from .mach import MachMsgHandler
 from .structs import Dirent, Stat64, Statfs64, Timespec, SockaddrIn, Kevent
 from .syscall import IosSyscallHandler
@@ -209,6 +209,8 @@ class IosOs(PosixOs):
 
         self._loader = MachoLoader(self.emu)
         self._syscall_handler = IosSyscallHandler(self.emu)
+
+        self._initialized = False
 
         # mobile user
         self._uid = 501
@@ -845,6 +847,13 @@ class IosOs(PosixOs):
         self.forward_path(container_path, local_container_path)
         self.forward_path(bundle_path, local_bundle_path)
 
+        # Set env `HOME`
+        if self._initialized:
+            with self.emu.memory_scope() as mem:
+                key = mem.create_string("HOME")
+                value = mem.create_string(bundle_path)
+                self.emu.call_symbol("_setenv", key, value, 1)
+
         # Setting bundle dir permissions
         file_prop = FileProperty(
             path=bundle_path,
@@ -881,8 +890,6 @@ class IosOs(PosixOs):
             bundle_path = f"{container_path}/{bundle_name}.app"
             self.executable_path = f"{bundle_path}/{bundle_executable}"
 
-            self._setup_bundle_dir()
-
             progname_str = self.emu.create_string(self.executable_path.split("/")[-1])
             process_path_str = self.emu.create_string(self.executable_path)
 
@@ -908,15 +915,7 @@ class IosOs(PosixOs):
             dst_path=info_path,
         )
 
-        # Setting bundle dir permissions
-        file_prop = FileProperty(
-            path=bundle_path,
-            is_dir=True,
-            readable=True,
-            writeable=True,
-            executable=True,
-        )
-        self.add_file_property(file_prop)
+        self._setup_bundle_dir()
 
     def get_executable_file(self) -> str:
         return self.executable_file
@@ -1124,6 +1123,9 @@ class IosOs(PosixOs):
         # Setup hooks
         self.emu.hooks.update(get_hooks())
 
+        if Feature.OBJC_COMPATIBILITY_MODE:
+            self.emu.hooks["__ZL9readClassP10objc_classbb"] = hook_read_class
+
         # Mount virtual device files
         self.mount_devices(DEVICES_FILES)
 
@@ -1150,3 +1152,5 @@ class IosOs(PosixOs):
         self._init_system_symbols()
 
         self._setup_stdio()
+
+        self._initialized = True

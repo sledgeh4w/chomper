@@ -3,7 +3,7 @@ import re
 from functools import wraps
 from typing import Callable, Dict, Optional
 
-from unicorn import Uc
+from unicorn import Uc, UcError
 
 from chomper.exceptions import EmulatorCrashed, ObjCUnrecognizedSelector
 from chomper.objc import ObjcRuntime, ObjcObject
@@ -541,3 +541,42 @@ def hook_ns_object_does_not_recognize_selector_for_instance(
     raise ObjCUnrecognizedSelector(
         f"Unrecognized selector '{selector}' of instance '{class_name}'"
     )
+
+
+def hook_read_class(uc: Uc, address: int, size: int, user_data: HookContext):
+    emu = user_data["emu"]
+
+    a1 = emu.get_arg(0)
+    a2 = emu.get_arg(1)
+    a3 = emu.get_arg(2)
+
+    context = emu.uc.context_save()
+
+    class_name = ""
+
+    try:
+        data_ptr = emu.read_pointer(a1 + 32)
+        if data_ptr:
+            name_ptr = emu.read_pointer(data_ptr + 24)
+            class_name = emu.read_string(name_ptr)
+    except (UnicodeDecodeError, UcError):
+        pass
+
+    emu.uc.reg_write(emu.arch.reg_sp, emu.uc.reg_read(emu.arch.reg_sp) - 0x60)
+
+    result = 0
+
+    try:
+        read_class_symbol = emu.find_symbol("__ZL9readClassP10objc_classbb")
+        if read_class_symbol:
+            read_class_addr = read_class_symbol.address
+            result = emu.call_address(read_class_addr + 4, a1, a2, a3)
+    except EmulatorCrashed:
+        emu.logger.warning(
+            "readClass failed: %s",
+            f'"{class_name}"' if class_name else emu.debug_symbol(a1),
+        )
+    finally:
+        emu.uc.context_restore(context)
+
+    return result

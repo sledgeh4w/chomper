@@ -1,5 +1,6 @@
 # System call numbers
 
+SYS_SYSCALL = 0x0
 SYS_EXIT = 0x1
 SYS_FORK = 0x2
 SYS_READ = 0x3
@@ -111,6 +112,7 @@ SYS_KEVENT = 0x16B
 SYS_LCHOWN = 0x16C
 SYS_WORKQ_OPEN = 0x16F
 SYS_WORKQ_KERNRETURN = 0x170
+SYS_THREAD_SELFID = 0x174
 SYS_KEVENT_QOS = 0x176
 SYS_KEVENT_ID = 0x177
 SYS_MAC_SYSCALL = 0x17D
@@ -263,6 +265,22 @@ PROC_PIDPATHINFO = 11
 PROC_PIDT_SHORTBSDINFO = 13
 PROC_PIDUNIQIDENTIFIERINFO = 17
 
+# sys/socket.h
+
+# Address families.
+
+AF_INET = 2
+AF_LINK = 18
+AF_INET6 = 30
+
+# Protocol families.
+
+PF_ROUTE = 17
+
+# PF_ROUTE - Routing table
+
+NET_RT_IFLIST = 3
+
 # sys/resource.h
 
 # RESOURCE LIMITS
@@ -279,6 +297,22 @@ RLIMIT_RSS = RLIMIT_AS
 RLIMIT_MEMLOCK = 6
 RLIMIT_NPROC = 7
 RLIMIT_NOFILE = 8
+
+# net/route.h
+
+RTM_VERSION = 5
+
+# Message types.
+
+RTM_NEWADDR = 0xC
+RTM_IFINFO = 0xE
+RTM_IFINFO2 = 0x12
+
+# Bitmask values for rtm_addrs.
+
+RTA_NETMASK = 0x4
+RTA_IFP = 0x10
+RTA_IFA = 0x20
 
 # mach/kern_return.h
 

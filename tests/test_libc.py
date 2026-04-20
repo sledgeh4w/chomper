@@ -647,3 +647,20 @@ def test_pthread_mutex(request, emu_name):
 
         result = call_symbol(emu, "pthread_mutex_unlock", mutex)
         assert result == 0
+
+
+@pytest.mark.parametrize("emu_name", ["emu_ios"])
+def test_getifaddrs(request, emu_name):
+    emu = request.getfixturevalue(emu_name)
+
+    with emu.memory_scope() as mem:
+        ifaddrs_buf = mem.create_buffer(8)
+
+        result = call_symbol(emu, "getifaddrs", ifaddrs_buf)
+        assert result == 0
+
+        ifaddrs_ptr = emu.read_pointer(ifaddrs_buf)
+
+        name_ptr = emu.read_pointer(ifaddrs_ptr + 8)
+        name = emu.read_string(name_ptr)
+        assert name
