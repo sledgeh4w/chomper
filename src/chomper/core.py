@@ -560,7 +560,7 @@ class Chomper:
         elif self.os_type == const.OS_ANDROID and self.arch == arm64_arch:
             syscall_no = to_signed(self.uc.reg_read(arm64_const.UC_ARM64_REG_W8), 4)
 
-        if syscall_no:
+        if syscall_no is not None:
             self.os.syscall_handler.handle_syscall(syscall_no)
         else:
             self.crash("Unhandled system call")

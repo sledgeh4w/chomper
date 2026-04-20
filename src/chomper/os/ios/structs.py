@@ -148,6 +148,17 @@ class SockaddrIn(ctypes.Structure):
     ]
 
 
+class SockaddrIn6(ctypes.Structure):
+    _fields_ = [
+        ("sin6_len", ctypes.c_uint8),
+        ("sin6_family", ctypes.c_uint8),
+        ("sin6_port", ctypes.c_uint16),
+        ("sin6_flowinfo", ctypes.c_uint32),
+        ("sin6_addr", ctypes.c_char * 16),
+        ("sin6_scope_id", ctypes.c_uint32),
+    ]
+
+
 class ProcBsdinfo(ctypes.Structure):
     _fields_ = [
         ("pbi_flags", ctypes.c_uint32),
@@ -400,4 +411,153 @@ class Kevent(ctypes.Structure):
         ("fflags", ctypes.c_uint32),
         ("data", ctypes.c_uint64),
         ("udata", ctypes.c_uint64),
+    ]
+
+
+# socket.h
+
+
+class Sockaddr(ctypes.Structure):
+    _fields_ = [
+        ("sa_len", ctypes.c_uint8),
+        ("sa_family", ctypes.c_uint8),
+        ("sa_data", ctypes.c_char * 14),
+    ]
+
+
+# ifaddrs.h
+
+
+class Ifaddrs(ctypes.Structure):
+    _fields_ = [
+        ("ifa_next", ctypes.c_uint64),
+        ("ifa_name", ctypes.c_uint64),
+        ("ifa_flags", ctypes.c_uint32),
+        ("ifa_addr", ctypes.c_uint64),
+        ("ifa_netmask", ctypes.c_uint64),
+        ("ifa_dstaddr", ctypes.c_uint64),
+        ("ifa_data", ctypes.c_uint64),
+    ]
+
+
+# net/if.h
+
+
+class IfData(ctypes.Structure):
+    _fields_ = [
+        ("ifi_type", ctypes.c_uint8),
+        ("ifi_typelen", ctypes.c_uint8),
+        ("ifi_physical", ctypes.c_uint8),
+        ("ifi_addrlen", ctypes.c_uint8),
+        ("ifi_hdrlen", ctypes.c_uint8),
+        ("ifi_recvquota", ctypes.c_uint8),
+        ("ifi_xmitquota", ctypes.c_uint8),
+        ("ifi_unused1", ctypes.c_uint8),
+        ("ifi_mtu", ctypes.c_uint32),
+        ("ifi_metric", ctypes.c_uint32),
+        ("ifi_baudrate", ctypes.c_uint32),
+        ("ifi_ipackets", ctypes.c_uint32),
+        ("ifi_ierrors", ctypes.c_uint32),
+        ("ifi_opackets", ctypes.c_uint32),
+        ("ifi_oerrors", ctypes.c_uint32),
+        ("ifi_collisions", ctypes.c_uint32),
+        ("ifi_ibytes", ctypes.c_uint32),
+        ("ifi_obytes", ctypes.c_uint32),
+        ("ifi_imcasts", ctypes.c_uint32),
+        ("ifi_omcasts", ctypes.c_uint32),
+        ("ifi_iqdrops", ctypes.c_uint32),
+        ("ifi_noproto", ctypes.c_uint32),
+        ("ifi_recvtiming", ctypes.c_uint32),
+        ("ifi_xmittiming", ctypes.c_uint32),
+        ("ifi_lastchange", Timespec),
+        ("ifi_unused2", ctypes.c_uint32),
+        ("ifi_hwassist", ctypes.c_uint32),
+        # ("ifi_reserved1", ctypes.c_uint32),
+        # ("ifi_reserved2", ctypes.c_uint32),
+    ]
+
+
+class IfData64(ctypes.Structure):
+    _fields_ = [
+        ("ifi_type", ctypes.c_uint8),
+        ("ifi_typelen", ctypes.c_uint8),
+        ("ifi_physical", ctypes.c_uint8),
+        ("ifi_addrlen", ctypes.c_uint8),
+        ("ifi_hdrlen", ctypes.c_uint8),
+        ("ifi_recvquota", ctypes.c_uint8),
+        ("ifi_xmitquota", ctypes.c_uint8),
+        ("ifi_unused1", ctypes.c_uint8),
+        ("ifi_mtu", ctypes.c_uint32),
+        ("ifi_metric", ctypes.c_uint32),
+        ("ifi_baudrate", ctypes.c_uint64),
+        ("ifi_ipackets", ctypes.c_uint64),
+        ("ifi_ierrors", ctypes.c_uint64),
+        ("ifi_opackets", ctypes.c_uint64),
+        ("ifi_oerrors", ctypes.c_uint64),
+        ("ifi_collisions", ctypes.c_uint64),
+        ("ifi_ibytes", ctypes.c_uint64),
+        ("ifi_obytes", ctypes.c_uint64),
+        ("ifi_imcasts", ctypes.c_uint64),
+        ("ifi_omcasts", ctypes.c_uint64),
+        ("ifi_iqdrops", ctypes.c_uint64),
+        ("ifi_noproto", ctypes.c_uint64),
+        ("ifi_recvtiming", ctypes.c_uint32),
+        ("ifi_xmittiming", ctypes.c_uint32),
+        ("ifi_lastchange", Timespec),
+    ]
+
+
+class IfMsghdr(ctypes.Structure):
+    _fields_ = [
+        ("ifm_msglen", ctypes.c_uint16),
+        ("ifm_version", ctypes.c_uint8),
+        ("ifm_type", ctypes.c_uint8),
+        ("ifm_addrs", ctypes.c_uint32),
+        ("ifm_flags", ctypes.c_uint32),
+        ("ifm_index", ctypes.c_uint16),
+        ("ifm_data", IfData),
+    ]
+
+
+class IfaMsghdr(ctypes.Structure):
+    _fields_ = [
+        ("ifam_msglen", ctypes.c_uint16),
+        ("ifam_version", ctypes.c_uint8),
+        ("ifam_type", ctypes.c_uint8),
+        ("ifam_addrs", ctypes.c_uint32),
+        ("ifam_flags", ctypes.c_uint32),
+        ("ifam_index", ctypes.c_uint16),
+        ("ifam_metric", ctypes.c_uint32),
+    ]
+
+
+class IfMsghdr2(ctypes.Structure):
+    _fields_ = [
+        ("ifm_msglen", ctypes.c_uint16),
+        ("ifm_version", ctypes.c_uint8),
+        ("ifm_type", ctypes.c_uint8),
+        ("ifm_addrs", ctypes.c_uint32),
+        ("ifm_flags", ctypes.c_uint32),
+        ("ifm_index", ctypes.c_uint16),
+        ("ifm_snd_len", ctypes.c_uint32),
+        ("ifm_snd_maxlen", ctypes.c_uint32),
+        ("ifm_snd_drops", ctypes.c_uint32),
+        ("ifm_timer", ctypes.c_uint32),
+        ("ifm_data", IfData64),
+    ]
+
+
+# net/if_dl.h
+
+
+class SockaddrDl(ctypes.Structure):
+    _fields_ = [
+        ("sdl_len", ctypes.c_uint8),
+        ("sdl_family", ctypes.c_uint8),
+        ("sdl_index", ctypes.c_uint16),
+        ("sdl_type", ctypes.c_uint8),
+        ("sdl_nlen", ctypes.c_uint8),
+        ("sdl_alen", ctypes.c_uint8),
+        ("sdl_slen", ctypes.c_uint8),
+        ("sdl_data", ctypes.c_char * 12),
     ]

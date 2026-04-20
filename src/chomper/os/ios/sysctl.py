@@ -1,4 +1,6 @@
+import ctypes
 import random
+import socket
 import time
 import uuid
 from typing import Dict, Optional, Tuple
@@ -7,7 +9,7 @@ from chomper.typing import SysctlReturnValue
 from chomper.utils import log_call
 
 from . import const
-from .structs import Timespec
+from .structs import Timespec, IfMsghdr, IfaMsghdr, SockaddrIn, SockaddrIn6, SockaddrDl
 
 # CTL Type map
 CTL_TYPE_MAP: Dict[Tuple[int, int], str] = {
@@ -106,10 +108,109 @@ KERNEL_PARAMETERS: Dict[str, SysctlReturnValue] = {
 }
 
 
+NETWORK_INTERFACES = [
+    {
+        "index": 1,
+        "name": "en0",
+        "mac": "02:00:00:00:00:00",
+        "addresses": [
+            {
+                "family": "inet",
+                "address": "192.168.1.2",
+                "mask": "255.255.255.0",
+            }
+        ],
+    }
+]
+
+
+def _construct_sockaddr_in(address: str) -> SockaddrIn:
+    return SockaddrIn(
+        sin_len=ctypes.sizeof(SockaddrIn),
+        sin_family=const.AF_INET,
+        sin_addr=int.from_bytes(socket.inet_aton(address), "little"),
+    )
+
+
+def _construct_sockaddr_in6(address: str) -> SockaddrIn6:
+    return SockaddrIn6(
+        sin6_len=ctypes.sizeof(SockaddrIn),
+        sin6_family=const.AF_INET,
+        sin6_addr=socket.inet_pton(socket.AF_INET6, address),
+    )
+
+
+def _get_iflist():
+    msgs = []
+
+    for interface in NETWORK_INTERFACES:
+        index = interface["index"]
+        name = interface["name"]
+
+        msgs.append(
+            IfMsghdr(
+                ifm_msglen=ctypes.sizeof(IfMsghdr) + ctypes.sizeof(SockaddrDl),
+                ifm_version=const.RTM_VERSION,
+                ifm_type=const.RTM_IFINFO,
+                ifm_addrs=const.RTA_IFP,
+                ifm_index=index,
+            )
+        )
+
+        sdl_alen = 0
+        sdl_data = name.encode("utf-8")
+
+        if interface.get("mac"):
+            mac_bytes = bytes.fromhex(interface["mac"].replace(":", ""))
+            sdl_alen = len(mac_bytes)
+            sdl_data += mac_bytes
+
+        msgs.append(
+            SockaddrDl(
+                sdl_len=ctypes.sizeof(SockaddrDl),
+                sdl_family=const.AF_LINK,
+                sdl_index=index,
+                sdl_nlen=len(name),
+                sdl_alen=sdl_alen,
+                sdl_data=sdl_data,
+            )
+        )
+
+        for address in interface["addresses"]:
+            msgs.append(
+                IfaMsghdr(
+                    ifam_msglen=ctypes.sizeof(IfaMsghdr)
+                    + ctypes.sizeof(SockaddrIn) * 2,
+                    ifam_version=const.RTM_VERSION,
+                    ifam_type=const.RTM_NEWADDR,
+                    ifam_addrs=const.RTA_IFA | const.RTA_NETMASK,
+                    ifam_index=index,
+                )
+            )
+
+            if address["family"] == "inet":
+                mask = _construct_sockaddr_in(address["mask"])
+                addr = _construct_sockaddr_in(address["address"])
+                msgs.extend([mask, addr])
+            elif address["family"] == "inet6":
+                mask = _construct_sockaddr_in6(address["mask"])
+                addr = _construct_sockaddr_in6(address["address"])
+                msgs.extend([mask, addr])
+
+    return msgs
+
+
 @log_call
-def sysctl(ctl_type: int, ctl_ident: int) -> Optional[SysctlReturnValue]:
+def sysctl(mib: Tuple[int, int, int, int, int, int]) -> Optional[SysctlReturnValue]:
+    ctl_type, ctl_ident, op = mib[0], mib[1], mib[4]
+
     if (ctl_type, ctl_ident) in CTL_TYPE_MAP:
         return KERNEL_PARAMETERS[CTL_TYPE_MAP[(ctl_type, ctl_ident)]]
+
+    if ctl_type == const.CTL_NET and ctl_ident == const.PF_ROUTE:
+        if op == const.NET_RT_IFLIST:
+            return _get_iflist()
+
     return None
 
 

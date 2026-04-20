@@ -59,6 +59,7 @@ class IosSyscallHandler(BaseSyscallHandler):
         super().__init__(*args, **kwargs)
 
         names = {
+            const.SYS_SYSCALL: "SYS_syscall",
             const.SYS_EXIT: "SYS_exit",
             const.SYS_FORK: "SYS_fork",
             const.SYS_READ: "SYS_read",
@@ -170,6 +171,7 @@ class IosSyscallHandler(BaseSyscallHandler):
             const.SYS_LCHOWN: "SYS_lchown",
             const.SYS_WORKQ_OPEN: "SYS_workq_open",
             const.SYS_WORKQ_KERNRETURN: "SYS_workq_kernreturn",
+            const.SYS_THREAD_SELFID: "SYS_thread_selfid",
             const.SYS_KEVENT_QOS: "SYS_kevent_qos",
             const.SYS_KEVENT_ID: "SYS_kevent_id",
             const.SYS_MAC_SYSCALL: "SYS_mac_syscall",
@@ -247,6 +249,7 @@ class IosSyscallHandler(BaseSyscallHandler):
         }
 
         handlers = {
+            const.SYS_SYSCALL: self._handle_sys_syscall,
             const.SYS_EXIT: self._handle_sys_exit,
             const.SYS_FORK: self._handle_sys_fork,
             const.SYS_READ: self._handle_sys_read,
@@ -358,6 +361,7 @@ class IosSyscallHandler(BaseSyscallHandler):
             const.SYS_LCHOWN: self._handle_sys_lchown,
             const.SYS_WORKQ_OPEN: self._handle_sys_workq_open,
             const.SYS_WORKQ_KERNRETURN: self._handle_sys_workq_kernreturn,
+            const.SYS_THREAD_SELFID: self._handle_sys_thread_selfid,
             const.SYS_KEVENT_QOS: self._handle_sys_kevent_qos,
             const.SYS_KEVENT_ID: self._handle_sys_kevent_id,
             const.SYS_MAC_SYSCALL: self._handle_sys_mac_syscall,
@@ -468,6 +472,18 @@ class IosSyscallHandler(BaseSyscallHandler):
         self.emu.uc.reg_write(arm64_const.UC_ARM64_REG_NZCV, nzcv & ~(1 << 29))
 
         return retval
+
+    def _handle_sys_syscall(self):
+        syscall_no = self.emu.get_arg(0)
+
+        args = []
+        for index in range(7):
+            args.append(self.emu.get_arg(1 + index))
+
+        for index, arg in enumerate(args):
+            self.emu.set_arg(index, arg)
+
+        self.handle_syscall(syscall_no)
 
     def _handle_sys_exit(self):
         status = self.emu.get_arg(0)
@@ -1095,14 +1111,18 @@ class IosSyscallHandler(BaseSyscallHandler):
         oldp = self.emu.get_arg(2)
         oldlenp = self.emu.get_arg(3)
 
-        ctl_type = self.emu.read_u32(name)
-        ctl_ident = self.emu.read_u32(name + 4)
+        mib = (
+            self.emu.read_u32(name),
+            self.emu.read_u32(name + 4),
+            self.emu.read_u32(name + 8),
+            self.emu.read_u32(name + 12),
+            self.emu.read_u32(name + 16),
+            self.emu.read_u32(name + 20),
+        )
 
-        result = sysctl(ctl_type, ctl_ident)
+        result = sysctl(mib)
         if result is None:
-            self.emu.logger.warning(
-                f"Unhandled sysctl command: {ctl_type}, {ctl_ident}"
-            )
+            self.emu.logger.warning(f"Unhandled sysctl command: {mib}")
             return -1
 
         if oldp:
@@ -1110,16 +1130,30 @@ class IosSyscallHandler(BaseSyscallHandler):
                 self.emu.write_bytes(oldp, struct_to_bytes(result))
             elif isinstance(result, str):
                 self.emu.write_string(oldp, result)
+            elif isinstance(result, bytes):
+                self.emu.write_bytes(oldp, result)
             elif isinstance(result, int):
                 self.emu.write_u64(oldp, result)
+            elif isinstance(result, list):
+                offset = 0
+                for st in result:
+                    self.emu.write_bytes(oldp + offset, struct_to_bytes(st))
+                    offset += ctypes.sizeof(st)
 
         if oldlenp:
             if isinstance(result, ctypes.Structure):
                 self.emu.write_u32(oldlenp, ctypes.sizeof(result))
             elif isinstance(result, str):
                 self.emu.write_u32(oldlenp, len(result))
+            elif isinstance(result, bytes):
+                self.emu.write_u32(oldlenp, len(result))
             elif isinstance(result, int):
                 self.emu.write_u32(oldlenp, 8)
+            elif isinstance(result, list):
+                result_len = 0
+                for st in result:
+                    result_len += ctypes.sizeof(st)
+                self.emu.write_u32(oldlenp, result_len)
 
         return 0
 
@@ -1195,7 +1229,7 @@ class IosSyscallHandler(BaseSyscallHandler):
         return 0
 
     def _handle_sys_gettid(self):
-        return self.emu.os.getpid()
+        return self.emu.os.gettid()
 
     def _handle_sys_identitysvc(self):
         self.emu.os.raise_permission_denied()
@@ -1371,6 +1405,9 @@ class IosSyscallHandler(BaseSyscallHandler):
     @staticmethod
     def _handle_sys_workq_kernreturn():
         return 0
+
+    def _handle_sys_thread_selfid(self):
+        return self.emu.os.gettid()
 
     @staticmethod
     def _handle_sys_kevent_qos():

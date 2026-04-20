@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import ctypes
-from typing import Callable, Literal, Optional, TypedDict, Union, TYPE_CHECKING
+from typing import Callable, List, Literal, Optional, TypedDict, Union, TYPE_CHECKING
 
 from unicorn import Uc
 
@@ -26,7 +26,7 @@ HookFuncCallable = Union[
 
 HookMemCallable = Callable[[Uc, int, int, int, int, HookContext], None]
 
-SysctlReturnValue = Union[int, str, ctypes.Structure]
+SysctlReturnValue = Union[int, str, bytes, ctypes.Structure, List[ctypes.Structure]]
 
 CFObjConvertible = Union[int, str, bytes, list, dict]
 NSObjConvertible = CFObjConvertible
