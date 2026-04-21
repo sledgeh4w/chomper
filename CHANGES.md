@@ -1,3 +1,13 @@
+## v0.3.8
+
+Released: 2026-04-22
+
+- Add experimental support for Swift.
+- Add more syscall handlers.
+- Add compatibility for `task_threads`, `tmpfile`, `getifaddrs`, `-[LSApplicationWorkspace installedPlugins]`, `-[CLLocationManager locationServicesEnabled]` and `-[CLLocationManager authorizationStatus]`.
+- Fix Unicode path issues on Windows.
+- Add `worker_thread` method for switching thread context.
+
 ## v0.3.7
 
 Released: 2026-01-03
@@ -31,7 +41,7 @@ Released: 2025-06-08
 - Add `Block` class for easier Objective-C block construction.
 - Add `add_mem_hook` method for exporting unicorn memory hook functionality.
 - Support emulation of device files such as `/dev/null` and `/dev/urandom`.
-- Add compatibility for `-[NSFileManager directoryContentsAtPath:]`, `-[NSUserDefaults setObject:forKey:]`, `NSLog` and `CFNetworkCopySystemProxySettings`.
+- Fix compatibility with `-[NSFileManager directoryContentsAtPath:]`, `-[NSUserDefaults setObject:forKey:]`, `NSLog` and `CFNetworkCopySystemProxySettings`.
 - Compatible with capstone 6.0.0a4.
 
 ## v0.3.4
