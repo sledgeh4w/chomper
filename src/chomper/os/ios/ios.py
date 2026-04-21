@@ -145,7 +145,6 @@ SYMBOLIC_LINKS = {
 
 # Default bundle values until an executable with Info.plist is loaded
 BUNDLE_UUID = "2305AA14-F491-40E0-BF02-88BDBABF51AE"
-BUNDLE_NAME = "Chomper"
 BUNDLE_EXECUTABLE = "Chomper"
 
 PREFERENCES = {
@@ -223,7 +222,7 @@ class IosOs(PosixOs):
         self.executable_path = (
             f"/private/var/containers/Bundle/Application"
             f"/{BUNDLE_UUID}"
-            f"/{BUNDLE_NAME}.app"
+            f"/{BUNDLE_EXECUTABLE}.app"
             f"/{BUNDLE_EXECUTABLE}"
         )
         self.executable_file = ""
@@ -842,7 +841,9 @@ class IosOs(PosixOs):
             "Application",
             BUNDLE_UUID,
         )
-        local_bundle_path = os.path.join(local_container_path, f"{BUNDLE_NAME}.app")
+        local_bundle_path = os.path.join(
+            local_container_path, f"{BUNDLE_EXECUTABLE}.app"
+        )
 
         self.forward_path(container_path, local_container_path)
         self.forward_path(bundle_path, local_bundle_path)
@@ -884,10 +885,9 @@ class IosOs(PosixOs):
             with open(info_path, "rb") as f:
                 info_data = plistlib.load(f)
 
-            bundle_name = info_data["CFBundleName"]
             bundle_executable = info_data["CFBundleExecutable"]
 
-            bundle_path = f"{container_path}/{bundle_name}.app"
+            bundle_path = f"{container_path}/{bundle_executable}.app"
             self.executable_path = f"{bundle_path}/{bundle_executable}"
 
             progname_str = self.emu.create_string(self.executable_path.split("/")[-1])

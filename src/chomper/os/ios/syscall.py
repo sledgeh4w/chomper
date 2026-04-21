@@ -122,6 +122,7 @@ class IosSyscallHandler(BaseSyscallHandler):
             const.SYS_FCHOWN: "SYS_fchown",
             const.SYS_FCHMOD: "SYS_fchmod",
             const.SYS_RENAME: "SYS_rename",
+            const.SYS_FLOCK: "SYS_flock",
             const.SYS_SENDTO: "SYS_sendto",
             const.SYS_SOCKETPAIR: "SYS_socketpair",
             const.SYS_MKDIR: "SYS_mkdir",
@@ -299,6 +300,7 @@ class IosSyscallHandler(BaseSyscallHandler):
             const.SYS_FCHOWN: self._handle_sys_fchown,
             const.SYS_FCHMOD: self._handle_sys_fchmod,
             const.SYS_RENAME: self._handle_sys_rename,
+            const.SYS_FLOCK: self._handle_sys_flock,
             const.SYS_SENDTO: self._handle_sys_sendto,
             const.SYS_SOCKETPAIR: self._handle_sys_socketpair,
             const.SYS_MKDIR: self._handle_sys_mkdir,
@@ -841,6 +843,10 @@ class IosSyscallHandler(BaseSyscallHandler):
         self.emu.os.rename(old, new)
 
         return 0
+
+    @staticmethod
+    def _handle_sys_flock():
+        pass
 
     def _handle_sys_sendto(self):
         sock = self.emu.get_arg(0)
