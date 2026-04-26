@@ -62,6 +62,11 @@ def hook_free(uc: Uc, address: int, size: int, user_data: HookContext):
     emu.memory_manager.free(addr)
 
 
+@register_hook("_malloc_default_zone")
+def hook_malloc_default_zone(uc: Uc, address: int, size: int, user_data: HookContext):
+    return 0
+
+
 @register_hook("_malloc_size")
 def hook_malloc_size(uc: Uc, address: int, size: int, user_data: HookContext):
     emu = user_data["emu"]

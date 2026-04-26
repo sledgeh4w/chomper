@@ -75,6 +75,7 @@ class IosSyscallHandler(BaseSyscallHandler):
             const.SYS_GETPID: "SYS_getpid",
             const.SYS_GETUID: "SYS_getuid",
             const.SYS_GETEUID: "SYS_geteuid",
+            const.SYS_PTRACE: "SYS_ptrace",
             const.SYS_SENDMSG: "SYS_sendmsg",
             const.SYS_RECVFROM: "SYS_recvfrom",
             const.SYS_GETPEERNAME: "SYS_getpeername",
@@ -228,6 +229,7 @@ class IosSyscallHandler(BaseSyscallHandler):
             const.KERNELRPC_MACH_PORT_ALLOCATE_TRAP: "KERNELRPC_MACH_PORT_ALLOCATE_TRAP",
             const.KERNELRPC_MACH_PORT_DEALLOCATE_TRAP: "KERNELRPC_MACH_PORT_DEALLOCATE_TRAP",
             const.KERNELRPC_MACH_PORT_MOD_REFS_TRAP: "KERNELRPC_MACH_PORT_MOD_REFS_TRAP",
+            const.KERNELRPC_MACH_PORT_INSERT_RIGHT: "KERNELRPC_MACH_PORT_INSERT_RIGHT",
             const.KERNELRPC_MACH_PORT_INSERT_MEMBER_TRAP: "KERNELRPC_MACH_PORT_INSERT_MEMBER_TRAP",
             const.KERNELRPC_MACH_PORT_CONSTRUCT_TRAP: "KERNELRPC_MACH_PORT_CONSTRUCT_TRAP",
             const.KERNELRPC_MACH_PORT_DESTRUCT_TRAP: "KERNELRPC_MACH_PORT_DESTRUCT_TRAP",
@@ -266,6 +268,7 @@ class IosSyscallHandler(BaseSyscallHandler):
             const.SYS_GETPID: self._handle_sys_getpid,
             const.SYS_GETUID: self._handle_sys_getuid,
             const.SYS_GETEUID: self._handle_sys_geteuid,
+            const.SYS_PTRACE: self._handle_sys_ptrace,
             const.SYS_SENDMSG: self._handle_sys_sendmsg,
             const.SYS_RECVFROM: self._handle_sys_recvfrom,
             const.SYS_GETPEERNAME: self._handle_sys_getpeername,
@@ -419,6 +422,7 @@ class IosSyscallHandler(BaseSyscallHandler):
             const.KERNELRPC_MACH_PORT_ALLOCATE_TRAP: self._handle_kernelrpc_mach_port_allocate_trap,
             const.KERNELRPC_MACH_PORT_DEALLOCATE_TRAP: self._handle_kernelrpc_mach_port_deallocate_trap,
             const.KERNELRPC_MACH_PORT_MOD_REFS_TRAP: self._handle_kernelrpc_mach_port_mod_refs_trap,
+            const.KERNELRPC_MACH_PORT_INSERT_RIGHT: self._handle_kernelrpc_mach_port_insert_right_trap,
             const.KERNELRPC_MACH_PORT_INSERT_MEMBER_TRAP: self._handle_kernelrpc_mach_port_insert_member_trap,
             const.KERNELRPC_MACH_PORT_CONSTRUCT_TRAP: self._handle_kernelrpc_mach_port_construct_trap,
             const.KERNELRPC_MACH_PORT_DESTRUCT_TRAP: self._handle_kernelrpc_mach_port_destruct_trap,
@@ -582,6 +586,10 @@ class IosSyscallHandler(BaseSyscallHandler):
 
     def _handle_sys_geteuid(self):
         return self.emu.os.getuid()
+
+    @staticmethod
+    def _handle_sys_ptrace():
+        return 0
 
     def _handle_sys_sendmsg(self):
         sock = self.emu.get_arg(0)
@@ -1148,18 +1156,18 @@ class IosSyscallHandler(BaseSyscallHandler):
 
         if oldlenp:
             if isinstance(result, ctypes.Structure):
-                self.emu.write_u32(oldlenp, ctypes.sizeof(result))
+                self.emu.write_u64(oldlenp, ctypes.sizeof(result))
             elif isinstance(result, str):
-                self.emu.write_u32(oldlenp, len(result))
+                self.emu.write_u64(oldlenp, len(result))
             elif isinstance(result, bytes):
-                self.emu.write_u32(oldlenp, len(result))
+                self.emu.write_u64(oldlenp, len(result))
             elif isinstance(result, int):
-                self.emu.write_u32(oldlenp, 8)
+                self.emu.write_u64(oldlenp, 8)
             elif isinstance(result, list):
                 result_len = 0
                 for st in result:
                     result_len += ctypes.sizeof(st)
-                self.emu.write_u32(oldlenp, result_len)
+                self.emu.write_u64(oldlenp, result_len)
 
         return 0
 
@@ -1226,11 +1234,11 @@ class IosSyscallHandler(BaseSyscallHandler):
 
         if oldlenp:
             if isinstance(result, ctypes.Structure):
-                self.emu.write_u32(oldlenp, ctypes.sizeof(result))
+                self.emu.write_u64(oldlenp, ctypes.sizeof(result))
             elif isinstance(result, str):
-                self.emu.write_u32(oldlenp, len(result))
+                self.emu.write_u64(oldlenp, len(result))
             elif isinstance(result, int):
-                self.emu.write_u32(oldlenp, 8)
+                self.emu.write_u64(oldlenp, 8)
 
         return 0
 
@@ -1705,6 +1713,10 @@ class IosSyscallHandler(BaseSyscallHandler):
 
     @staticmethod
     def _handle_kernelrpc_mach_port_mod_refs_trap():
+        return 0
+
+    @staticmethod
+    def _handle_kernelrpc_mach_port_insert_right_trap():
         return 0
 
     @staticmethod

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import abc
+import ctypes
 import os
 import posixpath
 import socket
@@ -17,7 +18,7 @@ from chomper.loader import BaseLoader
 from chomper.exceptions import SystemOperationFailed
 from chomper.feature import Feature
 from chomper.log import get_logger
-from chomper.utils import log_call, safe_join, to_signed
+from chomper.utils import log_call, safe_join, struct_to_bytes, to_signed
 
 from .device import DeviceFile
 from .handle import HandleManager
@@ -83,7 +84,11 @@ class PosixOs(ABC):
     IPPROTO_TCP = 6
 
     F_GETFL = 3
+    F_GETLK = 7
+    F_SETLK = 8
     F_GETPATH = 50
+
+    F_UNLCK = 2
 
     def __init__(self, emu: Chomper, rootfs_path: Optional[str] = None):
         self.emu = emu
@@ -393,15 +398,15 @@ class PosixOs(ABC):
         return buffer
 
     @abc.abstractmethod
-    def _construct_stat(self, st: os.stat_result) -> bytes:
+    def _construct_stat(self, st: os.stat_result) -> ctypes.Structure:
         pass
 
     @abc.abstractmethod
-    def _construct_device_stat(self) -> bytes:
+    def _construct_device_stat(self) -> ctypes.Structure:
         pass
 
     @abc.abstractmethod
-    def _construct_statfs(self) -> bytes:
+    def _construct_statfs(self) -> ctypes.Structure:
         pass
 
     def _get_file_property(self, path: str) -> Optional[FileProperty]:
@@ -498,13 +503,17 @@ class PosixOs(ABC):
         self.set_symbolic_link(src_path, dst_path)
 
     def _unlink(self, path: str):
-        exist = os.path.exists(path)
-        if not exist:
-            raise SystemOperationFailed(f"No such file: {path}", SyscallError.ENOENT)
-
         self._check_dir_writeable(path)
 
-        os.remove(path)
+        real_path = self._get_real_path(path)
+
+        exist = os.path.exists(real_path)
+        if not exist:
+            raise SystemOperationFailed(
+                f"No such file: {real_path}", SyscallError.ENOENT
+            )
+
+        os.remove(real_path)
 
     def _readlink(self, path: str) -> Optional[str]:
         return self._symbolic_links.get(path)
@@ -515,7 +524,8 @@ class PosixOs(ABC):
 
     def _stat(self, path: str) -> bytes:
         real_path = self._get_real_path(path)
-        return self._construct_stat(os.stat(real_path))
+        st = self._construct_stat(os.stat(real_path))
+        return struct_to_bytes(st)
 
     def _rename(self, old: str, new: str):
         self._check_dir_writeable(new)
@@ -701,10 +711,12 @@ class PosixOs(ABC):
             return self._stat(path)
 
         if self._is_dev_fd(fd):
-            return self._construct_device_stat()
+            st = self._construct_device_stat()
+            return struct_to_bytes(st)
 
         real_fd = self._get_fd_real_fd(fd)
-        return self._construct_stat(os.fstat(real_fd))
+        st = self._construct_stat(os.fstat(real_fd))
+        return struct_to_bytes(st)
 
     @log_call
     def fstatat(self, dir_fd: int, path: str) -> bytes:
@@ -719,13 +731,17 @@ class PosixOs(ABC):
     def statfs(self, path: str) -> bytes:
         if path:
             pass
-        return self._construct_statfs()
+
+        st = self._construct_statfs()
+        return struct_to_bytes(st)
 
     @log_call
     def fstatfs(self, fd: int) -> bytes:
         if fd:
             pass
-        return self._construct_statfs()
+
+        st = self._construct_statfs()
+        return struct_to_bytes(st)
 
     @log_call
     def fsync(self, fd: int):
@@ -1141,7 +1157,7 @@ class PosixOs(ABC):
         return count
 
     @abc.abstractmethod
-    def _construct_sockaddr_in(self, address: str, port: int) -> bytes:
+    def _construct_sockaddr_in(self, address: str, port: int) -> ctypes.Structure:
         pass
 
     @log_call
@@ -1153,8 +1169,9 @@ class PosixOs(ABC):
 
         real_sock = self._get_fd_sock(sock)
         address, port = real_sock.getpeername()
+        st = self._construct_sockaddr_in(address, port)
 
-        return self._construct_sockaddr_in(address, port)
+        return struct_to_bytes(st)
 
     @log_call
     def getsockname(self, sock: int) -> bytes:
@@ -1165,8 +1182,13 @@ class PosixOs(ABC):
 
         real_sock = self._get_fd_sock(sock)
         address, port = real_sock.getsockname()
+        st = self._construct_sockaddr_in(address, port)
 
-        return self._construct_sockaddr_in(address, port)
+        return struct_to_bytes(st)
+
+    @abc.abstractmethod
+    def _construct_flock(self, lock_type: int) -> ctypes.Structure:
+        pass
 
     @log_call
     def fcntl(self, fd: int, cmd: int, arg: int) -> int:
@@ -1176,6 +1198,11 @@ class PosixOs(ABC):
             elif fd in (self._stdout_fd, self._stderr_fd):
                 return os.O_WRONLY
             return os.O_RDWR
+        elif cmd == self.F_GETLK:
+            st = self._construct_flock(self.F_UNLCK)
+            self.emu.write_bytes(arg, struct_to_bytes(st))
+        elif cmd == self.F_SETLK:
+            pass
         elif cmd == self.F_GETPATH:
             path = self._get_fd_path(fd)
             if path:

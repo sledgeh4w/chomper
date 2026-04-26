@@ -5,13 +5,14 @@ import plistlib
 import time
 from typing import Dict, TYPE_CHECKING
 
-from unicorn import UcError
+from unicorn import arm64_const, UcError
 
 from chomper.os.handle import HandleManager
 from chomper.utils import read_struct, struct_to_bytes, int_to_bytes, float_to_bytes
 
 from . import const
 from .structs import (
+    Arm64ThreadState64,
     HostBasicInfo,
     MachMsgHeader,
     MachMsgBody,
@@ -163,6 +164,8 @@ class MachMsgHandler:
                 result = self._handle_task_set_special_port(msg, msgh)
             elif msgh_id == 3414:
                 result = self._handle_task_get_exception_ports(msg, msgh)
+            elif msgh_id == 3415:
+                result = self._handle_task_swap_exception_ports(msg, msgh)
             elif msgh_id == 3418:
                 result = self._handle_semaphore_create(msg, msgh)
             elif msgh_id == 4808:
@@ -236,12 +239,11 @@ class MachMsgHandler:
                 int_to_bytes(count, 4),
                 struct_to_bytes(info),
             )
-
-            return const.KERN_SUCCESS
         else:
             self.emu.logger.warning(f"Unhandled host_info: flavor={flavor}")
+            return const.KERN_RESOURCE_SHORTAGE
 
-        return const.KERN_RESOURCE_SHORTAGE
+        return const.KERN_SUCCESS
 
     def _handle_host_get_io_master(self, msg: int, msgh: MachMsgHeader) -> int:
         port = self.emu.ios_os.MACH_PORT_IO_MASTER
@@ -282,12 +284,11 @@ class MachMsgHandler:
                 int_to_bytes(count, 4),
                 struct_to_bytes(info),
             )
-
-            return const.KERN_SUCCESS
         else:
             self.emu.logger.warning(f"Unhandled host_statistics: flavor={flavor}")
+            return const.KERN_RESOURCE_SHORTAGE
 
-        return const.KERN_RESOURCE_SHORTAGE
+        return const.KERN_SUCCESS
 
     def _handle_host_statistics64(self, msg: int, msgh: MachMsgHeader) -> int:
         flavor = self.emu.read_s32(msg + 0x20)
@@ -321,12 +322,11 @@ class MachMsgHandler:
                 int_to_bytes(count, 4),
                 struct_to_bytes(info),
             )
-
-            return const.KERN_SUCCESS
         else:
             self.emu.logger.warning(f"Unhandled host_statistics64: flavor={flavor}")
+            return const.KERN_RESOURCE_SHORTAGE
 
-        return const.KERN_RESOURCE_SHORTAGE
+        return const.KERN_SUCCESS
 
     def _handle_host_get_special_port(self, msg: int, msgh: MachMsgHeader) -> int:
         which_port = self.emu.read_s32(msg + 0x24)
@@ -425,11 +425,11 @@ class MachMsgHandler:
                 b"".join([int_to_bytes(value, 4) for value in audit_token]),
             )
 
-            return const.KERN_SUCCESS
         else:
             self.emu.logger.warning(f"Unhandled task_info: flavor={flavor}")
+            return const.KERN_RESOURCE_SHORTAGE
 
-        return const.KERN_RESOURCE_SHORTAGE
+        return const.KERN_SUCCESS
 
     def _handle_task_get_special_port(self, msg: int, msgh: MachMsgHeader) -> int:
         which_port = self.emu.read_s32(msg + 0x20)
@@ -513,6 +513,36 @@ class MachMsgHandler:
 
         return const.KERN_SUCCESS
 
+    def _handle_task_swap_exception_ports(self, msg: int, msgh: MachMsgHeader) -> int:
+        masks_cnt = 1
+
+        msg_header = MachMsgHeader(
+            msgh_bits=const.MACH_MSGH_BITS_COMPLEX,
+            msgh_size=36 + 32 * 12 + 4 + masks_cnt * 12,
+            msgh_remote_port=0,
+            msgh_local_port=0,
+            msgh_voucher_port=0,
+            msgh_id=(msgh.msgh_id + 100),
+        )
+
+        msg_body = MachMsgBody(
+            msgh_descriptor_count=32,
+        )
+
+        self.write_msg(
+            msg,
+            msg_header,
+            msg_body,
+            int_to_bytes(0, 8),
+            bytes(32 * 12),
+            int_to_bytes(masks_cnt, 4),
+            int_to_bytes(0, 4),
+            int_to_bytes(0, 4),
+            int_to_bytes(0, 4),
+        )
+
+        return const.KERN_SUCCESS
+
     def _handle_semaphore_create(self, msg: int, msgh: MachMsgHeader) -> int:
         # policy = self.emu.read_s32(msg_ptr + 0x20)
         value = self.emu.read_s32(msg + 0x24)
@@ -523,9 +553,57 @@ class MachMsgHandler:
         return const.KERN_SUCCESS
 
     def _handle_thread_get_state(self, msg: int, msgh: MachMsgHeader) -> int:
+        flavor = self.emu.read_s32(msg + 0x20)
+
         tid = self.mach_port_manager.get_prop(msgh.msgh_remote_port, "tid")
-        self.emu.logger.warning(f"Unhandled thread_get_state: tid={tid}")
-        return const.KERN_RESOURCE_SHORTAGE
+
+        if flavor == const.ARM_THREAD_STATE64:
+            thread_state = Arm64ThreadState64(
+                x=(ctypes.c_uint64 * 29)(
+                    *[
+                        self.emu.uc.reg_read(arm64_const.UC_ARM64_REG_X0 + i)
+                        for i in range(29)
+                    ]
+                ),
+                fp=self.emu.uc.reg_read(arm64_const.UC_ARM64_REG_FP),
+                lr=self.emu.uc.reg_read(arm64_const.UC_ARM64_REG_LR),
+                sp=self.emu.uc.reg_read(arm64_const.UC_ARM64_REG_SP),
+                pc=self.emu.uc.reg_read(arm64_const.UC_ARM64_REG_PC),
+                cpsr=self.emu.uc.reg_read(arm64_const.UC_ARM64_REG_NZCV),
+                flags=0,
+            )
+        else:
+            self.emu.logger.warning(
+                f"Unhandled thread_get_state: tid={tid}, flavor={flavor}"
+            )
+            return const.KERN_RESOURCE_SHORTAGE
+
+        state_size = ctypes.sizeof(Arm64ThreadState64)
+        out_cnt = state_size // 4
+
+        msg_header = MachMsgHeader(
+            msgh_bits=0,
+            msgh_size=(40 + state_size),
+            msgh_remote_port=0,
+            msgh_local_port=0,
+            msgh_voucher_port=0,
+            msgh_id=(msgh.msgh_id + 100),
+        )
+
+        msg_body = MachMsgBody(
+            msgh_descriptor_count=0,
+        )
+
+        self.write_msg(
+            msg,
+            msg_header,
+            msg_body,
+            int_to_bytes(0, 8),
+            int_to_bytes(out_cnt, 4),
+            struct_to_bytes(thread_state),
+        )
+
+        return const.KERN_SUCCESS
 
     def _handle_vm_read_overwrite(self, msg: int, msgh: MachMsgHeader) -> int:
         address = self.emu.read_u64(msg + 0x20)
@@ -618,15 +696,16 @@ class MachMsgHandler:
 
         if flavor == const.VM_REGION_BASIC_INFO_64:
             for start, end, prop in self.emu.uc.mem_regions():
-                if start <= address < end:
+                if address < end:
                     out_address = start
-                    size = end - start
+                    size = end - start + 1
                     break
             else:
                 self.emu.logger.warning("vm_region_64 failed: invalid address")
                 return const.KERN_INVALID_ADDRESS
 
-            out_count = ctypes.sizeof(VmRegionBasicInfo64) // 4
+            info_size = ctypes.sizeof(VmRegionBasicInfo64)
+            out_count = info_size // 4
             object_name = 0
 
             info = VmRegionBasicInfo64(
@@ -642,7 +721,7 @@ class MachMsgHandler:
 
             msg_header = MachMsgHeader(
                 msgh_bits=const.MACH_MSGH_BITS_COMPLEX,
-                msgh_size=(68 + out_count * 4),
+                msgh_size=(68 + info_size),
                 msgh_remote_port=0,
                 msgh_local_port=0,
                 msgh_voucher_port=0,
@@ -670,12 +749,11 @@ class MachMsgHandler:
                 int_to_bytes(out_count, 4),
                 struct_to_bytes(info),
             )
-
-            return const.KERN_SUCCESS
         else:
             self.emu.logger.warning(f"Unhandled vm_region_64: flavor={flavor}")
+            return const.KERN_RESOURCE_SHORTAGE
 
-        return const.KERN_RESOURCE_SHORTAGE
+        return const.KERN_SUCCESS
 
     def _handle_xpc_pipe_mach_msg(self, msg: int, msgh: MachMsgHeader) -> int:
         msg_header = MachMsgHeader(
