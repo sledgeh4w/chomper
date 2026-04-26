@@ -181,6 +181,11 @@ class XpcMessageHandler:
                 reply_obj = self._reply_get_bundle_proxy()
             elif sel_name == "resolveQueries:legacySPI:completionHandler:":
                 reply_obj = self._reply_resolve_queries()
+            elif (
+                sel_name
+                == "getWhetherTypeIdentifier:conformsToTypeIdentifier:completionHandler:"  # noqa
+            ):
+                reply_obj = self._reply_get_whether_type_identifier()
         elif name == "com.apple.mobilegestalt.xpc":
             if sel_name == "getServerAnswerForQuestion:reply:":
                 reply_obj = self._reply_get_server_answer_for_question()
@@ -194,6 +199,11 @@ class XpcMessageHandler:
                 sel_name == "getAuthorizationStatusForBundleID:orBundlePath:replyBlock:"
             ):
                 reply_obj = self._reply_get_authorization_status_for_bundle_id()
+        elif name == "com.apple.pasteboard.pasted":
+            if sel_name == "pasteboardWithName:createIfNeeded:completionBlock:":
+                reply_obj = self._reply_pasteboard_with_name()
+            elif sel_name == "savePasteboard:dataProviderEndpoint:completionBlock:":
+                reply_obj = self._reply_save_pasteboard()
 
         if not reply_obj:
             from_addr = self.emu.debug_symbol(
@@ -259,6 +269,14 @@ class XpcMessageHandler:
         ]
 
     @staticmethod
+    def _reply_get_whether_type_identifier():
+        return [
+            None,
+            "v12@?0B8",
+            [0],
+        ]
+
+    @staticmethod
     def _reply_get_server_answer_for_question():
         return [
             None,
@@ -300,5 +318,28 @@ class XpcMessageHandler:
             [
                 None,
                 0,
+            ],
+        ]
+
+    @staticmethod
+    def _reply_pasteboard_with_name():
+        return [
+            None,
+            'v24@?0@"PBItemCollection"8@"NSError"16',
+            [
+                None,
+                None,
+            ],
+        ]
+
+    @staticmethod
+    def _reply_save_pasteboard():
+        return [
+            None,
+            'v32@?0Q8q16@"NSError"24',
+            [
+                0,
+                0,
+                None,
             ],
         ]

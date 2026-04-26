@@ -6,27 +6,36 @@ from chomper.os.ios.structs import MachTimespec
 
 
 def test_ns_number(emu_ios, objc):
-    with objc.autorelease_pool():
-        value = 1
+    sample_int = 1
 
-        number = objc.msg_send("NSNumber", "numberWithInteger:", value)
+    with objc.autorelease_pool():
+        ns_number_class = objc.find_class("NSNumber")
+        assert ns_number_class
+
+        number = objc.msg_send("NSNumber", "numberWithInteger:", sample_int)
         assert number
 
         raw_value = number.call_method("intValue")
-        assert value == raw_value
+        assert sample_int == raw_value
 
 
 def test_ns_string(emu_ios, objc):
     with objc.autorelease_pool():
-        string = objc.msg_send("NSString", "stringWithUTF8String:", "chomper")
+        ns_string_class = objc.find_class("NSString")
+        assert ns_string_class
+
+        string = ns_string_class.call_method("stringWithUTF8String:", "Mocha")
         assert string
 
 
 def test_ns_mutable_string(emu_ios, objc):
-    with objc.autorelease_pool():
-        sample_str = "Mocha"
+    sample_str = "Mocha"
 
-        string = objc.msg_send("NSMutableString", "string")
+    with objc.autorelease_pool():
+        ns_mutable_string_class = objc.find_class("NSMutableString")
+        assert ns_mutable_string_class
+
+        string = ns_mutable_string_class.call_method("string")
 
         string.call_method("setString:", objc.create_ns_string(sample_str))
         raw_string = string.call_method("UTF8String")
@@ -38,11 +47,14 @@ def test_ns_mutable_string(emu_ios, objc):
 
 
 def test_ns_array(emu_ios, objc):
-    with objc.autorelease_pool():
-        sample_str = "Mocha"
+    sample_str = "Mocha"
 
-        array = objc.msg_send(
-            "NSArray", "arrayWithObjects:", objc.create_ns_string(sample_str)
+    with objc.autorelease_pool():
+        ns_array_class = objc.find_class("NSArray")
+        assert ns_array_class
+
+        array = ns_array_class.call_method(
+            "arrayWithObjects:", objc.create_ns_string(sample_str)
         )
         assert array
 
@@ -55,10 +67,13 @@ def test_ns_array(emu_ios, objc):
 
 
 def test_ns_mutable_array(emu_ios, objc):
-    with objc.autorelease_pool():
-        sample_str = "Mocha"
+    sample_str = "Mocha"
 
-        array = objc.msg_send("NSMutableArray", "array")
+    with objc.autorelease_pool():
+        ns_mutable_array_class = objc.find_class("NSMutableArray")
+        assert ns_mutable_array_class
+
+        array = ns_mutable_array_class.call_method("array")
         assert array
 
         array.call_method("addObject:", objc.create_ns_string(sample_str))
@@ -69,15 +84,20 @@ def test_ns_mutable_array(emu_ios, objc):
 
 
 def test_ns_dictionary(emu_ios, objc):
+    sample_key = "name"
+    sample_value = "Mocha"
+
     with objc.autorelease_pool():
-        sample_key = "name"
-        sample_value = "Mocha"
+        ns_dictionary_class = objc.find_class("NSDictionary")
+        assert ns_dictionary_class
 
         key = objc.create_ns_string(sample_key)
         value = objc.create_ns_string(sample_value)
 
-        dictionary = objc.msg_send(
-            "NSDictionary", "dictionaryWithObjectsAndKeys:", value, va_list=(key,)
+        dictionary = ns_dictionary_class.call_method(
+            "dictionaryWithObjectsAndKeys:",
+            value,
+            va_list=(key,),
         )
         assert dictionary
 
@@ -90,11 +110,14 @@ def test_ns_dictionary(emu_ios, objc):
 
 
 def test_ns_mutable_dictionary(emu_ios, objc):
-    with objc.autorelease_pool():
-        sample_key = "name"
-        sample_value = "Mocha"
+    sample_key = "name"
+    sample_value = "Mocha"
 
-        dictionary = objc.msg_send("NSMutableDictionary", "dictionary")
+    with objc.autorelease_pool():
+        ns_mutable_dictionary_class = objc.find_class("NSMutableDictionary")
+        assert ns_mutable_dictionary_class
+
+        dictionary = ns_mutable_dictionary_class.call_method("dictionary")
         assert dictionary
 
         key = objc.create_ns_string(sample_key)
@@ -108,48 +131,68 @@ def test_ns_mutable_dictionary(emu_ios, objc):
 
 
 def test_ns_data(emu_ios, objc):
-    with objc.autorelease_pool():
-        sample_bytes = b"Mocha"
+    sample_bytes = b"Mocha"
 
-        buffer = emu_ios.create_buffer(len(sample_bytes))
+    with emu_ios.memory_scope() as mem, objc.autorelease_pool():
+        ns_data_class = objc.find_class("NSData")
+        assert ns_data_class
+
+        buffer = mem.create_buffer(len(sample_bytes))
         emu_ios.write_bytes(buffer, sample_bytes)
 
-        data = objc.msg_send(
-            "NSData", "dataWithBytes:length:", buffer, len(sample_bytes)
+        data = ns_data_class.call_method(
+            "dataWithBytes:length:", buffer, len(sample_bytes)
         )
         assert data
 
 
 def test_ns_data_with_large_size(emu_ios, objc):
     """When the size of `NSData` exceeds 64k, `vm_allocate` will be called."""
-    with objc.autorelease_pool():
-        sample_bytes = bytes(1024 * 64)
+    sample_bytes = bytes(1024 * 64)
 
-        buffer = emu_ios.create_buffer(len(sample_bytes))
+    with emu_ios.memory_scope() as mem, objc.autorelease_pool():
+        ns_data_class = objc.find_class("NSData")
+        assert ns_data_class
+
+        buffer = mem.create_buffer(len(sample_bytes))
         emu_ios.write_bytes(buffer, sample_bytes)
 
-        data = objc.msg_send(
-            "NSData", "dataWithBytes:length:", buffer, len(sample_bytes)
+        data = ns_data_class.call_method(
+            "dataWithBytes:length:", buffer, len(sample_bytes)
         )
         assert data
 
 
 def test_ns_url(emu_ios, objc):
     with objc.autorelease_pool():
+        ns_url_class = objc.find_class("NSURL")
+        ns_url_request_class = objc.find_class("NSURLRequest")
+        ns_url_session_configuration_class = objc.find_class(
+            "NSURLSessionConfiguration"
+        )
+        ns_url_session_class = objc.find_class("NSURLSession")
+
+        assert (
+            ns_url_class
+            and ns_url_request_class
+            and ns_url_session_configuration_class
+            and ns_url_session_class
+        )
+
         url_str = objc.create_ns_string("https://github.com/sledgeh4w/chomper")
 
-        url = objc.msg_send("NSURL", "URLWithString:", url_str)
+        url = ns_url_class.call_method("URLWithString:", url_str)
         assert url
 
-        request = objc.msg_send("NSURLRequest", "requestWithURL:", url)
+        request = ns_url_request_class.call_method("requestWithURL:", url)
         assert request
 
-        config = objc.msg_send(
-            "NSURLSessionConfiguration", "defaultSessionConfiguration"
+        config = ns_url_session_configuration_class.call_method(
+            "defaultSessionConfiguration"
         )
         assert config
 
-        session = objc.msg_send("NSURLSession", "sessionWithConfiguration:", config)
+        session = ns_url_session_class.call_method("sessionWithConfiguration:", config)
         assert session
 
         task = session.call_method(
@@ -164,10 +207,13 @@ def test_ns_url(emu_ios, objc):
 
 def test_ns_locale(emu_ios, objc):
     with objc.autorelease_pool():
-        locale = objc.msg_send("NSLocale", "currentLocale")
+        ns_locale_class = objc.find_class("NSLocale")
+        assert ns_locale_class
+
+        locale = ns_locale_class.call_method("currentLocale")
         assert locale
 
-        preferred_languages = objc.msg_send("NSLocale", "preferredLanguages")
+        preferred_languages = ns_locale_class.call_method("preferredLanguages")
         assert preferred_languages
 
         preferred_language = preferred_languages.call_method("firstObject")
@@ -176,7 +222,10 @@ def test_ns_locale(emu_ios, objc):
 
 def test_ns_user_defaults(emu_ios, objc):
     with objc.autorelease_pool():
-        user_defaults = objc.msg_send("NSUserDefaults", "standardUserDefaults")
+        ns_user_defaults_class = objc.find_class("NSUserDefaults")
+        assert ns_user_defaults_class
+
+        user_defaults = ns_user_defaults_class.call_method("standardUserDefaults")
         assert user_defaults
 
         key = objc.create_ns_string("AppleLocale")
@@ -192,20 +241,29 @@ def test_ns_user_defaults(emu_ios, objc):
 
 def test_ns_date(emu_ios, objc):
     with objc.autorelease_pool():
-        date = objc.msg_send("NSDate", "date")
+        ns_date_class = objc.find_class("NSDate")
+        assert ns_date_class
+
+        date = ns_date_class.call_method("date")
         assert date
 
 
 def test_ns_date_formatter(emu_ios, objc):
     with objc.autorelease_pool():
-        date_formatter = objc.msg_send("NSDateFormatter", "alloc")
-        date_formatter.call_method("init")
+        ns_date_class = objc.find_class("NSDate")
+        ns_date_formatter_class = objc.find_class("NSDateFormatter")
+
+        assert ns_date_class and ns_date_formatter_class
+
+        date_formatter = ns_date_formatter_class.call_method("alloc")
         assert date_formatter
+
+        date_formatter.call_method("init")
 
         format_str = objc.create_ns_string("yyyy-MM-dd HH:mm:ss")
         date_formatter.call_method("setDateFormat:", format_str)
 
-        current_date = objc.msg_send("NSDate", "date")
+        current_date = ns_date_class.call_method("date")
         date_str = date_formatter.call_method("stringFromDate:", current_date)
         assert emu_ios.read_string(date_str.call_method("UTF8String"))
 
@@ -215,23 +273,30 @@ def test_ns_date_formatter(emu_ios, objc):
 
 def test_ns_time_zone(emu_ios, objc):
     with objc.autorelease_pool():
-        time_zone = objc.msg_send("NSTimeZone", "defaultTimeZone")
+        ns_time_zone_class = objc.find_class("NSTimeZone")
+        assert ns_time_zone_class
+
+        time_zone = ns_time_zone_class.call_method("defaultTimeZone")
         assert time_zone
 
         name = time_zone.call_method("name")
         assert emu_ios.read_string(objc.msg_send(name, "UTF8String"))
 
-        time_zone_shanghai = objc.msg_send(
-            "NSTimeZone", "timeZoneWithName:", objc.create_ns_string("Asia/Shanghai")
+        time_zone_shanghai = ns_time_zone_class.call_method(
+            "timeZoneWithName:",
+            objc.create_ns_string("Asia/Shanghai"),
         )
         assert time_zone_shanghai
 
-        objc.msg_send("NSTimeZone", "setDefaultTimeZone:", time_zone_shanghai)
+        ns_time_zone_class.call_method("setDefaultTimeZone:", time_zone_shanghai)
 
 
 def test_ns_bundle(emu_ios, objc):
     with objc.autorelease_pool():
-        bundle = objc.msg_send("NSBundle", "mainBundle")
+        ns_bundle_class = objc.find_class("NSBundle")
+        assert ns_bundle_class
+
+        bundle = ns_bundle_class.call_method("mainBundle")
         assert bundle
 
         bundle_path = bundle.call_method("bundlePath")
@@ -273,11 +338,14 @@ def test_ns_write_to_file_atomically(emu_ios, objc):
 
 def test_ns_file_manager(emu_ios, objc):
     with objc.autorelease_pool():
+        ns_file_manager_class = objc.find_class("NSFileManager")
+        assert ns_file_manager_class
+
         system_version_path = objc.create_ns_string(
             "/System/Library/CoreServices/SystemVersion.plist"
         )
 
-        file_manager = objc.msg_send("NSFileManager", "defaultManager")
+        file_manager = ns_file_manager_class.call_method("defaultManager")
         assert file_manager
 
         exists = file_manager.call_method("fileExistsAtPath:", system_version_path)
@@ -300,7 +368,10 @@ def test_ns_file_manager(emu_ios, objc):
 
 def test_ui_device(emu_ios, objc):
     with objc.autorelease_pool():
-        device = objc.msg_send("UIDevice", "currentDevice")
+        ui_device_class = objc.find_class("UIDevice")
+        assert ui_device_class
+
+        device = ui_device_class.call_method("currentDevice")
         assert device
 
         system_name = device.call_method("systemName")
@@ -317,7 +388,10 @@ def test_ui_device(emu_ios, objc):
 
 def test_ui_screen(emu_ios, objc):
     with objc.autorelease_pool():
-        screen = objc.msg_send("UIScreen", "mainScreen")
+        ui_screen_class = objc.find_class("UIScreen")
+        assert ui_screen_class
+
+        screen = ui_screen_class.call_method("mainScreen")
         assert screen
 
         brightness = screen.call_method("brightness")
@@ -326,19 +400,46 @@ def test_ui_screen(emu_ios, objc):
 
 def test_ui_font(emu_ios, objc):
     with objc.autorelease_pool():
-        family_names = objc.msg_send("UIFont", "familyNames")
+        ui_font_class = objc.find_class("UIFont")
+        assert ui_font_class
+
+        family_names = ui_font_class.call_method("familyNames")
         assert family_names
+
+
+def test_ui_pasteboard(emu_ios, objc):
+    with objc.autorelease_pool():
+        ui_pasteboard_class = objc.find_class("UIPasteboard")
+        assert ui_pasteboard_class
+
+        pasteboard = ui_pasteboard_class.call_method("generalPasteboard")
+        assert pasteboard
+
+        name = objc.create_ns_string("Mocha")
+
+        pasteboard_with_name = ui_pasteboard_class.call_method(
+            "pasteboardWithName:create:",
+            name,
+            1,
+        )
+        assert pasteboard_with_name
 
 
 def test_ca_display(emu_ios, objc):
     with objc.autorelease_pool():
-        display = objc.msg_send("CADisplay", "mainDisplay")
+        ca_display_class = objc.find_class("CADisplay")
+        assert ca_display_class
+
+        display = ca_display_class.call_method("mainDisplay")
         assert display
 
 
 def test_ct_telephony_network_info(emu_ios, objc):
     with objc.autorelease_pool():
-        network_info = objc.msg_send("CTTelephonyNetworkInfo", "alloc")
+        ct_telephony_network_info_class = objc.find_class("CTTelephonyNetworkInfo")
+        assert ct_telephony_network_info_class
+
+        network_info = ct_telephony_network_info_class.call_method("alloc")
         assert network_info
 
         network_info.call_method("init")
@@ -348,7 +449,10 @@ def test_ct_telephony_network_info(emu_ios, objc):
 
 def test_ct_cellular_data(emu_ios, objc):
     with objc.autorelease_pool():
-        cellular_data = objc.msg_send("CTCellularData", "alloc")
+        ct_cellular_data_class = objc.find_class("CTCellularData")
+        assert ct_cellular_data_class
+
+        cellular_data = ct_cellular_data_class.call_method("alloc")
         assert cellular_data
 
         cellular_data.call_method("init")
@@ -359,7 +463,11 @@ def test_ct_cellular_data(emu_ios, objc):
 
 def test_ls_application_workspace(emu_ios, objc):
     with objc.autorelease_pool():
-        workspace = objc.msg_send("LSApplicationWorkspace", "defaultWorkspace")
+        ls_application_workspace_class = objc.find_class("LSApplicationWorkspace")
+        assert ls_application_workspace_class
+
+        workspace = ls_application_workspace_class.call_method("defaultWorkspace")
+        assert workspace
 
         plugins = objc.msg_send(workspace, "installedPlugins")
         assert plugins
@@ -367,14 +475,23 @@ def test_ls_application_workspace(emu_ios, objc):
 
 def test_cl_location_manager(emu_ios, objc):
     with objc.autorelease_pool():
-        objc.msg_send("CLLocationManager", "locationServicesEnabled")
+        cl_location_manager_class = objc.find_class("CLLocationManager")
+        assert cl_location_manager_class
 
-        objc.msg_send("CLLocationManager", "authorizationStatus")
+        location_manager = cl_location_manager_class.call_method("alloc")
+        assert location_manager
+
+        location_manager.call_method("init")
+
+        cl_location_manager_class.call_method("locationServicesEnabled")
+
+        cl_location_manager_class.call_method("authorizationStatus")
 
 
 def test_ns_log(emu_ios, objc):
     with objc.autorelease_pool():
         msg = objc.create_ns_string("test")
+
         emu_ios.call_symbol("_NSLog", msg.value)
 
 
@@ -395,18 +512,20 @@ def test_cf_run_loop(emu_ios, objc):
 
 def test_system_configuration(emu_ios, objc):
     with emu_ios.memory_scope() as mem, objc.autorelease_pool():
-        name = "apple.com"
-
-        name_ptr = mem.create_string(name)
+        name_ptr = mem.create_string("apple.com")
         flags_ptr = mem.create_buffer(8)
 
         reachability = emu_ios.call_symbol(
-            "_SCNetworkReachabilityCreateWithName", 0, name_ptr
+            "_SCNetworkReachabilityCreateWithName",
+            0,
+            name_ptr,
         )
         assert reachability
 
         result = emu_ios.call_symbol(
-            "_SCNetworkReachabilityGetFlags", reachability, flags_ptr
+            "_SCNetworkReachabilityGetFlags",
+            reachability,
+            flags_ptr,
         )
         assert result
 

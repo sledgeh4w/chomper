@@ -11,7 +11,7 @@ import uuid
 from contextlib import contextmanager
 from typing import List, Optional
 
-from chomper.const import STACK_ADDRESS, STACK_SIZE, TLS_ADDRESS
+from chomper.const import TLS_ADDRESS
 from chomper.exceptions import EmulatorCrashed, SystemOperationFailed
 from chomper.feature import Feature
 from chomper.loader import MachoLoader, Module
@@ -23,7 +23,7 @@ from chomper.utils import log_call, struct_to_bytes, to_unsigned, read_struct
 from .fixup import SystemModuleFixer
 from .hooks import get_hooks, hook_read_class
 from .mach import MachMsgHandler
-from .structs import Dirent, Stat64, Statfs64, Timespec, SockaddrIn, Kevent
+from .structs import Dirent, Flock, Kevent, SockaddrIn, Stat64, Statfs64, Timespec
 from .syscall import IosSyscallHandler
 from .xpc import XpcMessageHandler
 
@@ -109,7 +109,9 @@ SYSTEM_MODULES = [
     "/System/Library/PrivateFrameworks/FontServices.framework/libGSFont.dylib",
     "/System/Library/PrivateFrameworks/FontServices.framework/libGSFontCache.dylib",
     "/System/Library/PrivateFrameworks/FrontBoardServices",
+    "/System/Library/PrivateFrameworks/LocationSupport",
     "/System/Library/PrivateFrameworks/MobileKeyBag",
+    "/System/Library/PrivateFrameworks/Pasteboard",
     "/System/Library/PrivateFrameworks/PhysicsKit",
     "/System/Library/PrivateFrameworks/PrototypeTools",
     "/System/Library/PrivateFrameworks/RunningBoardServices",
@@ -273,6 +275,10 @@ class IosOs(PosixOs):
         )
 
     @staticmethod
+    def _get_main_thread() -> int:
+        return TLS_ADDRESS - 0xE0
+
+    @staticmethod
     def _resolve_flags(flags: int) -> int:
         """Create flags that will be actually passed into the host machine.
 
@@ -302,7 +308,7 @@ class IosOs(PosixOs):
 
         return _flags
 
-    def _construct_stat(self, st: os.stat_result) -> bytes:
+    def _construct_stat(self, st: os.stat_result) -> ctypes.Structure:
         if sys.platform == "win32":
             block_size = 4096
 
@@ -323,7 +329,7 @@ class IosOs(PosixOs):
         mtimespec = Timespec.from_time_ns(st.st_mtime_ns)
         ctimespec = Timespec.from_time_ns(st.st_ctime_ns)
 
-        st = Stat64(
+        return Stat64(
             st_dev=st.st_dev,
             st_mode=st.st_mode,
             st_nlink=st.st_nlink,
@@ -340,14 +346,12 @@ class IosOs(PosixOs):
             st_flags=flags,
         )
 
-        return struct_to_bytes(st)
-
-    def _construct_device_stat(self) -> bytes:
+    def _construct_device_stat(self) -> ctypes.Structure:
         atimespec = Timespec.from_time_ns(0)
         mtimespec = Timespec.from_time_ns(0)
         ctimespec = Timespec.from_time_ns(0)
 
-        st = Stat64(
+        return Stat64(
             st_dev=0,
             st_mode=0x2000,
             st_nlink=0,
@@ -364,10 +368,8 @@ class IosOs(PosixOs):
             st_flags=0,
         )
 
-        return struct_to_bytes(st)
-
-    def _construct_statfs(self) -> bytes:
-        st = Statfs64(
+    def _construct_statfs(self) -> ctypes.Structure:
+        return Statfs64(
             f_bsize=4096,
             f_iosize=1048576,
             f_blocks=31218501,
@@ -385,16 +387,23 @@ class IosOs(PosixOs):
             f_mntfromname=b"com.apple.os.update-%s@/dev/disk0s1s1"
             % self._boot_hash.encode("utf-8"),
         )
-        return struct_to_bytes(st)
 
-    def _construct_sockaddr_in(self, address: str, port: int) -> bytes:
-        sa = SockaddrIn(
+    def _construct_sockaddr_in(self, address: str, port: int) -> ctypes.Structure:
+        return SockaddrIn(
             sin_len=ctypes.sizeof(SockaddrIn),
             sin_family=self.AF_INET,
             sin_port=socket.htons(port),
             sin_addr=int.from_bytes(socket.inet_aton(address), "little"),
         )
-        return struct_to_bytes(sa)
+
+    def _construct_flock(self, lock_type: int) -> ctypes.Structure:
+        return Flock(
+            l_start=0,
+            l_len=0,
+            l_pid=0,
+            l_type=lock_type,
+            l_whence=0,
+        )
 
     def getuid(self) -> int:
         return self._uid
@@ -502,7 +511,7 @@ class IosOs(PosixOs):
 
         self.emu.write_u64(TLS_ADDRESS - 0x8, self.gettid())
 
-        self.emu.write_pointer(TLS_ADDRESS - 0xE0, TLS_ADDRESS - 0xE0)
+        self.emu.write_pointer(TLS_ADDRESS - 0xE0, self._get_main_thread())
 
     def _setup_system_registers(self):
         """Initialize MMIO for system registers."""
@@ -617,15 +626,8 @@ class IosOs(PosixOs):
         self.emu.write_u32(clock_port.address, self.MACH_PORT_CLOCK)
 
     def _init_lib_system_pthread(self):
-        main_thread = self.emu.create_buffer(256)
-
-        self.emu.write_pointer(main_thread + 0xB0, STACK_ADDRESS)
-        self.emu.write_pointer(main_thread + 0xE0, STACK_ADDRESS + STACK_SIZE)
-
         main_thread_ptr = self.emu.get_symbol("__main_thread_ptr")
-        self.emu.write_pointer(main_thread_ptr.address, main_thread)
-
-        self.emu.write_pointer(main_thread, main_thread)
+        self.emu.write_pointer(main_thread_ptr.address, self._get_main_thread())
 
         pthread_ptr_munge_token = self.emu.get_symbol("__pthread_ptr_munge_token")
         self.emu.write_pointer(pthread_ptr_munge_token.address, 0)
