@@ -249,6 +249,9 @@ class IosOs(PosixOs):
         # Xpc message
         self._xpc_message_handler = XpcMessageHandler(self.emu)
 
+        # keychain
+        self._sec_items = []
+
     @property
     def loader(self) -> MachoLoader:
         return self._loader
@@ -1120,6 +1123,25 @@ class IosOs(PosixOs):
 
         self._set_tid(original_tid)
         self.set_dispatch_queue(original_queue)
+
+    def sec_item_add(self, attributes: dict):
+        self._sec_items.append(attributes)
+
+    def sec_item_copy_matching(self, query: dict) -> Optional[dict]:
+        match_keys = ["SecClass", "SecAttrKeyType"]
+
+        for item in self._sec_items:
+            if all((query[key] == item[key] for key in match_keys)):
+                return item
+
+        return None
+
+    def sec_item_delete(self, query: dict):
+        match_keys = ["SecClass", "SecAttrKeyType"]
+
+        for item in self._sec_items:
+            if all((query[key] == item[key] for key in match_keys)):
+                self._sec_items.remove(item)
 
     def initialize(self):
         # Setup hooks
