@@ -417,8 +417,48 @@ def hook_cf_x_preferences_copy_current_application_state_with_deadlock_avoidance
     return objc.create_cf_dictionary(emu.ios_os.preferences)
 
 
+def _read_sec_attributes(emu):
+    objc = ObjcRuntime(emu)
+
+    attributes = emu.get_arg(0)
+
+    sec_class = objc.msg_send(
+        attributes,
+        "objectForKey:",
+        emu.read_pointer(emu.get_symbol("_kSecClass").address),
+    )
+    sec_attr_key_type = objc.msg_send(
+        attributes,
+        "objectForKey:",
+        emu.read_pointer(emu.get_symbol("_kSecAttrKeyType").address),
+    )
+
+    attrs_dict = {
+        "SecClass": sec_class,
+        "SecAttrKeyType": sec_attr_key_type,
+    }
+
+    return attrs_dict
+
+
 @register_hook("_SecItemAdd")
 def hook_sec_item_add(uc: Uc, address: int, size: int, user_data: HookContext):
+    emu = user_data["emu"]
+    objc = ObjcRuntime(emu)
+
+    attributes = emu.get_arg(0)
+
+    sec_value_data = objc.msg_send(
+        attributes,
+        "objectForKey:",
+        emu.read_pointer(emu.get_symbol("_kSecValueData").address),
+    )
+
+    item = _read_sec_attributes(emu)
+    item["SecValueData"] = sec_value_data
+
+    emu.ios_os.sec_item_add(item)
+
     return 0
 
 
@@ -429,6 +469,11 @@ def hook_sec_item_update(uc: Uc, address: int, size: int, user_data: HookContext
 
 @register_hook("_SecItemDelete")
 def hook_sec_item_delete(uc: Uc, address: int, size: int, user_data: HookContext):
+    emu = user_data["emu"]
+
+    query = _read_sec_attributes(emu)
+    emu.ios_os.sec_item_delete(query)
+
     return 0
 
 
@@ -439,25 +484,32 @@ def hook_sec_item_copy_matching(
     emu = user_data["emu"]
     objc = ObjcRuntime(emu)
 
-    a1 = emu.get_arg(0)
-    a2 = emu.get_arg(1)
+    attributes = emu.get_arg(0)
+    result_ptr = emu.get_arg(1)
 
     sec_return_data = objc.msg_send(
-        a1,
+        attributes,
         "objectForKey:",
         emu.read_pointer(emu.get_symbol("_kSecReturnData").address),
     )
     assert isinstance(sec_return_data, ObjcObject)
 
+    sec_return_ref = objc.msg_send(
+        attributes,
+        "objectForKey:",
+        emu.read_pointer(emu.get_symbol("_kSecReturnRef").address),
+    )
+    assert isinstance(sec_return_ref, ObjcObject)
+
     sec_return_attributes = objc.msg_send(
-        a1,
+        attributes,
         "objectForKey:",
         emu.read_pointer(emu.get_symbol("_kSecReturnAttributes").address),
     )
     assert isinstance(sec_return_attributes, ObjcObject)
 
     sec_match_limit = objc.msg_send(
-        a1,
+        attributes,
         "objectForKey:",
         emu.read_pointer(emu.get_symbol("_kSecMatchLimit").address),
     )
@@ -465,20 +517,36 @@ def hook_sec_item_copy_matching(
 
     cf_boolean_true = emu.read_pointer(emu.get_symbol("_kCFBooleanTrue").address)
 
-    sec_match_limit_all = emu.read_pointer(emu.get_symbol("_kSecMatchLimitAll").address)
+    query = _read_sec_attributes(emu)
+    match_result = emu.ios_os.sec_item_copy_matching(query)
 
-    if sec_match_limit.value == sec_match_limit_all:
-        result = objc.create_cf_array([])
-    elif sec_return_attributes.value == cf_boolean_true:
-        result = objc.create_cf_dictionary({})
-    elif sec_return_data.value == cf_boolean_true:
-        # result = objc.create_cf_data(b"")
-        result = 0
+    if match_result:
+        if sec_return_ref.value == cf_boolean_true:
+            result = emu.call_symbol(
+                "_SecKeyCreateWithData",
+                match_result["SecValueData"].value,
+                attributes,
+                0,
+            )
+        else:
+            result = match_result["SecValueData"].value
     else:
-        result = 0
+        sec_match_limit_all = emu.read_pointer(
+            emu.get_symbol("_kSecMatchLimitAll").address
+        )
 
-    if a2:
-        emu.write_u64(a2, result)
+        if sec_match_limit.value == sec_match_limit_all:
+            result = objc.create_cf_array([])
+        elif sec_return_attributes.value == cf_boolean_true:
+            result = objc.create_cf_dictionary({})
+        elif sec_return_data.value == cf_boolean_true:
+            # result = objc.create_cf_data(b"")
+            result = 0
+        else:
+            result = 0
+
+    if result_ptr:
+        emu.write_u64(result_ptr, result)
 
     return 0
 
