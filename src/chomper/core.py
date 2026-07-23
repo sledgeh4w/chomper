@@ -174,7 +174,7 @@ class Chomper:
     def _setup_thread_register(self):
         """Setup thread register.
 
-        The thread register store the address of thread local storage (TLS).
+        The thread register store the address of thread-local storage (TLS).
 
         The function only allocates a block of memory to TLS and doesn't really
         initialize.
@@ -632,8 +632,11 @@ class Chomper:
         if trace_inst or self._trace_inst:
             self.add_inst_trace(module)
 
-        if exec_objc_init and self.os_type == const.OS_IOS:
-            self.ios_os.init_objc(module)
+        if self.os_type == const.OS_IOS:
+            self.ios_os.init_tlv(module)
+
+            if exec_objc_init:
+                self.ios_os.init_objc(module)
 
         if exec_init_array and module.init_array:
             self.exec_init_array(module.init_array)

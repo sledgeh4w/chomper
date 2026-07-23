@@ -6,13 +6,15 @@ import shutil
 import socket
 import string
 import sys
-import time
-import uuid
 from contextlib import contextmanager
 from typing import List, Optional
 
 from chomper.const import TLS_ADDRESS
-from chomper.exceptions import EmulatorCrashed, SystemOperationFailed
+from chomper.exceptions import (
+    EmulatorCrashed,
+    ObjCUnrecognizedSelector,
+    SystemOperationFailed,
+)
 from chomper.feature import Feature
 from chomper.loader import MachoLoader, Module
 from chomper.os.device import NullDevice, RandomDevice, UrandomDevice
@@ -588,6 +590,8 @@ class IosOs(PosixOs):
         environ = self.emu.get_symbol("_environ")
         self.emu.write_pointer(environ.address, environ_buf)
 
+        self.emu.call_symbol("_tlv_initializer")
+
     def _init_lib_system_c(self):
         # __program_vars_init
         argc = self.emu.create_buffer(8)
@@ -735,10 +739,19 @@ class IosOs(PosixOs):
         elif name == "Foundation":
             self.emu.call_symbol("__NSInitializePlatform")
 
+    def init_tlv(self, module: Module):
+        """Initialize thread-local variables for the module."""
+        if not self.emu.find_module("libdyld.dylib"):
+            return
+
+        self.emu.call_symbol(
+            "_tlv_load_notification",
+            module.macho_info.image_header,
+            0,
+        )
+
     def init_objc(self, module: Module):
-        """Initialize Objective-C for the module by calling `map_images`
-        and `load_images`.
-        """
+        """Initialize Objective-C for the module"""
         if not self.emu.find_module("libobjc.A.dylib"):
             return
 
@@ -753,7 +766,7 @@ class IosOs(PosixOs):
         try:
             self.emu.call_symbol("_map_images", 1, 0, mach_header_ptrs)
             self.emu.call_symbol("_load_images", 0, mach_header_ptr)
-        except EmulatorCrashed:
+        except (EmulatorCrashed, ObjCUnrecognizedSelector):
             self.emu.logger.warning("Initialize Objective-C failed.")
 
             # Release locks
@@ -1025,25 +1038,27 @@ class IosOs(PosixOs):
         return sem
 
     def semaphore_wait(self, semaphore: int, timeout: int = -1) -> int:
-        start_time = time.time()
         value = self._semaphore_map[semaphore]
 
-        # Blocked
+        # Need to wait
         if value <= 0:
-            rand_id = uuid.uuid4()
+            # start_time = time.time()
+            # rand_id = uuid.uuid4()
+            #
+            # if semaphore not in self._semaphore_queue:
+            #     self._semaphore_queue[semaphore] = []
+            # self._semaphore_queue[semaphore].append(rand_id)
+            #
+            # while True:
+            #     if 0 < timeout < time.time() - start_time:
+            #         return -1
+            #
+            #     if rand_id not in self._semaphore_queue[semaphore]:
+            #         return 0
+            #
+            #     time.sleep(0.1)
 
-            if semaphore not in self._semaphore_queue:
-                self._semaphore_queue[semaphore] = []
-            self._semaphore_queue[semaphore].append(rand_id)
-
-            while True:
-                if 0 < timeout < time.time() - start_time:
-                    return -1
-
-                if rand_id not in self._semaphore_queue[semaphore]:
-                    return 0
-
-                time.sleep(0.1)
+            return 0
 
         self._semaphore_map[semaphore] -= 1
         return 0
