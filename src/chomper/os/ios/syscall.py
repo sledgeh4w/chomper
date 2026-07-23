@@ -157,6 +157,7 @@ class IosSyscallHandler(BaseSyscallHandler):
             const.SYS_PSYNCH_MUTEXWAIT: "SYS_psynch_mutexwait",
             const.SYS_PROCESS_POLICY: "SYS_process_policy",
             const.SYS_ISSETUGID: "SYS_issetugid",
+            const.SYS_PTHREAD_KILL: "SYS_pthread_kill",
             const.SYS_PTHREAD_SIGMASK: "SYS_pthread_sigmask",
             const.SYS_SEMWAIT_SIGNAL: "SYS_semwait_signal",
             const.SYS_PROC_INFO: "SYS_proc_info",
@@ -350,6 +351,7 @@ class IosSyscallHandler(BaseSyscallHandler):
             const.SYS_PSYNCH_MUTEXWAIT: self._handle_sys_psynch_mutexwait,
             const.SYS_PROCESS_POLICY: self._handle_sys_process_policy,
             const.SYS_ISSETUGID: self._handle_sys_issetugid,
+            const.SYS_PTHREAD_KILL: self._handle_sys_pthread_kill,
             const.SYS_PTHREAD_SIGMASK: self._handle_sys_pthread_sigmask,
             const.SYS_SEMWAIT_SIGNAL: self._handle_sys_semwait_signal,
             const.SYS_PROC_INFO: self._handle_sys_proc_info,
@@ -494,6 +496,7 @@ class IosSyscallHandler(BaseSyscallHandler):
     def _handle_sys_exit(self):
         status = self.emu.get_arg(0)
 
+        self.emu.log_backtrace()
         raise ProgramTerminated("Program terminated with status: %s" % status)
 
     def _handle_sys_fork(self):
@@ -1261,6 +1264,15 @@ class IosSyscallHandler(BaseSyscallHandler):
     @staticmethod
     def _handle_sys_issetugid():
         return 0
+
+    def _handle_sys_pthread_kill(self):
+        tid = self.emu.get_arg(0)
+
+        if tid == self.emu.os.gettid():
+            self.emu.log_backtrace()
+            raise ProgramTerminated("Program killed itself")
+
+        return -1
 
     @staticmethod
     def _handle_sys_pthread_sigmask():

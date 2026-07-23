@@ -13,6 +13,7 @@ from .base import BaseLoader, Module, MachoInfo, Symbol, Binding, Segment, Addre
 
 _SYMBOL_ALIASES = {
     "____chkstk_darwin": "___chkstk_darwin",
+    "_tlv_get_addr": "__tlv_bootstrap",
 }
 
 _PLATFORM_SYMBOLS = [
