@@ -107,9 +107,9 @@ class AndroidOs(PosixOs):
             blocks = st.st_blocks
             blksize = st.st_blksize
 
-        atim = Timespec.from_time_ns(st.st_atime_ns)
-        mtim = Timespec.from_time_ns(st.st_mtime_ns)
-        ctim = Timespec.from_time_ns(st.st_ctime_ns)
+        atime = Timespec.from_time_ns(st.st_atime_ns)
+        mtime = Timespec.from_time_ns(st.st_mtime_ns)
+        ctime = Timespec.from_time_ns(st.st_ctime_ns)
 
         return Stat64(
             st_dev=st.st_dev,
@@ -122,15 +122,15 @@ class AndroidOs(PosixOs):
             st_size=st.st_size,
             st_blksize=blksize,
             st_blocks=blocks,
-            st_atim=atim,
-            st_mtim=mtim,
-            st_ctim=ctim,
+            st_atim=atime,
+            st_mtim=mtime,
+            st_ctim=ctime,
         )
 
     def _construct_device_stat(self) -> ctypes.Structure:
-        atim = Timespec.from_time_ns(0)
-        mtim = Timespec.from_time_ns(0)
-        ctim = Timespec.from_time_ns(0)
+        atime = Timespec.from_time_ns(0)
+        mtime = Timespec.from_time_ns(0)
+        ctime = Timespec.from_time_ns(0)
 
         return Stat64(
             st_dev=0,
@@ -143,9 +143,9 @@ class AndroidOs(PosixOs):
             st_size=0,
             st_blksize=0,
             st_blocks=0,
-            st_atim=atim,
-            st_mtim=mtim,
-            st_ctim=ctim,
+            st_atim=atime,
+            st_mtim=mtime,
+            st_ctim=ctime,
         )
 
     def _construct_statfs(self) -> ctypes.Structure:

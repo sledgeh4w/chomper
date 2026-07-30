@@ -38,6 +38,207 @@ SYSCALL_ERRORS = {
     SyscallError.ETIMEDOUT: (const.ETIMEDOUT, "ETIMEDOUT"),
 }
 
+SYSCALL_NAMES = {
+    const.SYS_SYSCALL: "SYS_syscall",
+    const.SYS_EXIT: "SYS_exit",
+    const.SYS_FORK: "SYS_fork",
+    const.SYS_READ: "SYS_read",
+    const.SYS_WRITE: "SYS_write",
+    const.SYS_OPEN: "SYS_open",
+    const.SYS_CLOSE: "SYS_close",
+    const.SYS_LINK: "SYS_link",
+    const.SYS_UNLINK: "SYS_unlink",
+    const.SYS_CHDIR: "SYS_chdir",
+    const.SYS_FCHDIR: "SYS_fchdir",
+    const.SYS_CHMOD: "SYS_chmod",
+    const.SYS_CHOWN: "SYS_chown",
+    const.SYS_GETPID: "SYS_getpid",
+    const.SYS_SETUID: "SYS_setuid",
+    const.SYS_GETUID: "SYS_getuid",
+    const.SYS_GETEUID: "SYS_geteuid",
+    const.SYS_PTRACE: "SYS_ptrace",
+    const.SYS_SENDMSG: "SYS_sendmsg",
+    const.SYS_RECVFROM: "SYS_recvfrom",
+    const.SYS_GETPEERNAME: "SYS_getpeername",
+    const.SYS_GETSOCKNAME: "SYS_getsockname",
+    const.SYS_ACCESS: "SYS_access",
+    const.SYS_CHFLAGS: "SYS_chflags",
+    const.SYS_FCHFLAGS: "SYS_fchflags",
+    const.SYS_KILL: "SYS_kill",
+    const.SYS_GETPPID: "SYS_getppid",
+    const.SYS_DUP: "SYS_dup",
+    const.SYS_PIPE: "SYS_pipe",
+    const.SYS_GETEGID: "SYS_getegid",
+    const.SYS_SIGACTION: "SYS_sigaction",
+    const.SYS_GETGID: "SYS_getgid",
+    const.SYS_SIGPROCMASK: "SYS_sigprocmask",
+    const.SYS_GETLOGIN: "SYS_getlogin",
+    const.SYS_SETLOGIN: "SYS_setlogin",
+    const.SYS_SIGALTSTACK: "SYS_sigaltstack",
+    const.SYS_IOCTL: "SYS_ioctl",
+    const.SYS_REBOOT: "SYS_reboot",
+    const.SYS_SYMLINK: "SYS_symlink",
+    const.SYS_READLINK: "SYS_readlink",
+    const.SYS_MSYNC: "SYS_msync",
+    const.SYS_MUNMAP: "SYS_munmap",
+    const.SYS_MPROTECT: "SYS_mprotect",
+    const.SYS_MADVISE: "SYS_madvise",
+    const.SYS_SETPGID: "SYS_setpgid",
+    const.SYS_GETDTABLESIZE: "SYS_getdtablesize",
+    const.SYS_DUP2: "SYS_dup2",
+    const.SYS_FCNTL: "SYS_fcntl",
+    const.SYS_SELECT: "SYS_select",
+    const.SYS_FSYNC: "SYS_fsync",
+    const.SYS_SETPRIORITY: "SYS_setpriority",
+    const.SYS_SOCKET: "SYS_socket",
+    const.SYS_CONNECT: "SYS_connect",
+    const.SYS_GETPRIORITY: "SYS_getpriority",
+    const.SYS_BIND: "SYS_bind",
+    const.SYS_SETSOCKOPT: "SYS_setsockopt",
+    const.SYS_LISTEN: "SYS_listen",
+    const.SYS_SIGSUSPEND: "SYS_sigsuspend",
+    const.SYS_GETTIMEOFDAY: "SYS_gettimeofday",
+    const.SYS_GETRUSAGE: "SYS_getrusage",
+    const.SYS_GETSOCKOPT: "SYS_getsockopt",
+    const.SYS_READV: "SYS_readv",
+    const.SYS_WRITEV: "SYS_writev",
+    const.SYS_SETTIMEOFDAY: "SYS_settimeofday",
+    const.SYS_FCHOWN: "SYS_fchown",
+    const.SYS_FCHMOD: "SYS_fchmod",
+    const.SYS_RENAME: "SYS_rename",
+    const.SYS_FLOCK: "SYS_flock",
+    const.SYS_SENDTO: "SYS_sendto",
+    const.SYS_SOCKETPAIR: "SYS_socketpair",
+    const.SYS_MKDIR: "SYS_mkdir",
+    const.SYS_RMDIR: "SYS_rmdir",
+    const.SYS_UTIMES: "SYS_utimes",
+    const.SYS_FUTIMES: "SYS_futimes",
+    const.SYS_ADJTIME: "SYS_adjtime",
+    const.SYS_SETSID: "SYS_setsid",
+    const.SYS_GETPGID: "SYS_getpgid",
+    const.SYS_PREAD: "SYS_pread",
+    const.SYS_PWRITE: "SYS_pwrite",
+    const.SYS_QUOTACTL: "SYS_quotactl",
+    const.SYS_CSOPS: "SYS_csops",
+    const.SYS_CSOPS_AUDITTOKEN: "SYS_csops_audittoken",
+    const.SYS_GETRLIMIT: "SYS_getrlimit",
+    const.SYS_SETRLIMIT: "SYS_setrlimit",
+    const.SYS_MMAP: "SYS_mmap",
+    const.SYS_LSEEK: "SYS_lseek",
+    const.SYS_FTRUNCATE: "SYS_ftruncate",
+    const.SYS_SYSCTL: "SYS_sysctl",
+    const.SYS_MLOCK: "SYS_mlock",
+    const.SYS_MUNLOCK: "SYS_munlock",
+    const.SYS_OPEN_DPROTECTED_NP: "SYS_open_dprotected_np",
+    const.SYS_GETATTRLIST: "SYS_getattrlist",
+    const.SYS_SETATTRLIST: "SYS_setattrlist",
+    const.SYS_SETXATTR: "SYS_setxattr",
+    const.SYS_FSETXATTR: "SYS_fsetxattr",
+    const.SYS_LISTXATTR: "SYS_listxattr",
+    const.SYS_POSIX_SPAWN: "SYS_posix_spawn",
+    const.SYS_SHM_OPEN: "SYS_shm_open",
+    const.SYS_SYSCTLBYNAME: "SYS_sysctlbyname",
+    const.SYS_GETTID: "SYS_gettid",
+    const.SYS_IDENTITYSVC: "SYS_identitysvc",
+    const.SYS_PSYNCH_MUTEXWAIT: "SYS_psynch_mutexwait",
+    const.SYS_PROCESS_POLICY: "SYS_process_policy",
+    const.SYS_ISSETUGID: "SYS_issetugid",
+    const.SYS_PTHREAD_KILL: "SYS_pthread_kill",
+    const.SYS_PTHREAD_SIGMASK: "SYS_pthread_sigmask",
+    const.SYS_SEMWAIT_SIGNAL: "SYS_semwait_signal",
+    const.SYS_PROC_INFO: "SYS_proc_info",
+    const.SYS_STAT64: "SYS_stat64",
+    const.SYS_FSTAT64: "SYS_fstat64",
+    const.SYS_LSTAT64: "SYS_lstat64",
+    const.SYS_GETDIRENTRIES64: "SYS_getdirentries64",
+    const.SYS_STATFS64: "SYS_statfs64",
+    const.SYS_FSTATFS64: "SYS_fstatfs64",
+    const.SYS_FSSTAT64: "SYS_fsstat64",
+    const.SYS_BSDTHREAD_CREATE: "SYS_bsdthread_create",
+    const.SYS_KQUEUE: "SYS_kqueue",
+    const.SYS_KEVENT: "SYS_kevent",
+    const.SYS_LCHOWN: "SYS_lchown",
+    const.SYS_WORKQ_OPEN: "SYS_workq_open",
+    const.SYS_WORKQ_KERNRETURN: "SYS_workq_kernreturn",
+    const.SYS_THREAD_SELFID: "SYS_thread_selfid",
+    const.SYS_KEVENT_QOS: "SYS_kevent_qos",
+    const.SYS_KEVENT_ID: "SYS_kevent_id",
+    const.SYS_MAC_SYSCALL: "SYS_mac_syscall",
+    const.SYS_READ_NOCANCEL: "SYS_read_nocancel",
+    const.SYS_WRITE_NOCANCEL: "SYS_write_nocancel",
+    const.SYS_OPEN_NOCANCEL: "SYS_open_nocancel",
+    const.SYS_CLOSE_NOCANCEL: "SYS_close_nocancel",
+    const.SYS_SENDMSG_NOCANCEL: "SYS_sendmsg_nocancel",
+    const.SYS_RECVFROM_NOCANCEL: "SYS_recvfrom_nocancel",
+    const.SYS_FCNTL_NOCANCEL: "SYS_fcntl_nocancel",
+    const.SYS_SELECT_NOCANCEL: "SYS_select_nocancel",
+    const.SYS_FSYNC_NOCANCEL: "SYS_fsync_nocancel",
+    const.SYS_CONNECT_NOCANCEL: "SYS_connect_nocancel",
+    const.SYS_READV_NOCANCEL: "SYS_readv_nocancel",
+    const.SYS_WRITEV_NOCANCEL: "SYS_writev_nocancel",
+    const.SYS_SENDTO_NOCANCEL: "SYS_sendto_nocancel",
+    const.SYS_PREAD_NOCANCEL: "SYS_pread_nocancel",
+    const.SYS_PWRITE_NOCANCEL: "SYS_pwrite_nocancel",
+    const.SYS_SEMWAIT_SIGNAL_NOCANCEL: "SYS_semwait_signal_nocancel",
+    const.SYS_GUARDED_OPEN_NP: "SYS_guarded_open_np",
+    const.SYS_GUARDED_CLOSE_NP: "SYS_guarded_close_np",
+    const.SYS_GETATTRLISTBULK: "SYS_getattrlistbulk",
+    const.SYS_CLONEFILEAT: "SYS_clonefileat",
+    const.SYS_OPENAT: "SYS_openat",
+    const.SYS_OPENAT_NOCANCEL: "SYS_openat_nocancel",
+    const.SYS_RENAMEAT: "SYS_renameat",
+    const.SYS_FACCESSAT: "SYS_faccessat",
+    const.SYS_FCHMODAT: "SYS_fchmodat",
+    const.SYS_FCHOWNAT: "SYS_fchownat",
+    const.SYS_FSTATAT64: "SYS_fstatat64",
+    const.SYS_LINKAT: "SYS_linkat",
+    const.SYS_UNLINKAT: "SYS_unlinkat",
+    const.SYS_READLINKAT: "SYS_readlinkat",
+    const.SYS_SYMLINKAT: "SYS_symlinkat",
+    const.SYS_MKDIRAT: "SYS_mkdirat",
+    const.SYS_BSDTHREAD_CTL: "SYS_bsdthread_ctl",
+    const.SYS_GUARDED_PWRITE_NP: "SYS_guarded_pwrite_np",
+    const.SYS_PERSONA: "SYS_persona",
+    const.SYS_GETENTROPY: "SYS_getentropy",
+    const.SYS_NECP_OPEN: "SYS_necp_open",
+    const.SYS_ULOCK_WAIT: "SYS_ulock_wait",
+    const.SYS_FCLONEFILEAT: "SYS_fclonefileat",
+    const.SYS_TERMINATE_WITH_PAYLOAD: "SYS_terminate_with_payload",
+    const.SYS_ABORT_WITH_PAYLOAD: "SYS_abort_with_payload",
+    const.SYS_OS_FAULT_WITH_PAYLOAD: "SYS_os_fault_with_payload",
+    const.SYS_PREADV: "SYS_preadv",
+    const.SYS_PREADV_NOCANCEL: "SYS_preadv_nocancel",
+    const.MACH_ABSOLUTE_TIME_TRAP: "MACH_ABSOLUTE_TIME_TRAP",
+    const.KERNELRPC_MACH_VM_ALLOCATE_TRAP: "KERNELRPC_MACH_VM_ALLOCATE_TRAP",
+    const.KERNELRPC_MACH_VM_PURGABLE_CONTROL_TRAP: "KERNELRPC_MACH_VM_PURGABLE_CONTROL_TRAP",
+    const.KERNELRPC_MACH_VM_DEALLOCATE_TRAP: "KERNELRPC_MACH_VM_DEALLOCATE_TRAP",
+    const.KERNELRPC_MACH_VM_PROTECT_TRAP: "KERNELRPC_MACH_VM_PROTECT_TRAP",
+    const.KERNELRPC_MACH_VM_MAP_TRAP: "KERNELRPC_MACH_VM_MAP_TRAP",
+    const.KERNELRPC_MACH_PORT_ALLOCATE_TRAP: "KERNELRPC_MACH_PORT_ALLOCATE_TRAP",
+    const.KERNELRPC_MACH_PORT_DEALLOCATE_TRAP: "KERNELRPC_MACH_PORT_DEALLOCATE_TRAP",
+    const.KERNELRPC_MACH_PORT_MOD_REFS_TRAP: "KERNELRPC_MACH_PORT_MOD_REFS_TRAP",
+    const.KERNELRPC_MACH_PORT_INSERT_RIGHT: "KERNELRPC_MACH_PORT_INSERT_RIGHT",
+    const.KERNELRPC_MACH_PORT_INSERT_MEMBER_TRAP: "KERNELRPC_MACH_PORT_INSERT_MEMBER_TRAP",
+    const.KERNELRPC_MACH_PORT_CONSTRUCT_TRAP: "KERNELRPC_MACH_PORT_CONSTRUCT_TRAP",
+    const.KERNELRPC_MACH_PORT_DESTRUCT_TRAP: "KERNELRPC_MACH_PORT_DESTRUCT_TRAP",
+    const.MACH_REPLY_PORT_TRAP: "MACH_REPLY_PORT_TRAP",
+    const.THREAD_SELF_TRAP: "THREAD_SELF_TRAP",
+    const.TASK_SELF_TRAP: "TASK_SELF_TRAP",
+    const.HOST_SELF_TRAP: "HOST_SELF_TRAP",
+    const.MACH_MSG_TRAP: "MACH_MSG_TRAP",
+    const.SEMAPHORE_SIGNAL_TRAP: "SEMAPHORE_SIGNAL_TRAP",
+    const.SEMAPHORE_WAIT_TRAP: "SEMAPHORE_WAIT_TRAP",
+    const.KERNELRPC_MACH_PORT_GUARD_TRAP: "KERNELRPC_MACH_PORT_GUARD_TRAP",
+    const.MAP_FD_TRAP: "MAP_FD_TRAP",
+    const.THREAD_GET_SPECIAL_REPLY_PORT: "THREAD_GET_SPECIAL_REPLY_PORT",
+    const.HOST_CREATE_MACH_VOUCHER_TRAP: "HOST_CREATE_MACH_VOUCHER_TRAP",
+    const.KERNELRPC_MACH_PORT_TYPE_TRAP: "KERNELRPC_MACH_PORT_TYPE_TRAP",
+    const.KERNELRPC_MACH_PORT_REQUEST_NOTIFICATION_TRAP: "KERNELRPC_MACH_PORT_REQUEST_NOTIFICATION_TRAP",
+    const.MACH_TIMEBASE_INFO_TRAP: "MACH_TIMEBASE_INFO_TRAP",
+    const.MK_TIMER_CREATE_TRAP: "MK_TIMER_CREATE_TRAP",
+    const.MK_TIMER_ARM: "MK_TIMER_ARM",
+}
+
 # Used by `getrlimit`
 RESOURCE_LIMITS = {
     const.RLIMIT_CPU: (const.RLIM_INFINITY, const.RLIM_INFINITY),
@@ -58,200 +259,6 @@ class IosSyscallHandler(BaseSyscallHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-        names = {
-            const.SYS_SYSCALL: "SYS_syscall",
-            const.SYS_EXIT: "SYS_exit",
-            const.SYS_FORK: "SYS_fork",
-            const.SYS_READ: "SYS_read",
-            const.SYS_WRITE: "SYS_write",
-            const.SYS_OPEN: "SYS_open",
-            const.SYS_CLOSE: "SYS_close",
-            const.SYS_LINK: "SYS_link",
-            const.SYS_UNLINK: "SYS_unlink",
-            const.SYS_CHDIR: "SYS_chdir",
-            const.SYS_FCHDIR: "SYS_fchdir",
-            const.SYS_CHMOD: "SYS_chmod",
-            const.SYS_CHOWN: "SYS_chown",
-            const.SYS_GETPID: "SYS_getpid",
-            const.SYS_GETUID: "SYS_getuid",
-            const.SYS_GETEUID: "SYS_geteuid",
-            const.SYS_PTRACE: "SYS_ptrace",
-            const.SYS_SENDMSG: "SYS_sendmsg",
-            const.SYS_RECVFROM: "SYS_recvfrom",
-            const.SYS_GETPEERNAME: "SYS_getpeername",
-            const.SYS_GETSOCKNAME: "SYS_getsockname",
-            const.SYS_ACCESS: "SYS_access",
-            const.SYS_CHFLAGS: "SYS_chflags",
-            const.SYS_FCHFLAGS: "SYS_fchflags",
-            const.SYS_KILL: "SYS_kill",
-            const.SYS_GETPPID: "SYS_getppid",
-            const.SYS_DUP: "SYS_dup",
-            const.SYS_PIPE: "SYS_pipe",
-            const.SYS_GETEGID: "SYS_getegid",
-            const.SYS_SIGACTION: "SYS_sigaction",
-            const.SYS_GETGID: "SYS_getgid",
-            const.SYS_SIGPROCMASK: "SYS_sigprocmask",
-            const.SYS_GETLOGIN: "SYS_getlogin",
-            const.SYS_SETLOGIN: "SYS_setlogin",
-            const.SYS_SIGALTSTACK: "SYS_sigaltstack",
-            const.SYS_IOCTL: "SYS_ioctl",
-            const.SYS_REBOOT: "SYS_reboot",
-            const.SYS_SYMLINK: "SYS_symlink",
-            const.SYS_READLINK: "SYS_readlink",
-            const.SYS_MSYNC: "SYS_msync",
-            const.SYS_MUNMAP: "SYS_munmap",
-            const.SYS_MPROTECT: "SYS_mprotect",
-            const.SYS_MADVISE: "SYS_madvise",
-            const.SYS_SETPGID: "SYS_setpgid",
-            const.SYS_DUP2: "SYS_dup2",
-            const.SYS_FCNTL: "SYS_fcntl",
-            const.SYS_SELECT: "SYS_select",
-            const.SYS_FSYNC: "SYS_fsync",
-            const.SYS_SETPRIORITY: "SYS_setpriority",
-            const.SYS_SOCKET: "SYS_socket",
-            const.SYS_CONNECT: "SYS_connect",
-            const.SYS_GETPRIORITY: "SYS_getpriority",
-            const.SYS_BIND: "SYS_bind",
-            const.SYS_SETSOCKOPT: "SYS_setsockopt",
-            const.SYS_LISTEN: "SYS_listen",
-            const.SYS_SIGSUSPEND: "SYS_sigsuspend",
-            const.SYS_GETTIMEOFDAY: "SYS_gettimeofday",
-            const.SYS_GETRUSAGE: "SYS_getrusage",
-            const.SYS_GETSOCKOPT: "SYS_getsockopt",
-            const.SYS_READV: "SYS_readv",
-            const.SYS_WRITEV: "SYS_writev",
-            const.SYS_FCHOWN: "SYS_fchown",
-            const.SYS_FCHMOD: "SYS_fchmod",
-            const.SYS_RENAME: "SYS_rename",
-            const.SYS_FLOCK: "SYS_flock",
-            const.SYS_SENDTO: "SYS_sendto",
-            const.SYS_SOCKETPAIR: "SYS_socketpair",
-            const.SYS_MKDIR: "SYS_mkdir",
-            const.SYS_RMDIR: "SYS_rmdir",
-            const.SYS_UTIMES: "SYS_utimes",
-            const.SYS_FUTIMES: "SYS_futimes",
-            const.SYS_ADJTIME: "SYS_adjtime",
-            const.SYS_GETPGID: "SYS_getpgid",
-            const.SYS_PREAD: "SYS_pread",
-            const.SYS_PWRITE: "SYS_pwrite",
-            const.SYS_QUOTACTL: "SYS_quotactl",
-            const.SYS_CSOPS: "SYS_csops",
-            const.SYS_CSOPS_AUDITTOKEN: "SYS_csops_audittoken",
-            const.SYS_GETRLIMIT: "SYS_getrlimit",
-            const.SYS_SETRLIMIT: "SYS_setrlimit",
-            const.SYS_MMAP: "SYS_mmap",
-            const.SYS_LSEEK: "SYS_lseek",
-            const.SYS_FTRUNCATE: "SYS_ftruncate",
-            const.SYS_SYSCTL: "SYS_sysctl",
-            const.SYS_MLOCK: "SYS_mlock",
-            const.SYS_MUNLOCK: "SYS_munlock",
-            const.SYS_OPEN_DPROTECTED_NP: "SYS_open_dprotected_np",
-            const.SYS_GETATTRLIST: "SYS_getattrlist",
-            const.SYS_SETXATTR: "SYS_setxattr",
-            const.SYS_FSETXATTR: "SYS_fsetxattr",
-            const.SYS_LISTXATTR: "SYS_listxattr",
-            const.SYS_SHM_OPEN: "SYS_shm_open",
-            const.SYS_SYSCTLBYNAME: "SYS_sysctlbyname",
-            const.SYS_GETTID: "SYS_gettid",
-            const.SYS_IDENTITYSVC: "SYS_identitysvc",
-            const.SYS_PSYNCH_MUTEXWAIT: "SYS_psynch_mutexwait",
-            const.SYS_PROCESS_POLICY: "SYS_process_policy",
-            const.SYS_ISSETUGID: "SYS_issetugid",
-            const.SYS_PTHREAD_KILL: "SYS_pthread_kill",
-            const.SYS_PTHREAD_SIGMASK: "SYS_pthread_sigmask",
-            const.SYS_SEMWAIT_SIGNAL: "SYS_semwait_signal",
-            const.SYS_PROC_INFO: "SYS_proc_info",
-            const.SYS_STAT64: "SYS_stat64",
-            const.SYS_FSTAT64: "SYS_fstat64",
-            const.SYS_LSTAT64: "SYS_lstat64",
-            const.SYS_GETDIRENTRIES64: "SYS_getdirentries64",
-            const.SYS_STATFS64: "SYS_statfs64",
-            const.SYS_FSTATFS64: "SYS_fstatfs64",
-            const.SYS_FSSTAT64: "SYS_fsstat64",
-            const.SYS_BSDTHREAD_CREATE: "SYS_bsdthread_create",
-            const.SYS_KQUEUE: "SYS_kqueue",
-            const.SYS_KEVENT: "SYS_kevent",
-            const.SYS_LCHOWN: "SYS_lchown",
-            const.SYS_WORKQ_OPEN: "SYS_workq_open",
-            const.SYS_WORKQ_KERNRETURN: "SYS_workq_kernreturn",
-            const.SYS_THREAD_SELFID: "SYS_thread_selfid",
-            const.SYS_KEVENT_QOS: "SYS_kevent_qos",
-            const.SYS_KEVENT_ID: "SYS_kevent_id",
-            const.SYS_MAC_SYSCALL: "SYS_mac_syscall",
-            const.SYS_READ_NOCANCEL: "SYS_read_nocancel",
-            const.SYS_WRITE_NOCANCEL: "SYS_write_nocancel",
-            const.SYS_OPEN_NOCANCEL: "SYS_open_nocancel",
-            const.SYS_CLOSE_NOCANCEL: "SYS_close_nocancel",
-            const.SYS_SENDMSG_NOCANCEL: "SYS_sendmsg_nocancel",
-            const.SYS_RECVFROM_NOCANCEL: "SYS_recvfrom_nocancel",
-            const.SYS_FCNTL_NOCANCEL: "SYS_fcntl_nocancel",
-            const.SYS_SELECT_NOCANCEL: "SYS_select_nocancel",
-            const.SYS_FSYNC_NOCANCEL: "SYS_fsync_nocancel",
-            const.SYS_CONNECT_NOCANCEL: "SYS_connect_nocancel",
-            const.SYS_READV_NOCANCEL: "SYS_readv_nocancel",
-            const.SYS_WRITEV_NOCANCEL: "SYS_writev_nocancel",
-            const.SYS_SENDTO_NOCANCEL: "SYS_sendto_nocancel",
-            const.SYS_PREAD_NOCANCEL: "SYS_pread_nocancel",
-            const.SYS_PWRITE_NOCANCEL: "SYS_pwrite_nocancel",
-            const.SYS_SEMWAIT_SIGNAL_NOCANCEL: "SYS_semwait_signal_nocancel",
-            const.SYS_GUARDED_OPEN_NP: "SYS_guarded_open_np",
-            const.SYS_GUARDED_CLOSE_NP: "SYS_guarded_close_np",
-            const.SYS_GETATTRLISTBULK: "SYS_getattrlistbulk",
-            const.SYS_CLONEFILEAT: "SYS_clonefileat",
-            const.SYS_OPENAT: "SYS_openat",
-            const.SYS_OPENAT_NOCANCEL: "SYS_openat_nocancel",
-            const.SYS_RENAMEAT: "SYS_renameat",
-            const.SYS_FACCESSAT: "SYS_faccessat",
-            const.SYS_FCHMODAT: "SYS_fchmodat",
-            const.SYS_FCHOWNAT: "SYS_fchownat",
-            const.SYS_FSTATAT64: "SYS_fstatat64",
-            const.SYS_LINKAT: "SYS_linkat",
-            const.SYS_UNLINKAT: "SYS_unlinkat",
-            const.SYS_READLINKAT: "SYS_readlinkat",
-            const.SYS_SYMLINKAT: "SYS_symlinkat",
-            const.SYS_MKDIRAT: "SYS_mkdirat",
-            const.SYS_BSDTHREAD_CTL: "SYS_bsdthread_ctl",
-            const.SYS_GUARDED_PWRITE_NP: "SYS_guarded_pwrite_np",
-            const.SYS_PERSONA: "SYS_persona",
-            const.SYS_GETENTROPY: "SYS_getentropy",
-            const.SYS_NECP_OPEN: "SYS_necp_open",
-            const.SYS_ULOCK_WAIT: "SYS_ulock_wait",
-            const.SYS_TERMINATE_WITH_PAYLOAD: "SYS_terminate_with_payload",
-            const.SYS_ABORT_WITH_PAYLOAD: "SYS_abort_with_payload",
-            const.SYS_OS_FAULT_WITH_PAYLOAD: "SYS_os_fault_with_payload",
-            const.SYS_PREADV: "SYS_preadv",
-            const.SYS_PREADV_NOCANCEL: "SYS_preadv_nocancel",
-            const.MACH_ABSOLUTE_TIME_TRAP: "MACH_ABSOLUTE_TIME_TRAP",
-            const.KERNELRPC_MACH_VM_ALLOCATE_TRAP: "KERNELRPC_MACH_VM_ALLOCATE_TRAP",
-            const.KERNELRPC_MACH_VM_PURGABLE_CONTROL_TRAP: "KERNELRPC_MACH_VM_PURGABLE_CONTROL_TRAP",
-            const.KERNELRPC_MACH_VM_DEALLOCATE_TRAP: "KERNELRPC_MACH_VM_DEALLOCATE_TRAP",
-            const.KERNELRPC_MACH_VM_PROTECT_TRAP: "KERNELRPC_MACH_VM_PROTECT_TRAP",
-            const.KERNELRPC_MACH_VM_MAP_TRAP: "KERNELRPC_MACH_VM_MAP_TRAP",
-            const.KERNELRPC_MACH_PORT_ALLOCATE_TRAP: "KERNELRPC_MACH_PORT_ALLOCATE_TRAP",
-            const.KERNELRPC_MACH_PORT_DEALLOCATE_TRAP: "KERNELRPC_MACH_PORT_DEALLOCATE_TRAP",
-            const.KERNELRPC_MACH_PORT_MOD_REFS_TRAP: "KERNELRPC_MACH_PORT_MOD_REFS_TRAP",
-            const.KERNELRPC_MACH_PORT_INSERT_RIGHT: "KERNELRPC_MACH_PORT_INSERT_RIGHT",
-            const.KERNELRPC_MACH_PORT_INSERT_MEMBER_TRAP: "KERNELRPC_MACH_PORT_INSERT_MEMBER_TRAP",
-            const.KERNELRPC_MACH_PORT_CONSTRUCT_TRAP: "KERNELRPC_MACH_PORT_CONSTRUCT_TRAP",
-            const.KERNELRPC_MACH_PORT_DESTRUCT_TRAP: "KERNELRPC_MACH_PORT_DESTRUCT_TRAP",
-            const.MACH_REPLY_PORT_TRAP: "MACH_REPLY_PORT_TRAP",
-            const.THREAD_SELF_TRAP: "THREAD_SELF_TRAP",
-            const.TASK_SELF_TRAP: "TASK_SELF_TRAP",
-            const.HOST_SELF_TRAP: "HOST_SELF_TRAP",
-            const.MACH_MSG_TRAP: "MACH_MSG_TRAP",
-            const.SEMAPHORE_SIGNAL_TRAP: "SEMAPHORE_SIGNAL_TRAP",
-            const.SEMAPHORE_WAIT_TRAP: "SEMAPHORE_WAIT_TRAP",
-            const.KERNELRPC_MACH_PORT_GUARD_TRAP: "KERNELRPC_MACH_PORT_GUARD_TRAP",
-            const.MAP_FD_TRAP: "MAP_FD_TRAP",
-            const.THREAD_GET_SPECIAL_REPLY_PORT: "THREAD_GET_SPECIAL_REPLY_PORT",
-            const.HOST_CREATE_MACH_VOUCHER_TRAP: "HOST_CREATE_MACH_VOUCHER_TRAP",
-            const.KERNELRPC_MACH_PORT_TYPE_TRAP: "KERNELRPC_MACH_PORT_TYPE_TRAP",
-            const.KERNELRPC_MACH_PORT_REQUEST_NOTIFICATION_TRAP: "KERNELRPC_MACH_PORT_REQUEST_NOTIFICATION_TRAP",
-            const.MACH_TIMEBASE_INFO_TRAP: "MACH_TIMEBASE_INFO_TRAP",
-            const.MK_TIMER_CREATE_TRAP: "MK_TIMER_CREATE_TRAP",
-            const.MK_TIMER_ARM: "MK_TIMER_ARM",
-        }
-
         handlers = {
             const.SYS_SYSCALL: self._handle_sys_syscall,
             const.SYS_EXIT: self._handle_sys_exit,
@@ -267,6 +274,7 @@ class IosSyscallHandler(BaseSyscallHandler):
             const.SYS_CHMOD: self._handle_sys_chmod,
             const.SYS_CHOWN: self._handle_sys_chown,
             const.SYS_GETPID: self._handle_sys_getpid,
+            const.SYS_SETUID: self._handle_sys_setuid,
             const.SYS_GETUID: self._handle_sys_getuid,
             const.SYS_GETEUID: self._handle_sys_geteuid,
             const.SYS_PTRACE: self._handle_sys_ptrace,
@@ -301,6 +309,7 @@ class IosSyscallHandler(BaseSyscallHandler):
             const.SYS_GETSOCKOPT: self._handle_sys_getsockopt,
             const.SYS_READV: self._handle_sys_readv,
             const.SYS_WRITEV: self._handle_sys_writev,
+            const.SYS_SETTIMEOFDAY: self._handle_sys_settimeofday,
             const.SYS_FCHOWN: self._handle_sys_fchown,
             const.SYS_FCHMOD: self._handle_sys_fchmod,
             const.SYS_RENAME: self._handle_sys_rename,
@@ -312,6 +321,7 @@ class IosSyscallHandler(BaseSyscallHandler):
             const.SYS_UTIMES: self._handle_sys_utimes,
             const.SYS_FUTIMES: self._handle_sys_futimes,
             const.SYS_ADJTIME: self._handle_sys_adjtime,
+            const.SYS_SETSID: self._handle_sys_setsid,
             const.SYS_GETPGID: self._handle_sys_getpgid,
             const.SYS_PREAD: self._handle_sys_pread,
             const.SYS_PWRITE: self._handle_sys_pwrite,
@@ -332,6 +342,7 @@ class IosSyscallHandler(BaseSyscallHandler):
             const.SYS_LISTEN: self._handle_sys_listen,
             const.SYS_SIGSUSPEND: self._handle_sys_sigsuspend,
             const.SYS_SETPGID: self._handle_sys_setpgid,
+            const.SYS_GETDTABLESIZE: self._handle_sys_getdtablesize,
             const.SYS_DUP2: self._handle_sys_dup2,
             const.SYS_FCNTL: self._handle_sys_fcntl,
             const.SYS_SELECT: self._handle_sys_select,
@@ -341,9 +352,11 @@ class IosSyscallHandler(BaseSyscallHandler):
             const.SYS_MUNLOCK: self._handle_sys_munlock,
             const.SYS_OPEN_DPROTECTED_NP: self._handle_sys_open_dprotected_np,
             const.SYS_GETATTRLIST: self._handle_sys_getattrlist,
+            const.SYS_SETATTRLIST: self._handle_sys_setattrlist,
             const.SYS_SETXATTR: self._handle_sys_setxattr,
             const.SYS_FSETXATTR: self._handle_sys_fsetxattr,
             const.SYS_LISTXATTR: self._handle_sys_listxattr,
+            const.SYS_POSIX_SPAWN: self._handle_posix_spawn,
             const.SYS_SHM_OPEN: self._handle_sys_shm_open,
             const.SYS_SYSCTLBYNAME: self._handle_sys_sysctlbyname,
             const.SYS_GETTID: self._handle_sys_gettid,
@@ -410,6 +423,7 @@ class IosSyscallHandler(BaseSyscallHandler):
             const.SYS_GETENTROPY: self._handle_sys_getentropy,
             const.SYS_NECP_OPEN: self._handle_sys_necp_open,
             const.SYS_ULOCK_WAIT: self._handle_sys_ulock_wait,
+            const.SYS_FCLONEFILEAT: self._handle_sys_fclonefileat,
             const.SYS_TERMINATE_WITH_PAYLOAD: self._handle_sys_terminate_with_payload,
             const.SYS_ABORT_WITH_PAYLOAD: self._handle_sys_abort_with_payload,
             const.SYS_OS_FAULT_WITH_PAYLOAD: self._handle_sys_os_fault_with_payload,
@@ -446,7 +460,7 @@ class IosSyscallHandler(BaseSyscallHandler):
             const.MK_TIMER_ARM: self._handle_mk_timer_arm,
         }
 
-        self._names.update(names)
+        self._names.update(SYSCALL_NAMES)
         self._handlers.update(handlers)
 
     def _syscall_wrapper(self, handler: Callable):
@@ -686,6 +700,16 @@ class IosSyscallHandler(BaseSyscallHandler):
 
         return 0
 
+    def _handle_sys_setsid(self):
+        self.emu.os.raise_permission_denied()
+
+        return 0
+
+    def _handle_sys_setuid(self):
+        self.emu.os.raise_permission_denied()
+
+        return 0
+
     @staticmethod
     def _handle_sys_sigaltstack():
         return 0
@@ -829,6 +853,11 @@ class IosSyscallHandler(BaseSyscallHandler):
             iov += 16
 
         return result
+
+    def _handle_sys_settimeofday(self):
+        self.emu.os.raise_permission_denied()
+
+        return 0
 
     def _handle_sys_fchown(self):
         fd = self.emu.get_arg(0)
@@ -1091,6 +1120,10 @@ class IosSyscallHandler(BaseSyscallHandler):
 
         return 0
 
+    @staticmethod
+    def _handle_sys_getdtablesize():
+        return 1024
+
     def _handle_sys_dup2(self):
         old_fd = self.emu.get_arg(0)
         new_fd = self.emu.get_arg(1)
@@ -1202,6 +1235,10 @@ class IosSyscallHandler(BaseSyscallHandler):
         return -1
 
     @staticmethod
+    def _handle_sys_setattrlist():
+        return 0
+
+    @staticmethod
     def _handle_sys_setxattr():
         return 0
 
@@ -1211,6 +1248,11 @@ class IosSyscallHandler(BaseSyscallHandler):
 
     @staticmethod
     def _handle_sys_listxattr():
+        return 0
+
+    def _handle_posix_spawn(self):
+        self.emu.os.raise_permission_denied()
+
         return 0
 
     @staticmethod
@@ -1614,6 +1656,15 @@ class IosSyscallHandler(BaseSyscallHandler):
 
     @staticmethod
     def _handle_sys_ulock_wait():
+        return 0
+
+    def _handle_sys_fclonefileat(self):
+        src_fd = to_signed(self.emu.get_arg(0), 4)
+        dst_dir_fd = to_signed(self.emu.get_arg(1), 4)
+        dst_path = self.emu.read_string(self.emu.get_arg(2))
+
+        self.emu.ios_os.fclonefileat(src_fd, dst_dir_fd, dst_path)
+
         return 0
 
     def _handle_sys_terminate_with_payload(self):

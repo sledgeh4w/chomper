@@ -37,13 +37,6 @@ def register_hook(symbol_name: str):
     return wrapper
 
 
-@register_hook("_pthread_self")
-def hook_pthread_self(uc: Uc, address: int, size: int, user_data: HookContext):
-    emu = user_data["emu"]
-
-    return emu.read_pointer(emu.get_symbol("__main_thread_ptr").address)
-
-
 @register_hook("_realloc")
 def hook_realloc(uc: Uc, address: int, size: int, user_data: HookContext):
     emu = user_data["emu"]
@@ -165,7 +158,7 @@ def hook_dlopen(uc: Uc, address: int, size: int, user_data: HookContext):
     emu = user_data["emu"]
 
     if not emu.get_arg(0):
-        return emu.modules[-1].base
+        return emu.modules[-1].base if emu.modules else 0
 
     path = emu.read_string(emu.get_arg(0))
 

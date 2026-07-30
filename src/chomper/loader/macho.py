@@ -325,9 +325,9 @@ class MachoLoader(BaseLoader):
         other_regions: List[AddressRegion],
     ) -> bool:
         """Check if the two address regions overlap."""
-        for region1 in regions:
-            for region2 in other_regions:
-                if region1.start < region2.end and region2.start < region1.end:
+        for region in regions:
+            for other in other_regions:
+                if region.start < other.end and other.start < region.end:
                     return True
         return False
 
@@ -370,6 +370,9 @@ class MachoLoader(BaseLoader):
 
         with open(module_file, "rb") as f:
             binary: lief.MachO.Binary = lief.parse(f)  # type: ignore
+
+        if not binary:
+            raise ValueError(f"Failed to parse Mach-O file: {module_file}")
 
         if module_base is None:
             if self.emu.modules:

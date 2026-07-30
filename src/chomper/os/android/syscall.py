@@ -24,61 +24,62 @@ SYSCALL_ERRORS = {
 }
 
 
+SYSCALL_NAMES = {
+    const.NR_GETCWD: "NR_getcwd",
+    const.NR_FCNTL: "NR_fcntl",
+    const.NR_IOCTL: "NR_ioctl",
+    const.NR_MKDIRAT: "NR_mkdirat",
+    const.NR_UNLINKAT: "NR_unlinkat",
+    const.NR_SYMLINKAT: "NR_symlinkat",
+    const.NR_LINKAT: "NR_linkat",
+    const.NR_RENAMEAT: "NR_renameat",
+    const.NR_FACCESSAT: "NR_faccessat",
+    const.NR_CHDIR: "NR_chdir",
+    const.NR_FCHDIR: "NR_fchdir",
+    const.NR_FCHMOD: "NR_fchmod",
+    const.NR_FCHMODAT: "NR_fchmodat",
+    const.NR_FCHOWNAT: "NR_fchownat",
+    const.NR_FCHOWN: "NR_fchown",
+    const.NR_OPENAT: "NR_openat",
+    const.NR_CLOSE: "NR_close",
+    const.NR_GETDENTS64: "NR_getdents64",
+    const.NR_LSEEK: "NR_lseek",
+    const.NR_READ: "NR_read",
+    const.NR_WRITE: "NR_write",
+    const.NR_READV: "NR_readv",
+    const.NR_WRITEV: "NR_writev",
+    const.NR_PREAD64: "NR_pread64",
+    const.NR_PREADV64: "NR_preadv64",
+    const.NR_READLINKAT: "NR_readlinkat",
+    const.NR_FSTATAT: "NR_fstatat",
+    const.NR_FSTAT: "NR_fstat",
+    const.NR_FSYNC: "NR_fsync",
+    const.NR_EXIT_GROUP: "NR_exit_group",
+    const.NR_NANOSLEEP: "NR_nanosleep",
+    const.NR_CLOCK_SETTIME: "NR_clock_settime",
+    const.NR_CLOCK_GETTIME: "NR_clock_gettime",
+    const.NR_CLOCK_GETRES: "NR_clock_getres",
+    const.NR_CLOCK_NANOSLEEP: "NR_clock_nanosleep",
+    const.NR_SETRESGID: "NR_setresgid",
+    const.NR_GETPGID: "NR_getpgid",
+    const.NR_PRCTL: "NR_prctl",
+    const.NR_GETTIMEOFDAY: "NR_gettimeofday",
+    const.NR_GETPID: "NR_getpid",
+    const.NR_GETPPID: "NR_getppid",
+    const.NR_GETUID: "NR_getuid",
+    const.NR_GETEUID: "NR_geteuid",
+    const.NR_GETEGID: "NR_getegid",
+    const.NR_MUNMAP: "NR_munmap",
+    const.NR_MMAP: "NR_mmap",
+    const.NR_CLOCK_ADJTIME: "NR_clock_adjtime",
+}
+
+
 class AndroidSyscallHandler(BaseSyscallHandler):
     """Handle Android system calls."""
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-
-        names = {
-            const.NR_GETCWD: "NR_getcwd",
-            const.NR_FCNTL: "NR_fcntl",
-            const.NR_IOCTL: "NR_ioctl",
-            const.NR_MKDIRAT: "NR_mkdirat",
-            const.NR_UNLINKAT: "NR_unlinkat",
-            const.NR_SYMLINKAT: "NR_symlinkat",
-            const.NR_LINKAT: "NR_linkat",
-            const.NR_RENAMEAT: "NR_renameat",
-            const.NR_FACCESSAT: "NR_faccessat",
-            const.NR_CHDIR: "NR_chdir",
-            const.NR_FCHDIR: "NR_fchdir",
-            const.NR_FCHMOD: "NR_fchmod",
-            const.NR_FCHMODAT: "NR_fchmodat",
-            const.NR_FCHOWNAT: "NR_fchownat",
-            const.NR_FCHOWN: "NR_fchown",
-            const.NR_OPENAT: "NR_openat",
-            const.NR_CLOSE: "NR_close",
-            const.NR_GETDENTS64: "NR_getdents64",
-            const.NR_LSEEK: "NR_lseek",
-            const.NR_READ: "NR_read",
-            const.NR_WRITE: "NR_write",
-            const.NR_READV: "NR_readv",
-            const.NR_WRITEV: "NR_writev",
-            const.NR_PREAD64: "NR_pread64",
-            const.NR_PREADV64: "NR_preadv64",
-            const.NR_READLINKAT: "NR_readlinkat",
-            const.NR_FSTATAT: "NR_fstatat",
-            const.NR_FSTAT: "NR_fstat",
-            const.NR_FSYNC: "NR_fsync",
-            const.NR_EXIT_GROUP: "NR_exit_group",
-            const.NR_NANOSLEEP: "NR_nanosleep",
-            const.NR_CLOCK_SETTIME: "NR_clock_settime",
-            const.NR_CLOCK_GETTIME: "NR_clock_gettime",
-            const.NR_CLOCK_GETRES: "NR_clock_getres",
-            const.NR_CLOCK_NANOSLEEP: "NR_clock_nanosleep",
-            const.NR_SETRESGID: "NR_setresgid",
-            const.NR_GETPGID: "NR_getpgid",
-            const.NR_PRCTL: "NR_prctl",
-            const.NR_GETTIMEOFDAY: "NR_gettimeofday",
-            const.NR_GETPID: "NR_getpid",
-            const.NR_GETPPID: "NR_getppid",
-            const.NR_GETUID: "NR_getuid",
-            const.NR_GETEUID: "NR_geteuid",
-            const.NR_GETEGID: "NR_getegid",
-            const.NR_MUNMAP: "NR_munmap",
-            const.NR_MMAP: "NR_mmap",
-            const.NR_CLOCK_ADJTIME: "NR_clock_adjtime",
-        }
 
         handlers = {
             const.NR_GETCWD: self._handle_nr_getcwd,
@@ -130,7 +131,7 @@ class AndroidSyscallHandler(BaseSyscallHandler):
             const.NR_CLOCK_ADJTIME: self._handle_nr_clock_adjtime,
         }
 
-        self._names.update(names)
+        self._names.update(SYSCALL_NAMES)
         self._handlers.update(handlers)
 
     def _syscall_wrapper(self, handler: Callable):
