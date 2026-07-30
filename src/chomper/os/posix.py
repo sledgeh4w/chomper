@@ -83,6 +83,10 @@ class PosixOs(ABC):
     IPPROTO_ICMP = 1
     IPPROTO_TCP = 6
 
+    SHUT_RD = 0
+    SHUT_WR = 1
+    SHUT_RDWR = 2
+
     F_GETFL = 3
     F_GETLK = 7
     F_SETLK = 8
@@ -655,8 +659,7 @@ class PosixOs(ABC):
         self._symlink(src_path, dst_path)
 
     @log_call
-    def symlinkat(self, src_dir_fd: int, src_path: str, dst_dir_fd: int, dst_path: str):
-        src_path = self._resolve_dir_fd(src_dir_fd, src_path)
+    def symlinkat(self, src_path: str, dst_dir_fd: int, dst_path: str):
         dst_path = self._resolve_dir_fd(dst_dir_fd, dst_path)
 
         self._symlink(src_path, dst_path)
@@ -758,9 +761,9 @@ class PosixOs(ABC):
         self._rename(old, new)
 
     @log_call
-    def renameat(self, src_fd: int, old: str, dst_fd: int, new: str):
-        old = self._resolve_dir_fd(src_fd, old)
-        new = self._resolve_dir_fd(dst_fd, new)
+    def renameat(self, src_dir_fd: int, old: str, dst_dir_fd: int, new: str):
+        old = self._resolve_dir_fd(src_dir_fd, old)
+        new = self._resolve_dir_fd(dst_dir_fd, new)
 
         return self._rename(old, new)
 
@@ -787,8 +790,7 @@ class PosixOs(ABC):
 
         os.rmdir(real_path)
 
-    @log_call
-    def pread(self, fd: int, size: int, offset: int) -> bytes:
+    def _pread(self, fd: int, size: int, offset: int) -> bytes:
         self._check_fd(fd)
         real_fd = self._get_fd_real_fd(fd)
 
@@ -800,6 +802,10 @@ class PosixOs(ABC):
         os.lseek(real_fd, pos, os.SEEK_SET)
 
         return data
+
+    @log_call
+    def pread(self, fd: int, size: int, offset: int) -> bytes:
+        return self._pread(fd, size, offset)
 
     @log_call
     def pwrite(self, fd: int, buf: int, size: int, offset: int) -> int:
@@ -1156,6 +1162,25 @@ class PosixOs(ABC):
 
         return count
 
+    @log_call
+    def shutdown(self, sock: int, how: int):
+        if not Feature.SOCKET_ENABLED:
+            self.raise_permission_denied()
+
+        shut_map = {
+            self.SHUT_RD: socket.SHUT_RD,
+            self.SHUT_WR: socket.SHUT_WR,
+            self.SHUT_RDWR: socket.SHUT_RDWR,
+        }
+
+        self._check_sock(sock)
+        real_sock = self._get_fd_sock(sock)
+
+        if how not in shut_map:
+            raise SystemOperationFailed("Invalid argument", SyscallError.EINVAL)
+
+        real_sock.shutdown(shut_map[how])
+
     @abc.abstractmethod
     def _construct_sockaddr_in(self, address: str, port: int) -> ctypes.Structure:
         pass
@@ -1229,8 +1254,9 @@ class PosixOs(ABC):
     def futimes(self, fd: int, times: Optional[Tuple[float, float]]):
         self._check_fd(fd)
         path = self._get_fd_path(fd)
+        real_path = self._get_real_path(path)
 
-        os.utime(path, times)
+        os.utime(real_path, times)
 
     @log_call
     def mmap(self, length: int, fd: int, offset: int) -> int:
