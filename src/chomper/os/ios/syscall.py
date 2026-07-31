@@ -15,6 +15,7 @@ from chomper.utils import to_signed, struct_to_bytes, read_struct
 
 from . import const
 from .structs import (
+    Attrlist,
     Timespec,
     Rlimit,
     Rusage,
@@ -79,11 +80,15 @@ SYSCALL_NAMES = {
     const.SYS_REBOOT: "SYS_reboot",
     const.SYS_SYMLINK: "SYS_symlink",
     const.SYS_READLINK: "SYS_readlink",
+    const.SYS_EXECVE: "SYS_execve",
+    const.SYS_CHROOT: "SYS_chroot",
     const.SYS_MSYNC: "SYS_msync",
     const.SYS_MUNMAP: "SYS_munmap",
     const.SYS_MPROTECT: "SYS_mprotect",
     const.SYS_MADVISE: "SYS_madvise",
     const.SYS_SETPGID: "SYS_setpgid",
+    const.SYS_SETITIMER: "SYS_setitimer",
+    const.SYS_GETITIMER: "SYS_getitimer",
     const.SYS_GETDTABLESIZE: "SYS_getdtablesize",
     const.SYS_DUP2: "SYS_dup2",
     const.SYS_FCNTL: "SYS_fcntl",
@@ -108,6 +113,7 @@ SYSCALL_NAMES = {
     const.SYS_RENAME: "SYS_rename",
     const.SYS_FLOCK: "SYS_flock",
     const.SYS_SENDTO: "SYS_sendto",
+    const.SYS_SHUTDOWN: "SYS_shutdown",
     const.SYS_SOCKETPAIR: "SYS_socketpair",
     const.SYS_MKDIR: "SYS_mkdir",
     const.SYS_RMDIR: "SYS_rmdir",
@@ -132,6 +138,7 @@ SYSCALL_NAMES = {
     const.SYS_OPEN_DPROTECTED_NP: "SYS_open_dprotected_np",
     const.SYS_GETATTRLIST: "SYS_getattrlist",
     const.SYS_SETATTRLIST: "SYS_setattrlist",
+    const.SYS_FSETATTRLIST: "SYS_fsetattrlist",
     const.SYS_SETXATTR: "SYS_setxattr",
     const.SYS_FSETXATTR: "SYS_fsetxattr",
     const.SYS_LISTXATTR: "SYS_listxattr",
@@ -142,11 +149,14 @@ SYSCALL_NAMES = {
     const.SYS_IDENTITYSVC: "SYS_identitysvc",
     const.SYS_PSYNCH_MUTEXWAIT: "SYS_psynch_mutexwait",
     const.SYS_PROCESS_POLICY: "SYS_process_policy",
+    const.SYS_MLOCKALL: "SYS_mlockall",
     const.SYS_ISSETUGID: "SYS_issetugid",
     const.SYS_PTHREAD_KILL: "SYS_pthread_kill",
     const.SYS_PTHREAD_SIGMASK: "SYS_pthread_sigmask",
+    const.SYS_DISABLE_THREADSIGNAL: "SYS_disable_threadsignal",
     const.SYS_SEMWAIT_SIGNAL: "SYS_semwait_signal",
     const.SYS_PROC_INFO: "SYS_proc_info",
+    const.SYS_SENDFILE: "SYS_sendfile",
     const.SYS_STAT64: "SYS_stat64",
     const.SYS_FSTAT64: "SYS_fstat64",
     const.SYS_LSTAT64: "SYS_lstat64",
@@ -198,6 +208,7 @@ SYSCALL_NAMES = {
     const.SYS_MKDIRAT: "SYS_mkdirat",
     const.SYS_BSDTHREAD_CTL: "SYS_bsdthread_ctl",
     const.SYS_GUARDED_PWRITE_NP: "SYS_guarded_pwrite_np",
+    const.SYS_RENAMEATX_NP: "SYS_renameatx_np",
     const.SYS_PERSONA: "SYS_persona",
     const.SYS_GETENTROPY: "SYS_getentropy",
     const.SYS_NECP_OPEN: "SYS_necp_open",
@@ -206,6 +217,7 @@ SYSCALL_NAMES = {
     const.SYS_TERMINATE_WITH_PAYLOAD: "SYS_terminate_with_payload",
     const.SYS_ABORT_WITH_PAYLOAD: "SYS_abort_with_payload",
     const.SYS_OS_FAULT_WITH_PAYLOAD: "SYS_os_fault_with_payload",
+    const.SYS_MEMORYSTATUS_AVAILABLE_MEMORY: "SYS_memorystatus_available_memory",
     const.SYS_PREADV: "SYS_preadv",
     const.SYS_PREADV_NOCANCEL: "SYS_preadv_nocancel",
     const.MACH_ABSOLUTE_TIME_TRAP: "MACH_ABSOLUTE_TIME_TRAP",
@@ -219,6 +231,7 @@ SYSCALL_NAMES = {
     const.KERNELRPC_MACH_PORT_MOD_REFS_TRAP: "KERNELRPC_MACH_PORT_MOD_REFS_TRAP",
     const.KERNELRPC_MACH_PORT_INSERT_RIGHT: "KERNELRPC_MACH_PORT_INSERT_RIGHT",
     const.KERNELRPC_MACH_PORT_INSERT_MEMBER_TRAP: "KERNELRPC_MACH_PORT_INSERT_MEMBER_TRAP",
+    const.KERNELRPC_MACH_PORT_EXTRACT_MEMBER_TRAP: "KERNELRPC_MACH_PORT_EXTRACT_MEMBER_TRAP",
     const.KERNELRPC_MACH_PORT_CONSTRUCT_TRAP: "KERNELRPC_MACH_PORT_CONSTRUCT_TRAP",
     const.KERNELRPC_MACH_PORT_DESTRUCT_TRAP: "KERNELRPC_MACH_PORT_DESTRUCT_TRAP",
     const.MACH_REPLY_PORT_TRAP: "MACH_REPLY_PORT_TRAP",
@@ -299,6 +312,8 @@ class IosSyscallHandler(BaseSyscallHandler):
             const.SYS_REBOOT: self._handle_sys_reboot,
             const.SYS_SYMLINK: self._handle_sys_symlink,
             const.SYS_READLINK: self._handle_sys_readlink,
+            const.SYS_EXECVE: self._handle_sys_execve,
+            const.SYS_CHROOT: self._handle_sys_chroot,
             const.SYS_MSYNC: self._handle_sys_msync,
             const.SYS_MUNMAP: self._handle_sys_munmap,
             const.SYS_MPROTECT: self._handle_sys_mprotect,
@@ -315,6 +330,7 @@ class IosSyscallHandler(BaseSyscallHandler):
             const.SYS_RENAME: self._handle_sys_rename,
             const.SYS_FLOCK: self._handle_sys_flock,
             const.SYS_SENDTO: self._handle_sys_sendto,
+            const.SYS_SHUTDOWN: self._handle_sys_shutdown,
             const.SYS_SOCKETPAIR: self._handle_sys_socketpair,
             const.SYS_MKDIR: self._handle_sys_mkdir,
             const.SYS_RMDIR: self._handle_sys_rmdir,
@@ -342,6 +358,8 @@ class IosSyscallHandler(BaseSyscallHandler):
             const.SYS_LISTEN: self._handle_sys_listen,
             const.SYS_SIGSUSPEND: self._handle_sys_sigsuspend,
             const.SYS_SETPGID: self._handle_sys_setpgid,
+            const.SYS_SETITIMER: self._handle_sys_setitimer,
+            const.SYS_GETITIMER: self._handle_sys_getitimer,
             const.SYS_GETDTABLESIZE: self._handle_sys_getdtablesize,
             const.SYS_DUP2: self._handle_sys_dup2,
             const.SYS_FCNTL: self._handle_sys_fcntl,
@@ -353,6 +371,7 @@ class IosSyscallHandler(BaseSyscallHandler):
             const.SYS_OPEN_DPROTECTED_NP: self._handle_sys_open_dprotected_np,
             const.SYS_GETATTRLIST: self._handle_sys_getattrlist,
             const.SYS_SETATTRLIST: self._handle_sys_setattrlist,
+            const.SYS_FSETATTRLIST: self._handle_sys_fsetattrlist,
             const.SYS_SETXATTR: self._handle_sys_setxattr,
             const.SYS_FSETXATTR: self._handle_sys_fsetxattr,
             const.SYS_LISTXATTR: self._handle_sys_listxattr,
@@ -363,11 +382,14 @@ class IosSyscallHandler(BaseSyscallHandler):
             const.SYS_IDENTITYSVC: self._handle_sys_identitysvc,
             const.SYS_PSYNCH_MUTEXWAIT: self._handle_sys_psynch_mutexwait,
             const.SYS_PROCESS_POLICY: self._handle_sys_process_policy,
+            const.SYS_MLOCKALL: self._handle_sys_mlockall,
             const.SYS_ISSETUGID: self._handle_sys_issetugid,
             const.SYS_PTHREAD_KILL: self._handle_sys_pthread_kill,
             const.SYS_PTHREAD_SIGMASK: self._handle_sys_pthread_sigmask,
+            const.SYS_DISABLE_THREADSIGNAL: self._handle_sys_disable_threadsignal,
             const.SYS_SEMWAIT_SIGNAL: self._handle_sys_semwait_signal,
             const.SYS_PROC_INFO: self._handle_sys_proc_info,
+            const.SYS_SENDFILE: self._handle_sys_sendfile,
             const.SYS_STAT64: self._handle_sys_stat64,
             const.SYS_FSTAT64: self._handle_sys_fstat64,
             const.SYS_LSTAT64: self._handle_sys_lstat64,
@@ -419,6 +441,7 @@ class IosSyscallHandler(BaseSyscallHandler):
             const.SYS_MKDIRAT: self._handle_sys_mkdirat,
             const.SYS_BSDTHREAD_CTL: self._handle_sys_bsdthread_ctl,
             const.SYS_GUARDED_PWRITE_NP: self._handle_sys_guarded_pwrite_np,
+            const.SYS_RENAMEATX_NP: self._handle_sys_renameatx_np,
             const.SYS_PERSONA: self._handle_sys_persona,
             const.SYS_GETENTROPY: self._handle_sys_getentropy,
             const.SYS_NECP_OPEN: self._handle_sys_necp_open,
@@ -427,6 +450,7 @@ class IosSyscallHandler(BaseSyscallHandler):
             const.SYS_TERMINATE_WITH_PAYLOAD: self._handle_sys_terminate_with_payload,
             const.SYS_ABORT_WITH_PAYLOAD: self._handle_sys_abort_with_payload,
             const.SYS_OS_FAULT_WITH_PAYLOAD: self._handle_sys_os_fault_with_payload,
+            const.SYS_MEMORYSTATUS_AVAILABLE_MEMORY: self._handle_memorystatus_available_memory,
             const.SYS_PREADV: self._handle_sys_preadv,
             const.SYS_PREADV_NOCANCEL: self._handle_sys_preadv,
             const.MACH_ABSOLUTE_TIME_TRAP: self._handle_mach_absolute_time_trap,
@@ -440,6 +464,7 @@ class IosSyscallHandler(BaseSyscallHandler):
             const.KERNELRPC_MACH_PORT_MOD_REFS_TRAP: self._handle_kernelrpc_mach_port_mod_refs_trap,
             const.KERNELRPC_MACH_PORT_INSERT_RIGHT: self._handle_kernelrpc_mach_port_insert_right_trap,
             const.KERNELRPC_MACH_PORT_INSERT_MEMBER_TRAP: self._handle_kernelrpc_mach_port_insert_member_trap,
+            const.KERNELRPC_MACH_PORT_EXTRACT_MEMBER_TRAP: self._handle_kernelrpc_mach_port_extract_member_trap,
             const.KERNELRPC_MACH_PORT_CONSTRUCT_TRAP: self._handle_kernelrpc_mach_port_construct_trap,
             const.KERNELRPC_MACH_PORT_DESTRUCT_TRAP: self._handle_kernelrpc_mach_port_destruct_trap,
             const.MACH_REPLY_PORT_TRAP: self._handle_mach_reply_port_trap,
@@ -757,6 +782,16 @@ class IosSyscallHandler(BaseSyscallHandler):
 
         return 0
 
+    def _handle_sys_execve(self):
+        self.emu.os.raise_permission_denied()
+
+        return 0
+
+    def _handle_sys_chroot(self):
+        self.emu.os.raise_permission_denied()
+
+        return 0
+
     def _handle_sys_msync(self):
         addr = self.emu.get_arg(0)
         length = self.emu.get_arg(1)
@@ -886,7 +921,7 @@ class IosSyscallHandler(BaseSyscallHandler):
 
     @staticmethod
     def _handle_sys_flock():
-        pass
+        return 0
 
     def _handle_sys_sendto(self):
         sock = self.emu.get_arg(0)
@@ -897,6 +932,14 @@ class IosSyscallHandler(BaseSyscallHandler):
         dest_len = self.emu.get_arg(5)
 
         return self.emu.os.sendto(sock, buffer, length, flags, dest_addr, dest_len)
+
+    def _handle_sys_shutdown(self):
+        sock = self.emu.get_arg(0)
+        how = self.emu.get_arg(1)
+
+        self.emu.os.shutdown(sock, how)
+
+        return 0
 
     def _handle_sys_socketpair(self):
         domain = self.emu.get_arg(0)
@@ -1121,6 +1164,14 @@ class IosSyscallHandler(BaseSyscallHandler):
         return 0
 
     @staticmethod
+    def _handle_sys_setitimer():
+        return 0
+
+    @staticmethod
+    def _handle_sys_getitimer():
+        return 0
+
+    @staticmethod
     def _handle_sys_getdtablesize():
         return 1024
 
@@ -1238,6 +1289,23 @@ class IosSyscallHandler(BaseSyscallHandler):
     def _handle_sys_setattrlist():
         return 0
 
+    def _handle_sys_fsetattrlist(self):
+        fd = self.emu.get_arg(0)
+        attr_list_ptr = self.emu.get_arg(1)
+        attr_buf = self.emu.get_arg(2)
+
+        attr_list = read_struct(self.emu, attr_list_ptr, Attrlist)
+
+        # Only handle requests from `futimens` for now.
+        if attr_list.commonattr == const.ATTR_CMN_MODTIME | const.ATTR_CMN_ACCTIME:
+            mtime = read_struct(self.emu, attr_buf, Timespec)
+            atime = read_struct(self.emu, attr_buf + ctypes.sizeof(Timespec), Timespec)
+            times = (atime.to_seconds(), mtime.to_seconds())
+
+            self.emu.os.futimes(fd, times)
+
+        return 0
+
     @staticmethod
     def _handle_sys_setxattr():
         return 0
@@ -1303,6 +1371,13 @@ class IosSyscallHandler(BaseSyscallHandler):
     def _handle_sys_process_policy():
         return 0
 
+    def _handle_sys_mlockall(self):
+        flags = self.emu.get_arg(0)
+
+        self.emu.os.mlockall(flags)
+
+        return 0
+
     @staticmethod
     def _handle_sys_issetugid():
         return 0
@@ -1318,6 +1393,10 @@ class IosSyscallHandler(BaseSyscallHandler):
 
     @staticmethod
     def _handle_sys_pthread_sigmask():
+        return 0
+
+    @staticmethod
+    def _handle_sys_disable_threadsignal():
         return 0
 
     def _handle_sys_semwait_signal(self):
@@ -1361,6 +1440,14 @@ class IosSyscallHandler(BaseSyscallHandler):
 
         self.emu.write_bytes(buffer, result)
         return len(result)
+
+    def _handle_sys_sendfile(self):
+        fd = self.emu.get_arg(0)
+        sock = self.emu.get_arg(1)
+        offset = self.emu.get_arg(2)
+        length_ptr = self.emu.get_arg(3)
+
+        self.emu.os.sendfile(fd, sock, offset, length_ptr)
 
     def _handle_sys_stat64(self):
         path = self.emu.read_string(self.emu.get_arg(0))
@@ -1637,6 +1724,17 @@ class IosSyscallHandler(BaseSyscallHandler):
 
         return self.emu.os.pwrite(fd, buf, size, offset)
 
+    def _handle_sys_renameatx_np(self):
+        old_dir_fd = self.emu.get_arg(0)
+        old = self.emu.read_string(self.emu.get_arg(1))
+        new_dir_fd = self.emu.get_arg(2)
+        new = self.emu.read_string(self.emu.get_arg(3))
+        flags = self.emu.get_arg(4)
+
+        self.emu.ios_os.renameatx_np(old_dir_fd, old, new_dir_fd, new, flags)
+
+        return 0
+
     @staticmethod
     def _handle_sys_persona():
         return 0
@@ -1690,6 +1788,15 @@ class IosSyscallHandler(BaseSyscallHandler):
         self.emu.log_backtrace()
 
         raise ProgramTerminated("OS fault with payload: %s" % msg)
+
+    def _handle_memorystatus_available_memory(self):
+        limit = 4 * 1024 * 1024 * 1024
+
+        used = 0
+        for start, end, prop in self.emu.uc.mem_regions():
+            used += end - start
+
+        return limit - used
 
     def _handle_sys_preadv(self):
         fd = self.emu.get_arg(0)
@@ -1784,6 +1891,10 @@ class IosSyscallHandler(BaseSyscallHandler):
 
     @staticmethod
     def _handle_kernelrpc_mach_port_insert_member_trap():
+        return 0
+
+    @staticmethod
+    def _handle_kernelrpc_mach_port_extract_member_trap():
         return 0
 
     def _handle_kernelrpc_mach_port_construct_trap(self):

@@ -595,6 +595,10 @@ class IosOs(PosixOs):
         sig = self._pthread_ptr ^ self._pthread_ptr_munge_token
         self.emu.write_u64(self._pthread_ptr, sig)
 
+        # tl_plist.tqe_prev
+        tqe_prev = self.emu.create_buffer(224)
+        self.emu.write_u64(self._pthread_ptr + 0x18, tqe_prev)
+
         self.emu.write_u64(TLS_ADDRESS - 8, self.gettid())
 
         # Initialize thread specific data

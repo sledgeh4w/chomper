@@ -1312,3 +1312,7 @@ class PosixOs(ABC):
     @log_call
     def munlock(self, addr: int, length: int):
         pass
+
+    @log_call
+    def mlockall(self, flags: int):
+        pass
