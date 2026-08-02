@@ -62,6 +62,11 @@ def test_msg_send(emu_ios, objc):
         count = dictionary.call_method("count")
         assert isinstance(count, int)
 
+        # Test float arguments and retval
+        number_float = objc.msg_send("NSNumber", "numberWithFloat:", 1.5)
+        result = number_float.call_method("floatValue")
+        assert isinstance(result, float)
+
 
 def test_get_variable(emu_ios, objc):
     with objc.autorelease_pool():

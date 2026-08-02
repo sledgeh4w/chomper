@@ -12,6 +12,8 @@ class Arch:
         reg_fp: int,
         reg_lr: int,
         reg_args: List[int],
+        reg_float_args: List[int],
+        reg_double_args: List[int],
         reg_retval: int,
         reg_float_retval: int,
         reg_double_retval: int,
@@ -24,6 +26,8 @@ class Arch:
         self.reg_lr = reg_lr
 
         self.reg_args = reg_args
+        self.reg_float_args = reg_float_args
+        self.reg_double_args = reg_double_args
         self.reg_retval = reg_retval
         self.reg_float_retval = reg_float_retval
         self.reg_double_retval = reg_double_retval
@@ -45,6 +49,8 @@ arm_arch = Arch(
         arm_const.UC_ARM_REG_R2,
         arm_const.UC_ARM_REG_R3,
     ],
+    reg_float_args=[],
+    reg_double_args=[],
     reg_retval=arm_const.UC_ARM_REG_R0,
     reg_float_retval=arm_const.UC_ARM_REG_S0,
     reg_double_retval=arm_const.UC_ARM_REG_D0,
@@ -65,6 +71,26 @@ arm64_arch = Arch(
         arm64_const.UC_ARM64_REG_X5,
         arm64_const.UC_ARM64_REG_X6,
         arm64_const.UC_ARM64_REG_X7,
+    ],
+    reg_float_args=[
+        arm64_const.UC_ARM64_REG_S0,
+        arm64_const.UC_ARM64_REG_S1,
+        arm64_const.UC_ARM64_REG_S2,
+        arm64_const.UC_ARM64_REG_S3,
+        arm64_const.UC_ARM64_REG_S4,
+        arm64_const.UC_ARM64_REG_S5,
+        arm64_const.UC_ARM64_REG_S6,
+        arm64_const.UC_ARM64_REG_S7,
+    ],
+    reg_double_args=[
+        arm64_const.UC_ARM64_REG_D0,
+        arm64_const.UC_ARM64_REG_D1,
+        arm64_const.UC_ARM64_REG_D2,
+        arm64_const.UC_ARM64_REG_D3,
+        arm64_const.UC_ARM64_REG_D4,
+        arm64_const.UC_ARM64_REG_D5,
+        arm64_const.UC_ARM64_REG_D6,
+        arm64_const.UC_ARM64_REG_D7,
     ],
     reg_retval=arm64_const.UC_ARM64_REG_X0,
     reg_float_retval=arm64_const.UC_ARM64_REG_S0,

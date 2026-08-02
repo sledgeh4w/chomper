@@ -62,6 +62,7 @@ SYSTEM_MODULES = [
     "/usr/lib/system/libsystem_malloc.dylib",
     "/usr/lib/system/libsystem_pthread.dylib",
     "/usr/lib/system/libcompiler_rt.dylib",
+    "/usr/lib/system/libunwind.dylib",
     "/usr/lib/libc++abi.dylib",
     "/usr/lib/libc++.1.dylib",
     "/usr/lib/system/libmacho.dylib",
