@@ -217,6 +217,24 @@ class Timeval(ctypes.Structure):
         ("tv_usec", ctypes.c_int32),
     ]
 
+    def to_seconds(self) -> float:
+        return float(self.tv_sec) + float(self.tv_usec) / 1e6
+
+
+# sys/attr.h
+
+
+class Attrlist(ctypes.Structure):
+    _fields_ = [
+        ("bitmapcount", ctypes.c_uint16),
+        ("reserved", ctypes.c_uint16),
+        ("commonattr", ctypes.c_uint32),
+        ("volattr", ctypes.c_uint32),
+        ("dirattr", ctypes.c_uint32),
+        ("fileattr", ctypes.c_uint32),
+        ("forkattr", ctypes.c_uint32),
+    ]
+
 
 # sys/dirent.h
 

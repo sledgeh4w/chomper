@@ -22,6 +22,7 @@ from chomper.os.posix import FileProperty, FdType, PosixOs, SyscallError
 from chomper.os.handle import HandleManager
 from chomper.utils import log_call, struct_to_bytes, to_unsigned, read_struct
 
+from . import const
 from .fixup import SystemModuleFixer
 from .hooks import get_hooks, hook_read_class
 from .mach import MachMsgHandler
@@ -53,12 +54,14 @@ CFStringDisableROM=1"""
 
 # System libraries and frameworks to load
 SYSTEM_MODULES = [
+    "/usr/lib/libSystem.B.dylib",
     "/usr/lib/system/libsystem_kernel.dylib",
     "/usr/lib/system/libsystem_platform.dylib",
     "/usr/lib/system/libsystem_c.dylib",
     "/usr/lib/system/libsystem_featureflags.dylib",
     "/usr/lib/system/libsystem_malloc.dylib",
     "/usr/lib/system/libsystem_pthread.dylib",
+    "/usr/lib/system/libcompiler_rt.dylib",
     "/usr/lib/libc++abi.dylib",
     "/usr/lib/libc++.1.dylib",
     "/usr/lib/system/libmacho.dylib",
@@ -67,7 +70,6 @@ SYSTEM_MODULES = [
     "/usr/lib/system/libcache.dylib",
     "/usr/lib/system/libcorecrypto.dylib",
     "/usr/lib/system/libcommonCrypto.dylib",
-    "/usr/lib/system/libcompiler_rt.dylib",
     "/usr/lib/system/libdispatch.dylib",
     "/usr/lib/system/libremovefile.dylib",
     "/usr/lib/system/libsystem_blocks.dylib",
@@ -233,6 +235,12 @@ class IosOs(PosixOs):
 
         self.preferences = PREFERENCES.copy()
 
+        self._pthread_ptr = None
+        self._pthread_errno = None
+
+        # Used to validate the sig field of `pthread_t`
+        self._pthread_ptr_munge_token = 0
+
         # Semaphore
         self._semaphore_map = {}
         self._semaphore_queue = {}
@@ -270,8 +278,7 @@ class IosOs(PosixOs):
         errno = self.emu.get_symbol("_errno")
         self.emu.write_s32(errno.address, value)
 
-        errno_ptr = self.emu.read_pointer(TLS_ADDRESS + 0x8)
-        self.emu.write_s32(errno_ptr, value)
+        self.emu.write_s32(self._pthread_errno, value)
 
     @staticmethod
     def _random_boot_hash() -> str:
@@ -279,9 +286,8 @@ class IosOs(PosixOs):
             [random.choice(string.digits + string.ascii_uppercase) for _ in range(40)]
         )
 
-    @staticmethod
-    def _get_main_thread() -> int:
-        return TLS_ADDRESS - 0xE0
+    def _get_main_thread(self) -> int:
+        return self._pthread_ptr
 
     @staticmethod
     def _resolve_flags(flags: int) -> int:
@@ -330,9 +336,9 @@ class IosOs(PosixOs):
         else:
             flags = 0
 
-        atimespec = Timespec.from_time_ns(st.st_atime_ns)
-        mtimespec = Timespec.from_time_ns(st.st_mtime_ns)
-        ctimespec = Timespec.from_time_ns(st.st_ctime_ns)
+        atime = Timespec.from_time_ns(st.st_atime_ns)
+        mtime = Timespec.from_time_ns(st.st_mtime_ns)
+        ctime = Timespec.from_time_ns(st.st_ctime_ns)
 
         return Stat64(
             st_dev=st.st_dev,
@@ -342,9 +348,9 @@ class IosOs(PosixOs):
             st_uid=st.st_uid,
             st_gid=st.st_gid,
             st_rdev=rdev,
-            st_atimespec=atimespec,
-            st_mtimespec=mtimespec,
-            st_ctimespec=ctimespec,
+            st_atimespec=atime,
+            st_mtimespec=mtime,
+            st_ctimespec=ctime,
             st_size=st.st_size,
             st_blocks=blocks,
             st_blksize=blksize,
@@ -352,9 +358,9 @@ class IosOs(PosixOs):
         )
 
     def _construct_device_stat(self) -> ctypes.Structure:
-        atimespec = Timespec.from_time_ns(0)
-        mtimespec = Timespec.from_time_ns(0)
-        ctimespec = Timespec.from_time_ns(0)
+        atime = Timespec.from_time_ns(0)
+        mtime = Timespec.from_time_ns(0)
+        ctime = Timespec.from_time_ns(0)
 
         return Stat64(
             st_dev=0,
@@ -364,9 +370,9 @@ class IosOs(PosixOs):
             st_uid=0,
             st_gid=0,
             st_rdev=0,
-            st_atimespec=atimespec,
-            st_mtimespec=mtimespec,
-            st_ctimespec=ctimespec,
+            st_atimespec=atime,
+            st_mtimespec=mtime,
+            st_ctimespec=ctime,
             st_size=0,
             st_blocks=0,
             st_blksize=0,
@@ -458,6 +464,12 @@ class IosOs(PosixOs):
         )
         return struct_to_bytes(st)
 
+    def _clonefile(self, src_path: str, dst_path: str):
+        real_src_path = self._get_real_path(src_path)
+        real_dst_path = self._get_real_path(dst_path)
+
+        shutil.copy2(real_src_path, real_dst_path)
+
     @log_call
     def clonefileat(
         self,
@@ -469,10 +481,78 @@ class IosOs(PosixOs):
         src_path = self._resolve_dir_fd(src_dir_fd, src_path)
         dst_path = self._resolve_dir_fd(dst_dir_fd, dst_path)
 
-        real_src_path = self._get_real_path(src_path)
-        real_dst_path = self._get_real_path(dst_path)
+        self._clonefile(src_path, dst_path)
 
-        shutil.copy2(real_src_path, real_dst_path)
+    @log_call
+    def fclonefileat(
+        self,
+        src_fd: int,
+        dst_dir_fd: int,
+        dst_path: str,
+    ):
+        self._check_fd(src_fd)
+
+        src_path = self._get_fd_path(src_fd)
+        dst_path = self._resolve_dir_fd(dst_dir_fd, dst_path)
+
+        self._clonefile(src_path, dst_path)
+
+    @log_call
+    def renameatx_np(
+        self,
+        old_dir_fd: int,
+        old: str,
+        new_dir_fd: int,
+        new: str,
+        flags: int,
+    ):
+        old = self._resolve_dir_fd(old_dir_fd, old)
+        new = self._resolve_dir_fd(new_dir_fd, new)
+
+        real_old = self._get_real_path(old)
+        real_new = self._get_real_path(new)
+
+        if flags & const.RENAME_EXCL and os.path.exists(real_new):
+            raise SystemOperationFailed(f"File existed: {new}", SyscallError.EEXIST)
+
+        if flags & const.RENAME_SWAP:
+            if not os.path.exists(real_old):
+                raise SystemOperationFailed(f"No such file: {old}", SyscallError.ENOENT)
+            elif not os.path.exists(real_new):
+                raise SystemOperationFailed(f"No such file: {new}", SyscallError.ENOENT)
+
+            swap_path = old + ".swap"
+            self._rename(old, swap_path)
+            self._rename(new, old)
+            self._rename(swap_path, new)
+        else:
+            self._rename(old, new)
+
+    @log_call
+    def sendfile(self, fd: int, sock: int, offset: int, length_ptr: int):
+        real_sock = self._get_fd_sock(sock)
+        length = self.emu.read_s64(length_ptr)
+
+        sent = 0
+        chunk = 4096
+
+        while not length or sent < length:
+            if length:
+                remaining = length - sent
+                if chunk > remaining:
+                    chunk = remaining
+
+            data = self._pread(fd, chunk, offset + sent)
+            if not data:
+                break
+
+            off = 0
+
+            while off < len(data):
+                off += real_sock.send(data[off:])
+                self.emu.write_s64(length_ptr, sent + off)
+
+            sent += off
 
     @log_call
     def kqueue(self) -> int:
@@ -509,14 +589,29 @@ class IosOs(PosixOs):
 
     def _setup_tls(self):
         """Initialize thread local storage (TLS)."""
-        errno_ptr = self.emu.create_buffer(0x8)
+        self._pthread_ptr = TLS_ADDRESS - 224
+        self._pthread_errno = self.emu.create_buffer(4)
 
-        self.emu.write_pointer(TLS_ADDRESS + 0x8, errno_ptr)
-        self.emu.write_u32(TLS_ADDRESS + 0x18, self.gettid())
+        # Initialize `pthread_t`
+        sig = self._pthread_ptr ^ self._pthread_ptr_munge_token
+        self.emu.write_u64(self._pthread_ptr, sig)
 
-        self.emu.write_u64(TLS_ADDRESS - 0x8, self.gettid())
+        # tl_plist.tqe_prev
+        tqe_prev = self.emu.create_buffer(224)
+        self.emu.write_u64(self._pthread_ptr + 0x18, tqe_prev)
 
-        self.emu.write_pointer(TLS_ADDRESS - 0xE0, self._get_main_thread())
+        self.emu.write_u64(TLS_ADDRESS - 8, self.gettid())
+
+        # Initialize thread specific data
+        tsd = [
+            self._pthread_ptr,
+            self._pthread_errno,
+            0,
+            self.gettid(),
+        ]
+
+        for index, value in enumerate(tsd):
+            self.emu.write_u64(TLS_ADDRESS + 8 * index, value)
 
     def _setup_system_registers(self):
         """Initialize MMIO for system registers."""
@@ -637,7 +732,9 @@ class IosOs(PosixOs):
         self.emu.write_pointer(main_thread_ptr.address, self._get_main_thread())
 
         pthread_ptr_munge_token = self.emu.get_symbol("__pthread_ptr_munge_token")
-        self.emu.write_pointer(pthread_ptr_munge_token.address, 0)
+        self.emu.write_pointer(
+            pthread_ptr_munge_token.address, self._pthread_ptr_munge_token
+        )
 
         pthread_supported_features = self.emu.get_symbol(
             "___pthread_supported_features"
@@ -1058,6 +1155,7 @@ class IosOs(PosixOs):
             #
             #     time.sleep(0.1)
 
+            self.emu.logger.warning("Emulator ignored a semaphore wait.")
             return 0
 
         self._semaphore_map[semaphore] -= 1
