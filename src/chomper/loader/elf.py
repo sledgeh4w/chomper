@@ -1,4 +1,5 @@
 import os
+from itertools import chain
 from typing import Dict, List, Optional
 
 from elftools.elf.dynamic import DynamicSegment
@@ -116,8 +117,9 @@ class ELFLoader(BaseLoader):
         symbols: List[Symbol],
     ):
         """Process relocation tables."""
-        symbol_map = self.get_symbols()
-        symbol_map.update({symbol.name: symbol for symbol in symbols})
+        symbol_map = {
+            symbol.name: symbol for symbol in chain(self.get_symbols(), symbols)
+        }
 
         for segment in elffile.iter_segments(type="PT_DYNAMIC"):
             for relocation_table in segment.get_relocation_tables().values():
