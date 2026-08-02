@@ -54,12 +54,14 @@ CFStringDisableROM=1"""
 
 # System libraries and frameworks to load
 SYSTEM_MODULES = [
+    "/usr/lib/libSystem.B.dylib",
     "/usr/lib/system/libsystem_kernel.dylib",
     "/usr/lib/system/libsystem_platform.dylib",
     "/usr/lib/system/libsystem_c.dylib",
     "/usr/lib/system/libsystem_featureflags.dylib",
     "/usr/lib/system/libsystem_malloc.dylib",
     "/usr/lib/system/libsystem_pthread.dylib",
+    "/usr/lib/system/libcompiler_rt.dylib",
     "/usr/lib/libc++abi.dylib",
     "/usr/lib/libc++.1.dylib",
     "/usr/lib/system/libmacho.dylib",
@@ -68,7 +70,6 @@ SYSTEM_MODULES = [
     "/usr/lib/system/libcache.dylib",
     "/usr/lib/system/libcorecrypto.dylib",
     "/usr/lib/system/libcommonCrypto.dylib",
-    "/usr/lib/system/libcompiler_rt.dylib",
     "/usr/lib/system/libdispatch.dylib",
     "/usr/lib/system/libremovefile.dylib",
     "/usr/lib/system/libsystem_blocks.dylib",

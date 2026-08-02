@@ -2,7 +2,7 @@ import os
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from enum import Enum
-from typing import Dict, List, Optional
+from typing import List, Optional, Tuple
 
 
 class SymbolType(Enum):
@@ -18,12 +18,16 @@ class Symbol:
 
     type: Optional[SymbolType] = None
 
+    library: Optional[str] = None
+
 
 @dataclass
 class Binding:
     symbol: str
     address: int
     addend: int
+
+    library: Optional[str] = None
 
 
 @dataclass
@@ -56,9 +60,13 @@ class MachoInfo:
     image_base: int
     image_header: int
 
+    install_name: Optional[str]
+
     lazy_bindings: List[Binding]
 
     shared_segments: List[Segment]
+
+    re_export_libraries: List[str]
 
 
 class Module:
@@ -132,31 +140,26 @@ class BaseLoader(ABC):
     def __init__(self, emu):
         self.emu = emu
 
-    def get_symbols(self) -> Dict[str, Symbol]:
+    def get_symbols(self) -> List[Symbol]:
         """Get loaded symbols."""
-        symbol_map = {}
+        symbols = []
 
         for module in self.emu.modules:
             for symbol in module.symbols:
-                symbol_map[symbol.name] = symbol
+                symbols.append(symbol)
 
-        return symbol_map
+        return symbols
 
-    def get_lazy_bindings(self) -> Dict[str, List]:
+    def get_lazy_bindings(self) -> List[Tuple[Module, Binding]]:
         """Get lazy bindings."""
-        bindings: Dict[str, List] = {}
+        bindings = []
 
         for module in self.emu.modules:
             if not module.is_macho:
                 continue
 
             for binding in module.macho_info.lazy_bindings:
-                symbol_name = binding.symbol
-
-                if not bindings.get(symbol_name):
-                    bindings[symbol_name] = []
-
-                bindings[symbol_name].append((module, binding))
+                bindings.append((module, binding))
 
         return bindings
 
