@@ -29,6 +29,7 @@ from .os import AndroidOs, IosOs
 from .typing import (
     EndianType,
     ReturnType,
+    PrecisionType,
     HookContext,
     HookFuncCallable,
     HookMemCallable,
@@ -225,13 +226,14 @@ class Chomper:
         address: int,
         *args: int,
         va_list: Optional[Sequence[int]] = None,
+        float_args: Optional[Sequence[Tuple[PrecisionType, float]]] = None,
         return_type: ReturnType = "int",
     ) -> int:
         """Start emulate at the specified address."""
         context = self.uc.context_save()
         stop_addr = self.create_buffer(8)
 
-        self.set_args(args, va_list=va_list)
+        self.set_args(args, va_list=va_list, float_args=float_args)
 
         # Set the value of register LR to the stop address of the emulation,
         # so that when the function returns, it will jump to this address.
@@ -681,12 +683,18 @@ class Chomper:
         else:
             self.write_int(reg_or_addr, value, self.arch.addr_size)
 
-    def set_args(self, args: Sequence[int], va_list: Optional[Sequence[int]] = None):
+    def set_args(
+        self,
+        args: Sequence[int],
+        va_list: Optional[Sequence[int]] = None,
+        float_args: Optional[Sequence[Tuple[PrecisionType, float]]] = None,
+    ):
         """Set arguments before call function.
 
         Args:
             args: General arguments.
-            va_list: Variable number of arguments.
+            va_list: Variable arguments.
+            float_args: Floating-point arguments.
         """
         for index, value in enumerate(args):
             self.set_arg(index, value)
@@ -695,6 +703,27 @@ class Chomper:
             for index, value in enumerate(va_list):
                 self.set_arg(self.arch.addr_size + index, value)
             self.set_arg(self.arch.addr_size + len(va_list), 0)
+
+        if float_args:
+            for index, float_arg in enumerate(float_args):
+                precision, float_value = float_arg
+
+                if precision == const.SINGLE_PRECISION:
+                    if index >= len(self.arch.reg_float_args):
+                        continue
+                    reg_id = self.arch.reg_float_args[index]
+                else:
+                    if index >= len(self.arch.reg_double_args):
+                        continue
+                    reg_id = self.arch.reg_double_args[index]
+
+                float_bytes = float_to_bytes(
+                    float_value,
+                    endian=self.endian,
+                    precision=precision,
+                )
+
+                self.uc.reg_write(reg_id, int.from_bytes(float_bytes, self.endian))
 
     def _get_retval_reg(self, return_type: ReturnType) -> int:
         if return_type == "float":
@@ -928,6 +957,7 @@ class Chomper:
         symbol_name: str,
         *args: int,
         va_list: Optional[Sequence[int]] = None,
+        float_args: Optional[Sequence[Tuple[PrecisionType, float]]] = None,
         return_type: ReturnType = "int",
     ) -> int:
         """Call function with the symbol name."""
@@ -940,6 +970,7 @@ class Chomper:
             address,
             *args,
             va_list=va_list,
+            float_args=float_args,
             return_type=return_type,
         )
 
@@ -948,6 +979,7 @@ class Chomper:
         address: int,
         *args: int,
         va_list: Optional[Sequence[int]] = None,
+        float_args: Optional[Sequence[Tuple[PrecisionType, float]]] = None,
         return_type: ReturnType = "int",
     ) -> int:
         """Call function at the address."""
@@ -955,6 +987,7 @@ class Chomper:
             address,
             *args,
             va_list=va_list,
+            float_args=float_args,
             return_type=return_type,
         )
 
