@@ -3,7 +3,7 @@ from itertools import chain
 from typing import Dict, List, Tuple, Optional
 
 import lief
-from lief.MachO import ARM64_RELOCATION, RelocationFixup
+from lief.MachO import ARM64_RELOCATION, RelocationFixup, LoadCommand, DylibCommand
 
 from chomper import const
 from chomper.utils import aligned
@@ -12,7 +12,6 @@ from .base import BaseLoader, Module, MachoInfo, Symbol, Binding, Segment, Addre
 
 
 _SYMBOL_ALIASES = {
-    "____chkstk_darwin": "___chkstk_darwin",
     "_tlv_get_addr": "__tlv_bootstrap",
 }
 
@@ -128,67 +127,157 @@ class MachoLoader(BaseLoader):
         self,
         binary: lief.MachO.Binary,
         module_base: int,
+        install_name: Optional[str],
     ) -> List[Symbol]:
         """Get symbols in the module."""
         symbols = []
 
         lazy_bindings = self.get_lazy_bindings()
+        lazy_binding_map: Dict[Tuple[Optional[str], str], List] = {}
+
+        # Group lazy bindings
+        for module, binding in lazy_bindings:
+            symbol_unique = (binding.library, binding.symbol)
+
+            if symbol_unique not in lazy_binding_map:
+                lazy_binding_map[symbol_unique] = []
+
+            lazy_binding_map[symbol_unique].append((module, binding))
+
         lazy_binding_set = set()
 
+        symbol_map = self._build_symbol_map()
+        re_export_map = self._build_re_export_map()
+
         for symbol in binary.symbols:
-            if not symbol.value:
-                continue
+            if (
+                symbol.origin.value == symbol.ORIGIN.DYLD_EXPORT.value
+                and symbol.export_info
+                and symbol.export_info.alias
+            ):
+                symbol_name = str(symbol.name)
+                alias_name = str(symbol.export_info.alias.name)
 
-            symbol_name = str(symbol.name)
-            symbol_address = module_base + symbol.value
-
-            binding_name = self._get_binding_name(symbol_name)
-
-            # Lazy bind
-            if lazy_bindings.get(binding_name):
-                # Avoid duplicate bind
-                if binding_name in lazy_binding_set and binding_name == symbol_name:
+                if alias_name not in symbol_map:
                     continue
 
-                for module, binding in lazy_bindings[binding_name]:
-                    reloc_addr = symbol_address
+                symbol_address = None
 
-                    if reloc_addr:
-                        address = (
-                            module.base - module.macho_info.image_base + binding.address
-                        )
+                # Look up from other modules
+                for module_symbol in symbol_map.get(alias_name, []):
+                    if module_symbol.library == symbol.export_info.alias_library.name:
+                        symbol_address = module_symbol.address
 
-                        value = reloc_addr + binding.addend
-                        value &= 0xFFFFFFFFFFFFFFFF
+                if not symbol_address:
+                    continue
 
-                        self.emu.write_pointer(address, value)
+                binding_name = str(symbol.name)
+                libraries = [install_name]
+            else:
+                if not symbol.value:
+                    continue
 
-                lazy_binding_set.add(binding_name)
+                symbol_name = str(symbol.name)
+                symbol_address = module_base + symbol.value
 
-            symbol_struct = Symbol(
+                binding_name = self._get_binding_name(symbol_name)
+                libraries = [install_name]
+
+            # The target library may be re-exported by other libraries
+            libraries.extend(re_export_map.get(install_name, []))  # type: ignore
+
+            # Lazy binding symbol
+            for library in libraries:
+                symbol_unique = (library, binding_name)
+                if symbol_unique in lazy_binding_set:
+                    continue
+
+                if lazy_binding_map.get(symbol_unique):
+                    for module, binding in lazy_binding_map[symbol_unique]:
+                        reloc_addr = symbol_address
+
+                        if reloc_addr:
+                            address = (
+                                module.base
+                                - module.macho_info.image_base
+                                + binding.address
+                            )
+
+                            value = reloc_addr + binding.addend
+                            value &= 0xFFFFFFFFFFFFFFFF
+
+                            self.emu.write_pointer(address, value)
+
+                    lazy_binding_set.add(symbol_unique)
+
+            module_symbol = Symbol(
                 address=symbol_address,
                 name=symbol_name,
+                library=install_name,
             )
-            symbols.append(symbol_struct)
+            symbols.append(module_symbol)
 
             if binding_name != symbol_name:
-                symbol_struct = Symbol(
+                module_symbol = Symbol(
                     address=symbol_address,
                     name=binding_name,
+                    library=install_name,
                 )
-                symbols.append(symbol_struct)
+                symbols.append(module_symbol)
 
         return symbols
+
+    def _build_symbol_map(
+        self,
+        symbols: Optional[List[Symbol]] = None,
+    ) -> Dict[str, List]:
+        symbol_map: Dict[str, List] = {}
+
+        if not symbols:
+            symbols = []
+
+        for symbol in chain(self.get_symbols(), symbols):
+            if symbol.name not in symbol_map:
+                symbol_map[symbol.name] = []
+
+            symbol_map[symbol.name].append(symbol)
+
+        return symbol_map
+
+    def _build_re_export_map(self) -> Dict[str, List]:
+        """Map re-exported libraries to their umbrella libraries."""
+        re_export_map: Dict[str, List] = {}
+
+        for module in self.emu.modules:
+            for name in module.macho_info.re_export_libraries:
+                if name not in re_export_map:
+                    re_export_map[name] = []
+
+                re_export_map[name].append(module.macho_info.install_name)
+
+        return re_export_map
 
     def _process_symbol_relocation(
         self,
         binary: lief.MachO.Binary,
         module_base: int,
+        install_name: Optional[str],
         symbols: List[Symbol],
     ) -> List[Binding]:
         """Process relocations for symbols."""
-        symbol_map = self.get_symbols()
-        symbol_map.update({symbol.name: symbol for symbol in symbols})
+        symbol_map = self._build_symbol_map(symbols)
+        re_export_map = self._build_re_export_map()
+
+        for symbol in symbols:
+            # Construct the corresponding symbols for umbrella libraries
+            for library in re_export_map.get(symbol.library, []):  # type: ignore
+                new_symbol = Symbol(
+                    address=symbol.address,
+                    name=symbol.name,
+                    type=symbol.type,
+                    library=library,
+                )
+                symbol_map[symbol.name].append(new_symbol)
 
         hooks_map: Dict = {}
         lazy_bindings = []
@@ -197,14 +286,35 @@ class MachoLoader(BaseLoader):
             if binding.segment.name in ("__TEXT",):
                 continue
 
-            symbol = binding.symbol
-            symbol_name = str(symbol.name)
+            symbol_name = str(binding.symbol.name)
+            library_ordinal = binding.symbol.library_ordinal
 
-            if symbol_name in symbol_map:
-                reloc_addr = symbol_map[symbol_name].address
+            if library_ordinal == 0:
+                library_name = install_name
+            elif library_ordinal > 0:
+                library_name = binary.libraries[library_ordinal].name
             else:
+                library_name = None
+
+            reloc_addr = None
+
+            # Look up loaded symbols
+            if symbol_name in symbol_map:
+                for exported_symbol in symbol_map[symbol_name]:
+                    if not library_name or library_name == exported_symbol.library:
+                        reloc_addr = exported_symbol.address
+                        break
+
+            # Fallback attempt
+            if not reloc_addr and symbol_name in symbol_map:
+                for exported_symbol in symbol_map[symbol_name]:
+                    reloc_addr = exported_symbol.address
+                    break
+
+            if not reloc_addr:
                 lazy_binding = Binding(
                     symbol=symbol_name,
+                    library=library_name,
                     address=binding.address,
                     addend=binding.addend,
                 )
@@ -242,6 +352,7 @@ class MachoLoader(BaseLoader):
         self,
         binary: lief.MachO.Binary,
         module_base: int,
+        install_name: Optional[str],
         symbols: List[Symbol],
     ):
         """Process relocations base on relocation table and symbol references."""
@@ -280,7 +391,12 @@ class MachoLoader(BaseLoader):
 
             self.emu.write_array(begin, values, signed=True)
 
-        return self._process_symbol_relocation(binary, module_base, symbols)
+        return self._process_symbol_relocation(
+            binary,
+            module_base,
+            install_name,
+            symbols,
+        )
 
     def _get_init_array(self, binary: lief.MachO.Binary, module_base: int):
         """Get initialization functions in section `__mod_init_func`."""
@@ -308,7 +424,7 @@ class MachoLoader(BaseLoader):
         return list(symbol_map.values())
 
     @staticmethod
-    def _get_lowest_address(binary: lief.MachO.Binary) -> int:
+    def _get_minimum_address(binary: lief.MachO.Binary) -> int:
         addresses = []
 
         for segment in binary.segments:
@@ -325,38 +441,60 @@ class MachoLoader(BaseLoader):
         other_regions: List[AddressRegion],
     ) -> bool:
         """Check if the two address regions overlap."""
-        for region1 in regions:
-            for region2 in other_regions:
-                if region1.start < region2.end and region2.start < region1.end:
+        for region in regions:
+            for other in other_regions:
+                if region.start < other.end and other.start < region.end:
                     return True
         return False
 
-    def _find_load_base(self, binary: lief.MachO.Binary) -> int:
-        """Find the lowest address to load a module."""
-        mapped_regions = list(
-            chain.from_iterable((module.regions for module in self.emu.modules))
-        )
-        regions = self._map_segments(
-            binary,
-            module_base=-self._get_lowest_address(binary),
-            dry_run=True,
-        )
+    def _resolve_load_base(self, binary: lief.MachO.Binary) -> int:
+        """Get the minimum address to load a module."""
+        mapped_regions = [
+            region for module in self.emu.modules for region in module.regions
+        ]
+
+        module_base = -self._get_minimum_address(binary)
+        regions = self._map_segments(binary, module_base=module_base, dry_run=True)
 
         for mapped_region in mapped_regions:
             offset = aligned(mapped_region.end, 1024 * 1024)
+            shifted_regions = []
 
-            shifted_regions = [
-                AddressRegion(
+            for region in regions:
+                shifted_region = AddressRegion(
                     base=region.base + offset,
                     size=region.size,
                 )
-                for region in regions
-            ]
+                shifted_regions.append(shifted_region)
 
             if not self._has_regions_overlap(mapped_regions, shifted_regions):
                 return offset
 
         return max([region.end for region in mapped_regions])
+
+    @staticmethod
+    def _get_install_name(binary: lief.MachO.Binary) -> Optional[str]:
+        """Get install name from the `LC_ID_DYLIB` command."""
+        name = None
+
+        for command in binary.commands:
+            if command.command == LoadCommand.TYPE.ID_DYLIB:
+                assert isinstance(command, DylibCommand)
+                name = command.name
+
+        return name
+
+    @staticmethod
+    def _get_re_export_libraries(binary: lief.MachO.Binary) -> List[str]:
+        """Get re-export dylib names from `LC_REEXPORT_DYLIB` commands."""
+        libraries = []
+
+        for command in binary.commands:
+            if command.command == LoadCommand.TYPE.REEXPORT_DYLIB:
+                assert isinstance(command, DylibCommand)
+                libraries.append(command.name)
+
+        return libraries
 
     def load(
         self,
@@ -371,27 +509,38 @@ class MachoLoader(BaseLoader):
         with open(module_file, "rb") as f:
             binary: lief.MachO.Binary = lief.parse(f)  # type: ignore
 
+        if not binary:
+            raise ValueError(f"Failed to parse Mach-O file: {module_file}")
+
         if module_base is None:
             if self.emu.modules:
                 # Make the segments of different modules are interleaved
-                module_base = self._find_load_base(binary)
+                module_base = self._resolve_load_base(binary)
             else:
                 module_base = const.MODULE_ADDRESS
 
             # Make module memory distribution more compact
-            module_base -= aligned(self._get_lowest_address(binary), 1024)
+            module_base -= aligned(self._get_minimum_address(binary), 1024)
         else:
             module_base -= binary.imagebase
+
+        install_name = self._get_install_name(binary)
+        re_export_libraries = self._get_re_export_libraries(binary)
 
         regions = self._map_segments(binary, module_base)
         size = (regions[-1].end - module_base) if regions else 0
 
-        symbols = self._load_symbols(binary, module_base)
+        symbols = self._load_symbols(binary, module_base, install_name)
         symbols = self._process_symbol_aliases(symbols)
 
         self.add_symbol_hooks(symbols, trace_symbol_calls)
 
-        lazy_bindings = self._process_relocation(binary, module_base, symbols)
+        lazy_bindings = self._process_relocation(
+            binary,
+            module_base,
+            install_name,
+            symbols,
+        )
         init_array = self._get_init_array(binary, module_base)
 
         # Different dyld cache modules may share the same segment
@@ -419,8 +568,10 @@ class MachoLoader(BaseLoader):
         macho_info = MachoInfo(
             image_base=image_base,
             image_header=image_header,
+            install_name=install_name,
             lazy_bindings=lazy_bindings,
             shared_segments=shared_segments,
+            re_export_libraries=re_export_libraries,
         )
 
         return Module(

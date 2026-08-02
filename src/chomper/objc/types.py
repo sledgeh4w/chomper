@@ -5,7 +5,7 @@ from functools import cached_property
 from typing import List, Optional, Sequence, Tuple, Type, TypeVar, Union, TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from .runtime import ObjcRuntime
+    from .runtime import ObjcRuntime, ObjcMsgSendArg, ObjcMsgSendRetval
 
 
 ObjcTypeT = TypeVar("ObjcTypeT", bound="ObjcType")
@@ -167,9 +167,9 @@ class ObjcObject(ObjcType):
     def call_method(
         self,
         sel: Union[int, str],
-        *args: Union[int, str, ObjcType],
-        va_list: Optional[Sequence[Union[int, str, ObjcType]]] = None,
-    ) -> Union[int, ObjcObject]:
+        *args: ObjcMsgSendArg,
+        va_list: Optional[Sequence[ObjcMsgSendArg]] = None,
+    ) -> ObjcMsgSendRetval:
         return self._runtime.msg_send(self._value, sel, *args, va_list=va_list)
 
 
@@ -254,9 +254,9 @@ class ObjcClass(ObjcType):
     def call_method(
         self,
         sel: Union[int, str],
-        *args: Union[int, str, ObjcType],
-        va_list: Optional[Sequence[Union[int, str, ObjcType]]] = None,
-    ) -> Union[int, ObjcObject]:
+        *args: ObjcMsgSendArg,
+        va_list: Optional[Sequence[ObjcMsgSendArg]] = None,
+    ) -> ObjcMsgSendRetval:
         return self._runtime.msg_send(self.value, sel, *args, va_list=va_list)
 
 

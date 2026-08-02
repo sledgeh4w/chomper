@@ -177,10 +177,12 @@ def log_call(f: Callable[..., Any]):
 
 def safe_join(directory: str, *paths: str) -> Optional[str]:
     """Safely join path to avoid escaping the base directory."""
+    base = os.path.abspath(directory)
+
     full_path = os.path.join(directory, *paths)
     abs_path = os.path.abspath(full_path)
 
-    if not abs_path.startswith(os.path.abspath(directory)):
+    if base != os.sep and abs_path != base and not abs_path.startswith(base + os.sep):
         return None
 
     return abs_path

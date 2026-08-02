@@ -1,16 +1,22 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
-from typing import List, Optional, Sequence, Union, TYPE_CHECKING
+from typing import List, Optional, Sequence, Tuple, Union, TYPE_CHECKING
 
+from chomper import const
 from chomper.exceptions import EmulatorCrashed
-from chomper.typing import ReturnType, NSObjConvertible, CFObjConvertible
+from chomper.typing import PrecisionType, ReturnType, NSObjConvertible, CFObjConvertible
+from chomper.utils import float_to_bytes, bytes_to_float
 
 from .types import ObjcType, ObjcClass, ObjcObject, ObjcProtocol
 
 
 if TYPE_CHECKING:
     from chomper.core import Chomper
+
+
+ObjcMsgSendArg = Union[int, float, str, ObjcType]
+ObjcMsgSendRetval = Union[int, float, ObjcObject]
 
 
 class ObjcRuntime:
@@ -66,9 +72,9 @@ class ObjcRuntime:
         self,
         receiver: Union[int, str, ObjcType],
         sel: Union[int, str],
-        *args: Union[int, str, ObjcType],
-        va_list: Optional[Sequence[Union[int, str, ObjcType]]] = None,
-    ) -> Union[int, ObjcObject]:
+        *args: ObjcMsgSendArg,
+        va_list: Optional[Sequence[ObjcMsgSendArg]] = None,
+    ) -> ObjcMsgSendRetval:
         """Send message to Objective-C runtime.
 
         Args:
@@ -86,6 +92,7 @@ class ObjcRuntime:
             integer value.
         """
         is_class_method = False
+        argument_types = None
         return_type = ""
 
         if isinstance(receiver, str):
@@ -113,25 +120,60 @@ class ObjcRuntime:
                 objc_class = ObjcObject(self, receiver).class_
                 method = objc_class.get_instance_method(sel_name)
 
+            argument_types = method.argument_types
             return_type = method.return_type
         except (ValueError, EmulatorCrashed):
             # Failed to recognize the return type of the method,
             # typically because the selector is invalid.
             pass
 
-        new_args: List[int] = []
-        new_va_list: List[int] = []
-
         with self.emu.memory_scope() as mem:
+            new_args: List[int] = []
+            new_va_list: List[int] = []
+            new_float_args: List[Tuple[PrecisionType, float]] = []
+
+            arg_index = 0
+
             for old, new in zip((args, va_list or []), (new_args, new_va_list)):
                 for arg in old:
+                    is_va = arg_index >= len(args)
+
                     if isinstance(arg, str):
                         buf = mem.create_string(arg)
                         new.append(buf)
                     elif isinstance(arg, ObjcType):
                         new.append(arg.value)
+                    elif isinstance(arg, float):
+                        if is_va:
+                            float_bytes = float_to_bytes(
+                                arg,
+                                endian=self.emu.endian,
+                                precision=const.DOUBLE_PRECISION,
+                            )
+                            new.append(int.from_bytes(float_bytes, self.emu.endian))
+                        else:
+                            if argument_types and arg_index + 2 < len(argument_types):
+                                arg_type = argument_types[arg_index + 2]
+                            else:
+                                arg_type = "d"
+
+                            if arg_type not in ("f", "d"):
+                                raise ValueError(
+                                    f"Unexpected float argument at position "
+                                    f"{arg_index}, method signature expects "
+                                    f"'{arg_type}'"
+                                )
+
+                            precision = (
+                                const.SINGLE_PRECISION
+                                if arg_type == "f"
+                                else const.DOUBLE_PRECISION
+                            )
+                            new_float_args.append((precision, arg))
                     else:
                         new.append(arg)
+
+                    arg_index += 1
 
             native_return_type: ReturnType = "int"
 
@@ -146,6 +188,7 @@ class ObjcRuntime:
                 sel,
                 *new_args,
                 va_list=new_va_list,
+                float_args=new_float_args,
                 return_type=native_return_type,
             )
 
@@ -153,6 +196,10 @@ class ObjcRuntime:
                 return ObjcObject(self, retval)
             elif return_type == "v":
                 return 0
+            elif return_type in ("f", "d"):
+                data_size = 4 if return_type == "f" else 8
+                float_bytes = retval.to_bytes(data_size, self.emu.endian)
+                return bytes_to_float(float_bytes, self.emu.endian)
 
             return retval
 
@@ -185,7 +232,7 @@ class ObjcRuntime:
         with self.emu.memory_scope() as mem:
             if isinstance(value, dict):
                 ns_obj = self.msg_send("NSMutableDictionary", "dictionary")
-                assert ns_obj
+                assert ns_obj and isinstance(ns_obj, ObjcObject)
 
                 for key, value in value.items():
                     ns_key = self._create_ns_object(key)
@@ -194,7 +241,7 @@ class ObjcRuntime:
                     self.msg_send(ns_obj, "setObject:forKey:", ns_value, ns_key)
             elif isinstance(value, list):
                 ns_obj = self.msg_send("NSMutableArray", "array")
-                assert ns_obj
+                assert ns_obj and isinstance(ns_obj, ObjcObject)
 
                 for item in value:
                     ns_item = self._create_ns_object(item)
