@@ -17,6 +17,7 @@ from . import const
 from .structs import (
     Attrlist,
     Timespec,
+    Timeval,
     Rlimit,
     Rusage,
     ProcBsdinfo,
@@ -976,9 +977,9 @@ class IosSyscallHandler(BaseSyscallHandler):
         times_ptr = self.emu.get_arg(1)
 
         if times_ptr:
-            time1 = read_struct(self.emu, times_ptr, Timespec)
-            time2 = read_struct(self.emu, times_ptr + ctypes.sizeof(Timespec), Timespec)
-            times = (time1.to_seconds(), time2.to_seconds())
+            atime = read_struct(self.emu, times_ptr, Timeval)
+            ctime = read_struct(self.emu, times_ptr + ctypes.sizeof(Timeval), Timeval)
+            times = (atime.to_seconds(), ctime.to_seconds())
         else:
             times = None
 
@@ -991,9 +992,9 @@ class IosSyscallHandler(BaseSyscallHandler):
         times_ptr = self.emu.get_arg(1)
 
         if times_ptr:
-            time1 = read_struct(self.emu, times_ptr, Timespec)
-            time2 = read_struct(self.emu, times_ptr + ctypes.sizeof(Timespec), Timespec)
-            times = (time1.to_seconds(), time2.to_seconds())
+            atime = read_struct(self.emu, times_ptr, Timeval)
+            ctime = read_struct(self.emu, times_ptr + ctypes.sizeof(Timeval), Timeval)
+            times = (atime.to_seconds(), ctime.to_seconds())
         else:
             times = None
 
