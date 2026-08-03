@@ -287,14 +287,7 @@ class MachoLoader(BaseLoader):
                 continue
 
             symbol_name = str(binding.symbol.name)
-            library_ordinal = binding.symbol.library_ordinal
-
-            if library_ordinal == 0:
-                library_name = install_name
-            elif library_ordinal > 0:
-                library_name = binary.libraries[library_ordinal].name
-            else:
-                library_name = None
+            library_name = binding.library.name if binding.library else None
 
             reloc_addr = None
 

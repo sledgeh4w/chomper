@@ -521,8 +521,10 @@ def hook_sec_item_copy_matching(
                 attributes,
                 0,
             )
-        else:
+        elif sec_return_data.value == cf_boolean_true:
             result = match_result["SecValueData"].value
+        else:
+            result = 0
     else:
         sec_match_limit_all = emu.read_pointer(
             emu.get_symbol("_kSecMatchLimitAll").address
