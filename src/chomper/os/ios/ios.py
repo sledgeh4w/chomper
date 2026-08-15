@@ -92,6 +92,7 @@ SYSTEM_MODULES = [
     "/usr/lib/libMobileGestalt.dylib",
     "/usr/lib/libresolv.9.dylib",
     "/usr/lib/libTelephonyUtilDynamic.dylib",
+    "/usr/lib/libxml2.2.dylib",
     "/usr/lib/libz.1.dylib",
     "/System/Library/Frameworks/CoreFoundation",
     "/System/Library/Frameworks/Foundation",
@@ -835,6 +836,8 @@ class IosOs(PosixOs):
             self.emu.call_symbol("___CFInitialize")
         elif name == "Foundation":
             self.emu.call_symbol("__NSInitializePlatform")
+        elif name == "CoreText":
+            self.emu.call_symbol("___CTInitialize")
 
     def init_tlv(self, module: Module):
         """Initialize thread-local variables for the module."""
@@ -1134,8 +1137,12 @@ class IosOs(PosixOs):
         self._semaphore_map[sem] = value
         return sem
 
-    def semaphore_wait(self, semaphore: int, timeout: int = -1) -> int:
-        value = self._semaphore_map[semaphore]
+    def semaphore_destroy(self, sem: int):
+        if sem in self._semaphore_map:
+            del self._semaphore_map[sem]
+
+    def semaphore_wait(self, sem: int, timeout: int = -1) -> int:
+        value = self._semaphore_map[sem]
 
         # Need to wait
         if value <= 0:
@@ -1158,14 +1165,16 @@ class IosOs(PosixOs):
             self.emu.logger.warning("Emulator ignored a semaphore wait.")
             return 0
 
-        self._semaphore_map[semaphore] -= 1
+        self._semaphore_map[sem] -= 1
         return 0
 
-    def semaphore_signal(self, semaphore: int):
-        if self._semaphore_queue.get(semaphore):
-            self._semaphore_queue[semaphore].pop(0)
+    def semaphore_signal(self, sem: int) -> int:
+        if self._semaphore_queue.get(sem):
+            self._semaphore_queue[sem].pop(0)
         else:
-            self._semaphore_map[semaphore] += 1
+            self._semaphore_map[sem] += 1
+
+        return const.KERN_SUCCESS
 
     @log_call
     def mach_port_construct(self) -> int:

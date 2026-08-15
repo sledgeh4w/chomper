@@ -1,5 +1,4 @@
 import os
-from itertools import chain
 from typing import Dict, List, Tuple, Optional
 
 import lief
@@ -46,6 +45,9 @@ class MachoLoader(BaseLoader):
 
         self._symbol_aliases = {}
         self._init_symbol_aliases()
+
+        # Loaded symbols
+        self._symbol_map = {}
 
     def _init_symbol_aliases(self):
         symbol_aliases = _SYMBOL_ALIASES.copy()
@@ -146,7 +148,6 @@ class MachoLoader(BaseLoader):
 
         lazy_binding_set = set()
 
-        symbol_map = self._build_symbol_map()
         re_export_map = self._build_re_export_map()
 
         for symbol in binary.symbols:
@@ -158,13 +159,13 @@ class MachoLoader(BaseLoader):
                 symbol_name = str(symbol.name)
                 alias_name = str(symbol.export_info.alias.name)
 
-                if alias_name not in symbol_map:
+                if alias_name not in self._symbol_map:
                     continue
 
                 symbol_address = None
 
                 # Look up from other modules
-                for module_symbol in symbol_map.get(alias_name, []):
+                for module_symbol in self._symbol_map.get(alias_name, []):
                     if module_symbol.library == symbol.export_info.alias_library.name:
                         symbol_address = module_symbol.address
 
@@ -227,22 +228,13 @@ class MachoLoader(BaseLoader):
 
         return symbols
 
-    def _build_symbol_map(
-        self,
-        symbols: Optional[List[Symbol]] = None,
-    ) -> Dict[str, List]:
-        symbol_map: Dict[str, List] = {}
+    def _refresh_symbol_map(self, symbols: List[Symbol]):
+        """Append the module's symbols to the loaded symbol map."""
+        for symbol in symbols:
+            if symbol.name not in self._symbol_map:
+                self._symbol_map[symbol.name] = []
 
-        if not symbols:
-            symbols = []
-
-        for symbol in chain(self.get_symbols(), symbols):
-            if symbol.name not in symbol_map:
-                symbol_map[symbol.name] = []
-
-            symbol_map[symbol.name].append(symbol)
-
-        return symbol_map
+            self._symbol_map[symbol.name].append(symbol)
 
     def _build_re_export_map(self) -> Dict[str, List]:
         """Map re-exported libraries to their umbrella libraries."""
@@ -265,7 +257,7 @@ class MachoLoader(BaseLoader):
         symbols: List[Symbol],
     ) -> List[Binding]:
         """Process relocations for symbols."""
-        symbol_map = self._build_symbol_map(symbols)
+        symbol_map = self._symbol_map.copy()
         re_export_map = self._build_re_export_map()
 
         for symbol in symbols:
@@ -526,6 +518,7 @@ class MachoLoader(BaseLoader):
         symbols = self._load_symbols(binary, module_base, install_name)
         symbols = self._process_symbol_aliases(symbols)
 
+        self._refresh_symbol_map(symbols)
         self.add_symbol_hooks(symbols, trace_symbol_calls)
 
         lazy_bindings = self._process_relocation(
