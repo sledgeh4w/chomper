@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Dict, Iterator, Optional, Sequence, Set, Tuple, Union, TYPE_CHECKING
 
 import lief
+import struct
 from unicorn import UcError
 
 from chomper.loader import Module, Segment
@@ -84,17 +85,17 @@ class SystemModuleFixer:
     def relocate_refs_to(self):
         """Relocate all references-to relocations."""
         for section in self._module_binary.sections:
-            # Reduce iterations to optimize performance
             if section.name in ("__text",):
                 continue
 
             content = section.content
 
-            for offset in range(0, len(content), 8):
-                value = int.from_bytes(content[offset : offset + 8], "little")
+            count = len(content) // 8
+            values = struct.unpack(f"<{count}Q", content[: count * 8])
 
+            for index, value in enumerate(values):
                 if value in self._refs_to_relocations:
-                    address = self._module_base + section.virtual_address + offset
+                    address = self._module_base + section.virtual_address + index * 8
                     self.emu.write_pointer(address, self._module_base + value)
 
     def check_address(self, address: int) -> bool:
@@ -450,12 +451,16 @@ class SystemModuleFixer:
         if not section or not section.content:
             return
 
+        content = bytes(section.content)
         start = 0
 
-        for index in range(section.size):
-            if section.content[index] == 0:
-                self.add_refs_to_relocation(section.virtual_address + start)
-                start = index + 1
+        while start < len(content):
+            end = content.find(b"\x00", start)
+            if end == -1:
+                break
+
+            self.add_refs_to_relocation(section.virtual_address + start)
+            start = end + 1
 
     def fixup_cfstring_section(self):
         """Fixup `__cfstring` and `__cfstring_CFN` section."""
@@ -491,7 +496,7 @@ class SystemModuleFixer:
         for section in self.iter_sections(sections):
             self.add_refs_to_relocation(section.virtual_address)
 
-    def fixup_const_data(self):
+    def fixup_data_refs(self):
         """Fixup references to const data."""
         ref_sections = [
             ("__DATA", "__data"),
@@ -513,6 +518,11 @@ class SystemModuleFixer:
             ("__TEXT", "__swift5_typeref"),
         ]
 
+        data_regions = [
+            (section.virtual_address, section.virtual_address + section.size)
+            for section in self.iter_sections(data_sections)
+        ]
+
         # Address range of the module
         module_start = self._module_binary.imagebase
         module_end = module_start
@@ -527,16 +537,19 @@ class SystemModuleFixer:
         text_end = text_start + text_section.size
 
         for ref_section in self.iter_sections(ref_sections):
-            for offset in range(0, ref_section.size, 8):
-                data = ref_section.content[offset : offset + 8]
-                address = int.from_bytes(data, "little")
+            content = ref_section.content
 
+            count = len(content) // 8
+            values = struct.unpack(f"<{count}Q", content[: count * 8])
+
+            for address in values:
                 if not (module_start <= address < module_end):
                     continue
 
-                for data_section in self.iter_sections(data_sections):
-                    if self.is_address_in_section(address, data_section):
+                for start, end in data_regions:
+                    if start <= address < end:
                         self.add_refs_to_relocation(address)
+                        break
 
                 if text_start <= address < text_end:
                     self.add_refs_to_relocation(address)
@@ -562,27 +575,44 @@ class SystemModuleFixer:
                 if module.contains(target_address + module_base):
                     self.relocate_reference(address, module_base=module_base)
 
-    def fixup_sel_references(self):
+    def fixup_sel_refs(self):
         """Fixup references to SEL."""
         sections = [
             ("__DATA_DIRTY", "__objc_data"),
             ("__DATA_CONST", "__const"),
         ]
 
+        shared_segments = []
+        for module in self.emu.modules:
+            segments = module.macho_info.shared_segments
+            if not segments:
+                continue
+
+            module_base = module.base - module.macho_info.image_base
+            for segment in segments:
+                start = segment.virtual_address
+                end = start + segment.virtual_size
+                shared_segments.append((start, end, module_base))
+
+        if not shared_segments:
+            return
+
+        min_start = min(start for start, _, _ in shared_segments)
+        max_end = max(end for _, end, _ in shared_segments)
+
         for segment_name, section_name in sections:
             for address, target_address in self.iter_section_pointers(
                 section_name,
                 segment_name=segment_name,
             ):
-                for module in self.emu.modules:
-                    if not module.macho_info.shared_segments:
-                        continue
+                # Fast rejection
+                if not (min_start <= target_address < max_end):
+                    continue
 
-                    module_base = module.base - module.macho_info.image_base
-
-                    for segment in module.macho_info.shared_segments:
-                        if self.is_address_in_segment(target_address, segment):
-                            self.relocate_reference(address, module_base=module_base)
+                for start, end, module_base in shared_segments:
+                    if start <= target_address < end:
+                        self.relocate_reference(address, module_base=module_base)
+                        break
 
     def fixup_all(self):
         """Apply all fixup to the module."""
@@ -597,10 +627,10 @@ class SystemModuleFixer:
         # For arm64e
         self.fixup_auth_ptr_section()
 
-        self.fixup_sel_references()
-
         self.fixup_unicode_segment()
-        self.fixup_const_data()
+
+        self.fixup_data_refs()
+        self.fixup_sel_refs()
 
         # Do this at the end
         self.relocate_refs_to()
