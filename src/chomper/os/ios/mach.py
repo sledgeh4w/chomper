@@ -168,6 +168,8 @@ class MachMsgHandler:
                 result = self._handle_task_swap_exception_ports(msg, msgh)
             elif msgh_id == 3418:
                 result = self._handle_semaphore_create(msg, msgh)
+            elif msgh_id == 3419:
+                result = self._handle_semaphore_destroy(msg, msgh)
             elif msgh_id == 4808:
                 result = self._handle_vm_read_overwrite(msg, msgh)
             elif msgh_id == 4813:
@@ -235,7 +237,7 @@ class MachMsgHandler:
                 msg,
                 msg_header,
                 msg_body,
-                int_to_bytes(0, 8),
+                int_to_bytes(const.KERN_SUCCESS, 8),
                 int_to_bytes(count, 4),
                 struct_to_bytes(info),
             )
@@ -280,7 +282,7 @@ class MachMsgHandler:
                 msg,
                 msg_header,
                 msg_body,
-                int_to_bytes(0, 8),
+                int_to_bytes(const.KERN_SUCCESS, 8),
                 int_to_bytes(count, 4),
                 struct_to_bytes(info),
             )
@@ -318,7 +320,7 @@ class MachMsgHandler:
                 msg,
                 msg_header,
                 msg_body,
-                int_to_bytes(0, 8),
+                int_to_bytes(const.KERN_SUCCESS, 8),
                 int_to_bytes(count, 4),
                 struct_to_bytes(info),
             )
@@ -420,7 +422,7 @@ class MachMsgHandler:
                 msg,
                 msg_header,
                 msg_body,
-                int_to_bytes(0, 8),
+                int_to_bytes(const.KERN_SUCCESS, 8),
                 int_to_bytes(count, 4),
                 b"".join([int_to_bytes(value, 4) for value in audit_token]),
             )
@@ -478,7 +480,7 @@ class MachMsgHandler:
             msg,
             msg_header,
             msg_body,
-            int_to_bytes(0, 8),
+            int_to_bytes(const.KERN_SUCCESS, 8),
         )
 
         return const.KERN_SUCCESS
@@ -503,7 +505,7 @@ class MachMsgHandler:
             msg,
             msg_header,
             msg_body,
-            int_to_bytes(0, 8),
+            int_to_bytes(const.KERN_SUCCESS, 8),
             bytes(32 * 12),
             int_to_bytes(masks_cnt, 4),
             int_to_bytes(0, 4),
@@ -533,7 +535,7 @@ class MachMsgHandler:
             msg,
             msg_header,
             msg_body,
-            int_to_bytes(0, 8),
+            int_to_bytes(const.KERN_SUCCESS, 8),
             bytes(32 * 12),
             int_to_bytes(masks_cnt, 4),
             int_to_bytes(0, 4),
@@ -546,9 +548,36 @@ class MachMsgHandler:
     def _handle_semaphore_create(self, msg: int, msgh: MachMsgHeader) -> int:
         # policy = self.emu.read_s32(msg_ptr + 0x20)
         value = self.emu.read_s32(msg + 0x24)
-        semaphore = self.emu.ios_os.semaphore_create(value)
+        sem = self.emu.ios_os.semaphore_create(value)
 
-        self.write_reply_port_msg(msg, msgh, semaphore)
+        self.write_reply_port_msg(msg, msgh, sem)
+
+        return const.KERN_SUCCESS
+
+    def _handle_semaphore_destroy(self, msg: int, msgh: MachMsgHeader) -> int:
+        sem = self.emu.read_s32(msg + 0x1C)
+
+        self.emu.ios_os.semaphore_destroy(sem)
+
+        msg_header = MachMsgHeader(
+            msgh_bits=0,
+            msgh_size=36,
+            msgh_remote_port=0,
+            msgh_local_port=0,
+            msgh_voucher_port=0,
+            msgh_id=(msgh.msgh_id + 100),
+        )
+
+        msg_body = MachMsgBody(
+            msgh_descriptor_count=0,
+        )
+
+        self.write_msg(
+            msg,
+            msg_header,
+            msg_body,
+            int_to_bytes(const.KERN_SUCCESS, 8),
+        )
 
         return const.KERN_SUCCESS
 
@@ -598,7 +627,7 @@ class MachMsgHandler:
             msg,
             msg_header,
             msg_body,
-            int_to_bytes(0, 8),
+            int_to_bytes(const.KERN_SUCCESS, 8),
             int_to_bytes(out_cnt, 4),
             struct_to_bytes(thread_state),
         )
@@ -679,7 +708,7 @@ class MachMsgHandler:
             msg,
             msg_header,
             msg_body,
-            int_to_bytes(0, 8),
+            int_to_bytes(const.KERN_SUCCESS, 8),
             int_to_bytes(target_address, 8),
             int_to_bytes(0, 4),
             int_to_bytes(0, 4),
