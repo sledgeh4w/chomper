@@ -7,6 +7,7 @@ from typing import Dict, TYPE_CHECKING
 
 from unicorn import arm64_const, UcError
 
+from chomper.const import DOUBLE_PRECISION
 from chomper.os.handle import HandleManager
 from chomper.utils import read_struct, struct_to_bytes, int_to_bytes, float_to_bytes
 
@@ -41,6 +42,13 @@ class MachMsgHandler:
             const.TASK_BOOTSTRAP_PORT: self.emu.ios_os.MACH_PORT_BOOTSTRAP,
             const.TASK_DEBUG_CONTROL_PORT: self.emu.ios_os.MACH_PORT_DEBUG_CONTROL,
         }
+
+    @staticmethod
+    def _encode_mig_str(s: str, max_len: int) -> bytes:
+        raw = s.encode("utf-8")[: max_len - 1]
+        declared = len(raw) + 1
+        slot = (declared + 3) & ~3
+        return int_to_bytes(declared, 4) + raw.ljust(slot, b"\x00")
 
     def write_msg(
         self,
@@ -189,8 +197,8 @@ class MachMsgHandler:
         elif remote_port == self.emu.ios_os.MACH_PORT_CA_RENDER_SERVER:
             if msgh_id == 40231:
                 result = self._handle_cas_get_displays(msg, msgh)
-            # elif msgh_id == 40232:
-            #     result = self._handle_ca_display_display_update(msg, msgh)
+            elif msgh_id == 40232:
+                result = self._handle_ca_display_display_update(msg, msgh)
         elif remote_port == self.emu.ios_os.MACH_PORT_BKS_HID_SERVER:
             if msgh_id == 6000050:
                 result = self._handle_bks_hid_get_current_display_brightness(msg, msgh)
@@ -587,20 +595,18 @@ class MachMsgHandler:
         tid = self.mach_port_manager.get_prop(msgh.msgh_remote_port, "tid")
 
         if flavor == const.ARM_THREAD_STATE64:
-            thread_state = Arm64ThreadState64(
-                x=(ctypes.c_uint64 * 29)(
-                    *[
-                        self.emu.uc.reg_read(arm64_const.UC_ARM64_REG_X0 + i)
-                        for i in range(29)
-                    ]
-                ),
-                fp=self.emu.uc.reg_read(arm64_const.UC_ARM64_REG_FP),
-                lr=self.emu.uc.reg_read(arm64_const.UC_ARM64_REG_LR),
-                sp=self.emu.uc.reg_read(arm64_const.UC_ARM64_REG_SP),
-                pc=self.emu.uc.reg_read(arm64_const.UC_ARM64_REG_PC),
-                cpsr=self.emu.uc.reg_read(arm64_const.UC_ARM64_REG_NZCV),
-                flags=0,
-            )
+            thread_state = Arm64ThreadState64()
+
+            for i in range(29):
+                thread_state.x[i] = self.emu.uc.reg_read(
+                    arm64_const.UC_ARM64_REG_X0 + i
+                )
+
+            thread_state.fp = self.emu.uc.reg_read(arm64_const.UC_ARM64_REG_FP)
+            thread_state.lr = self.emu.uc.reg_read(arm64_const.UC_ARM64_REG_LR)
+            thread_state.sp = self.emu.uc.reg_read(arm64_const.UC_ARM64_REG_SP)
+            thread_state.pc = self.emu.uc.reg_read(arm64_const.UC_ARM64_REG_PC)
+            thread_state.cpsr = self.emu.uc.reg_read(arm64_const.UC_ARM64_REG_NZCV)
         else:
             self.emu.logger.warning(
                 f"Unhandled thread_get_state: tid={tid}, flavor={flavor}"
@@ -885,13 +891,37 @@ class MachMsgHandler:
         return const.KERN_SUCCESS
 
     def _handle_ca_display_display_update(self, msg: int, msgh: MachMsgHeader) -> int:
-        msg_header = MachMsgHeader(
-            msgh_bits=const.MACH_MSGH_BITS_COMPLEX,
-            msgh_size=276,
-            msgh_remote_port=0,
-            msgh_local_port=0,
-            msgh_voucher_port=0,
-            msgh_id=(msgh.msgh_id + 100),
+        name = "LCD"
+        device_name = "primary"
+
+        width = 1080
+        height = 2340
+        frame_duration = float_to_bytes(
+            1.0 / 60,
+            precision=DOUBLE_PRECISION,
+        )
+
+        data = (
+            bytes(0x14)
+            + self._encode_mig_str(name, 0x40)
+            + bytes(4)
+            + self._encode_mig_str(device_name, 0x40)
+            + bytes(4)
+            + self._encode_mig_str("", 0x100)
+            + int_to_bytes(0, 4)
+            + int_to_bytes(-1, 8, signed=True)  # current mode
+            + int_to_bytes(-1, 8, signed=True)  # preferred mode
+            + frame_duration  # latency
+            + int_to_bytes(0, 4)  # bounds.origin.x
+            + int_to_bytes(0, 4)  # bounds.origin.y
+            + int_to_bytes(width, 4)  # bounds.size.width
+            + int_to_bytes(height, 4)  # bounds.size.height
+            + bytes(0x28)
+            + frame_duration  # refresh rate
+            + frame_duration  # heartbeat rate
+            + bytes(0x30)
+            + frame_duration
+            + bytes(0x18)
         )
 
         msg_body = MachMsgBody(
@@ -913,15 +943,23 @@ class MachMsgHandler:
             type=const.MACH_MSG_PORT_DESCRIPTOR,
         )
 
+        msg_header = MachMsgHeader(
+            msgh_bits=const.MACH_MSGH_BITS_COMPLEX,
+            msgh_size=(56 + len(data)),
+            msgh_remote_port=0,
+            msgh_local_port=0,
+            msgh_voucher_port=0,
+            msgh_id=(msgh.msgh_id + 100),
+        )
+
         self.write_msg(
             msg,
             msg_header,
             msg_body,
             struct_to_bytes(ool_descriptor),
             struct_to_bytes(port_descriptor),
+            data,
         )
-
-        # Not completed
 
         return const.KERN_SUCCESS
 
