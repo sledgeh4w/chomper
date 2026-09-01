@@ -635,7 +635,7 @@ class Chomper:
             self.add_inst_trace(module)
 
         if self.os_type == const.OS_IOS:
-            self.ios_os.init_tlv(module)
+            self.ios_os.notify_load(module)
 
             if exec_objc_init:
                 self.ios_os.init_objc(module)

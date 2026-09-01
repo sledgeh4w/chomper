@@ -12,9 +12,11 @@ from chomper.os.handle import HandleManager
 from chomper.utils import read_struct, struct_to_bytes, int_to_bytes, float_to_bytes
 
 from . import const
+from .notify import NotifyServer
 from .structs import (
     Arm64ThreadState64,
     HostBasicInfo,
+    HostPreferredUserArch,
     MachMsgHeader,
     MachMsgBody,
     MachMsgPortDescriptor,
@@ -37,6 +39,8 @@ class MachMsgHandler:
         self.emu = emu
         self.mach_port_manager = mach_port_manager
 
+        self._notify_server = NotifyServer()
+
     def _get_task_port_map(self) -> Dict[int, int]:
         return {
             const.TASK_BOOTSTRAP_PORT: self.emu.ios_os.MACH_PORT_BOOTSTRAP,
@@ -57,10 +61,12 @@ class MachMsgHandler:
         msg_body: MachMsgBody,
         *args,
     ):
-        self.emu.write_bytes(
-            msg,
-            struct_to_bytes(msg_header) + struct_to_bytes(msg_body) + b"".join(args),
-        )
+        data = struct_to_bytes(msg_header) + struct_to_bytes(msg_body) + b"".join(args)
+
+        if len(data) < msg_header.msgh_size:
+            data += bytes(msg_header.msgh_size - len(data))
+
+        self.emu.write_bytes(msg, data)
 
     def write_reply_port_msg(self, msg: int, msgh: MachMsgHeader, port: int):
         msg_header = MachMsgHeader(
@@ -192,8 +198,22 @@ class MachMsgHandler:
         elif remote_port == self.emu.ios_os.MACH_PORT_CLOCK:
             if msgh_id == 1000:
                 result = self._handle_clock_get_time(msg, msgh)
+        elif remote_port == self.emu.ios_os.MACH_PORT_IO_MASTER:
+            if msgh_id == 2877:
+                result = self._handle_io_server_version(msg, msgh)
         elif remote_port == self.emu.ios_os.MACH_PORT_NOTIFICATION_CENTER:
-            result = const.KERN_SUCCESS
+            if msgh_id == 78945002:
+                result = self._handle_notify_check(msg, msgh)
+            elif msgh_id == 78945012:
+                result = self._handle_notify_register_check(msg, msgh)
+            elif msgh_id == 78945017:
+                result = self._handle_notify_server_get_state_2(msg, msgh)
+            elif msgh_id == 78945018:
+                result = self._handle_notify_server_get_state_3(msg, msgh)
+            elif msgh_id == 78945023:
+                result = self._handle_notify_server_checkin(msg, msgh)
+            elif msgh_id == 78945025:
+                result = self._handle_notify_generate_common_port(msg, msgh)
         elif remote_port == self.emu.ios_os.MACH_PORT_CA_RENDER_SERVER:
             if msgh_id == 40231:
                 result = self._handle_cas_get_displays(msg, msgh)
@@ -223,35 +243,43 @@ class MachMsgHandler:
 
         self.emu.logger.info(f"flavor={flavor}, count={count}")
 
+        info: ctypes.Structure
+
         if flavor == const.HOST_BASIC_INFO:
-            msg_header = MachMsgHeader(
-                msgh_bits=0,
-                msgh_size=40 + ctypes.sizeof(HostBasicInfo),
-                msgh_remote_port=0,
-                msgh_local_port=0,
-                msgh_voucher_port=0,
-                msgh_id=(msgh.msgh_id + 100),
-            )
-
-            msg_body = MachMsgBody(
-                msgh_descriptor_count=0,
-            )
-
             info = HostBasicInfo(
                 # TODO: Fill values
             )
-
-            self.write_msg(
-                msg,
-                msg_header,
-                msg_body,
-                int_to_bytes(const.KERN_SUCCESS, 8),
-                int_to_bytes(count, 4),
-                struct_to_bytes(info),
+        elif flavor == const.HOST_PREFERRED_USER_ARCH:
+            info = HostPreferredUserArch(
+                cpu_type=const.CPU_TYPE_ARM64,
+                cpu_subtype=const.CPU_SUBTYPE_ARM64_ALL,
             )
         else:
             self.emu.logger.warning(f"Unhandled host_info: flavor={flavor}")
             return const.KERN_RESOURCE_SHORTAGE
+
+        msg_header = MachMsgHeader(
+            msgh_bits=0,
+            msgh_size=40 + ctypes.sizeof(info),
+            msgh_remote_port=0,
+            msgh_local_port=0,
+            msgh_voucher_port=0,
+            msgh_id=(msgh.msgh_id + 100),
+        )
+
+        msg_body = MachMsgBody(
+            msgh_descriptor_count=0,
+        )
+
+        self.write_msg(
+            msg,
+            msg_header,
+            msg_body,
+            int_to_bytes(0, 4),
+            int_to_bytes(const.KERN_SUCCESS, 4),
+            int_to_bytes(count, 4),
+            struct_to_bytes(info),
+        )
 
         return const.KERN_SUCCESS
 
@@ -290,7 +318,8 @@ class MachMsgHandler:
                 msg,
                 msg_header,
                 msg_body,
-                int_to_bytes(const.KERN_SUCCESS, 8),
+                int_to_bytes(0, 4),
+                int_to_bytes(const.KERN_SUCCESS, 4),
                 int_to_bytes(count, 4),
                 struct_to_bytes(info),
             )
@@ -328,7 +357,8 @@ class MachMsgHandler:
                 msg,
                 msg_header,
                 msg_body,
-                int_to_bytes(const.KERN_SUCCESS, 8),
+                int_to_bytes(0, 4),
+                int_to_bytes(const.KERN_SUCCESS, 4),
                 int_to_bytes(count, 4),
                 struct_to_bytes(info),
             )
@@ -398,7 +428,7 @@ class MachMsgHandler:
             msg_header,
             msg_body,
             struct_to_bytes(descriptor),
-            int_to_bytes(0, 8),
+            bytes(8),
             int_to_bytes(count, 4),
         )
 
@@ -430,7 +460,8 @@ class MachMsgHandler:
                 msg,
                 msg_header,
                 msg_body,
-                int_to_bytes(const.KERN_SUCCESS, 8),
+                int_to_bytes(0, 4),
+                int_to_bytes(const.KERN_SUCCESS, 4),
                 int_to_bytes(count, 4),
                 b"".join([int_to_bytes(value, 4) for value in audit_token]),
             )
@@ -488,7 +519,8 @@ class MachMsgHandler:
             msg,
             msg_header,
             msg_body,
-            int_to_bytes(const.KERN_SUCCESS, 8),
+            int_to_bytes(0, 4),
+            int_to_bytes(const.KERN_SUCCESS, 4),
         )
 
         return const.KERN_SUCCESS
@@ -513,12 +545,10 @@ class MachMsgHandler:
             msg,
             msg_header,
             msg_body,
-            int_to_bytes(const.KERN_SUCCESS, 8),
+            int_to_bytes(0, 4),
+            int_to_bytes(const.KERN_SUCCESS, 4),
             bytes(32 * 12),
             int_to_bytes(masks_cnt, 4),
-            int_to_bytes(0, 4),
-            int_to_bytes(0, 4),
-            int_to_bytes(0, 4),
         )
 
         return const.KERN_SUCCESS
@@ -543,12 +573,10 @@ class MachMsgHandler:
             msg,
             msg_header,
             msg_body,
-            int_to_bytes(const.KERN_SUCCESS, 8),
+            int_to_bytes(0, 4),
+            int_to_bytes(const.KERN_SUCCESS, 4),
             bytes(32 * 12),
             int_to_bytes(masks_cnt, 4),
-            int_to_bytes(0, 4),
-            int_to_bytes(0, 4),
-            int_to_bytes(0, 4),
         )
 
         return const.KERN_SUCCESS
@@ -584,7 +612,8 @@ class MachMsgHandler:
             msg,
             msg_header,
             msg_body,
-            int_to_bytes(const.KERN_SUCCESS, 8),
+            int_to_bytes(0, 4),
+            int_to_bytes(const.KERN_SUCCESS, 4),
         )
 
         return const.KERN_SUCCESS
@@ -633,7 +662,8 @@ class MachMsgHandler:
             msg,
             msg_header,
             msg_body,
-            int_to_bytes(const.KERN_SUCCESS, 8),
+            int_to_bytes(0, 4),
+            int_to_bytes(const.KERN_SUCCESS, 4),
             int_to_bytes(out_cnt, 4),
             struct_to_bytes(thread_state),
         )
@@ -672,7 +702,8 @@ class MachMsgHandler:
             msg,
             msg_header,
             msg_body,
-            int_to_bytes(0, 8),
+            int_to_bytes(0, 4),
+            int_to_bytes(const.KERN_SUCCESS, 4),
             int_to_bytes(out_size, 8),
         )
 
@@ -714,10 +745,9 @@ class MachMsgHandler:
             msg,
             msg_header,
             msg_body,
-            int_to_bytes(const.KERN_SUCCESS, 8),
+            int_to_bytes(0, 4),
+            int_to_bytes(const.KERN_SUCCESS, 4),
             int_to_bytes(target_address, 8),
-            int_to_bytes(0, 4),
-            int_to_bytes(0, 4),
         )
 
         return const.KERN_SUCCESS
@@ -778,7 +808,7 @@ class MachMsgHandler:
                 msg_header,
                 msg_body,
                 struct_to_bytes(port_descriptor),
-                int_to_bytes(0, 8),
+                bytes(8),
                 int_to_bytes(out_address, 8),
                 int_to_bytes(size, 8),
                 int_to_bytes(out_count, 4),
@@ -837,8 +867,224 @@ class MachMsgHandler:
             msg,
             msg_header,
             msg_body,
-            int_to_bytes(0, 8),
+            int_to_bytes(0, 4),
+            int_to_bytes(const.KERN_SUCCESS, 4),
             struct_to_bytes(cur_time),
+        )
+
+        return const.KERN_SUCCESS
+
+    def _handle_io_server_version(self, msg: int, msgh: MachMsgHeader) -> int:
+        msg_header = MachMsgHeader(
+            msgh_bits=0,
+            msgh_size=44,
+            msgh_remote_port=0,
+            msgh_local_port=0,
+            msgh_voucher_port=0,
+            msgh_id=(msgh.msgh_id + 100),
+        )
+
+        msg_body = MachMsgBody(
+            msgh_descriptor_count=0,
+        )
+
+        self.write_msg(
+            msg,
+            msg_header,
+            msg_body,
+            int_to_bytes(0, 4),
+            int_to_bytes(const.KERN_SUCCESS, 4),
+            int_to_bytes(0, 8),
+        )
+
+        return const.KERN_SUCCESS
+
+    def _handle_notify_check(self, msg: int, msgh: MachMsgHeader) -> int:
+        client_token = self.emu.read_u32(msg + 0x20)
+
+        check = self._notify_server.check(client_token)
+
+        msg_header = MachMsgHeader(
+            msgh_bits=0,
+            msgh_size=40,
+            msgh_remote_port=0,
+            msgh_local_port=0,
+            msgh_voucher_port=0,
+            msgh_id=(msgh.msgh_id + 100),
+        )
+
+        msg_body = MachMsgBody(
+            msgh_descriptor_count=0,
+        )
+
+        self.write_msg(
+            msg,
+            msg_header,
+            msg_body,
+            int_to_bytes(0, 4),
+            int_to_bytes(const.KERN_SUCCESS, 4),
+            int_to_bytes(check, 4),
+        )
+
+        return const.KERN_SUCCESS
+
+    def _handle_notify_server_get_state_2(self, msg: int, msgh: MachMsgHeader) -> int:
+        name_id = self.emu.read_u64(msg + 0x20)
+
+        state = self._notify_server.get_state_2(name_id)
+
+        msg_header = MachMsgHeader(
+            msgh_bits=0,
+            msgh_size=48,
+            msgh_remote_port=0,
+            msgh_local_port=0,
+            msgh_voucher_port=0,
+            msgh_id=(msgh.msgh_id + 100),
+        )
+
+        msg_body = MachMsgBody(
+            msgh_descriptor_count=0,
+        )
+
+        self.write_msg(
+            msg,
+            msg_header,
+            msg_body,
+            int_to_bytes(0, 4),
+            int_to_bytes(const.KERN_SUCCESS, 4),
+            int_to_bytes(state, 8),
+        )
+
+        return const.KERN_SUCCESS
+
+    def _handle_notify_server_get_state_3(self, msg: int, msgh: MachMsgHeader) -> int:
+        client_token = self.emu.read_u32(msg + 0x20)
+
+        state = self._notify_server.get_state_3(client_token)
+
+        msg_header = MachMsgHeader(
+            msgh_bits=0,
+            msgh_size=56,
+            msgh_remote_port=0,
+            msgh_local_port=0,
+            msgh_voucher_port=0,
+            msgh_id=(msgh.msgh_id + 100),
+        )
+
+        msg_body = MachMsgBody(
+            msgh_descriptor_count=0,
+        )
+
+        self.write_msg(
+            msg,
+            msg_header,
+            msg_body,
+            int_to_bytes(0, 4),
+            int_to_bytes(const.KERN_SUCCESS, 4),
+            int_to_bytes(state, 8),
+            int_to_bytes(0, 8),
+        )
+
+        return const.KERN_SUCCESS
+
+    def _handle_notify_register_check(self, msg: int, msgh: MachMsgHeader) -> int:
+        name_len = self.emu.read_u32(msg + 0x24)
+        name = self.emu.read_string(msg + 0x28)
+        client_token = self.emu.read_u32(msg + 0x28 + ((name_len + 3) & ~3))
+
+        self.emu.logger.info(f"name='{name}', client_token={client_token}")
+
+        name_id = self._notify_server.register_check(name, client_token)
+
+        msg_header = MachMsgHeader(
+            msgh_bits=0,
+            msgh_size=56,
+            msgh_remote_port=0,
+            msgh_local_port=0,
+            msgh_voucher_port=0,
+            msgh_id=(msgh.msgh_id + 100),
+        )
+
+        msg_body = MachMsgBody(
+            msgh_descriptor_count=0,
+        )
+
+        self.write_msg(
+            msg,
+            msg_header,
+            msg_body,
+            int_to_bytes(0, 4),
+            int_to_bytes(const.KERN_SUCCESS, 4),
+            int_to_bytes(-1, 4, signed=True),
+            int_to_bytes(0, 4),
+            int_to_bytes(name_id, 8),
+        )
+
+        return const.KERN_SUCCESS
+
+    def _handle_notify_generate_common_port(
+        self,
+        msg: int,
+        msgh: MachMsgHeader,
+    ) -> int:
+        port = self.mach_port_manager.new()
+
+        if not port:
+            return const.KERN_RESOURCE_SHORTAGE
+
+        msg_header = MachMsgHeader(
+            msgh_bits=const.MACH_MSGH_BITS_COMPLEX,
+            msgh_size=52,
+            msgh_remote_port=0,
+            msgh_local_port=0,
+            msgh_voucher_port=0,
+            msgh_id=(msgh.msgh_id + 100),
+        )
+
+        msg_body = MachMsgBody(
+            msgh_descriptor_count=1,
+        )
+
+        port_descriptor = MachMsgPortDescriptor(
+            name=port,
+            disposition=const.MACH_MSG_TYPE_MOVE_RECEIVE,
+            type=const.MACH_MSG_PORT_DESCRIPTOR,
+        )
+
+        self.write_msg(
+            msg,
+            msg_header,
+            msg_body,
+            struct_to_bytes(port_descriptor),
+        )
+
+        return const.KERN_SUCCESS
+
+    def _handle_notify_server_checkin(self, msg: int, msgh: MachMsgHeader) -> int:
+        protocol_version = 3
+        server_pid = 1
+
+        msg_header = MachMsgHeader(
+            msgh_bits=0,
+            msgh_size=48,
+            msgh_remote_port=0,
+            msgh_local_port=0,
+            msgh_voucher_port=0,
+            msgh_id=(msgh.msgh_id + 100),
+        )
+
+        msg_body = MachMsgBody(
+            msgh_descriptor_count=0,
+        )
+
+        self.write_msg(
+            msg,
+            msg_header,
+            msg_body,
+            int_to_bytes(0, 4),
+            int_to_bytes(const.KERN_SUCCESS, 4),
+            int_to_bytes(protocol_version, 4),
+            int_to_bytes(server_pid, 4),
         )
 
         return const.KERN_SUCCESS
@@ -884,7 +1130,7 @@ class MachMsgHandler:
             msg_header,
             msg_body,
             struct_to_bytes(ool_descriptor),
-            int_to_bytes(0, 8),
+            bytes(8),
             int_to_bytes(len(displays_data), 4),
         )
 
@@ -987,7 +1233,8 @@ class MachMsgHandler:
             msg,
             msg_header,
             msg_body,
-            int_to_bytes(0, 8),
+            int_to_bytes(0, 4),
+            int_to_bytes(const.KERN_SUCCESS, 4),
             float_to_bytes(brightness),
         )
 
@@ -1052,10 +1299,8 @@ class MachMsgHandler:
             msg_header,
             msg_body,
             struct_to_bytes(ool_descriptor),
-            int_to_bytes(0, 8),
+            bytes(8),
             int_to_bytes(len(config_data), 4),
-            int_to_bytes(0, 4),
-            int_to_bytes(0, 4),
         )
 
         return const.KERN_SUCCESS

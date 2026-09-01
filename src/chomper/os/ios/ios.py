@@ -91,6 +91,7 @@ SYSTEM_MODULES = [
     "/usr/lib/libnetwork.dylib",
     "/usr/lib/libMobileGestalt.dylib",
     "/usr/lib/libresolv.9.dylib",
+    "/usr/lib/libsqlite3.dylib",
     "/usr/lib/libTelephonyUtilDynamic.dylib",
     "/usr/lib/libxml2.2.dylib",
     "/usr/lib/libz.1.dylib",
@@ -662,7 +663,7 @@ class IosOs(PosixOs):
 
         dyld_all_images = self.emu.get_symbol("__ZN5dyld310gAllImagesE")
 
-        # dyld3::closure::ContainerTypedBytes::findAttributePayload
+        # dyld3::closure::ContainerTypedBytes::findAttributePayload()
         attribute_payload_ptr = self.emu.create_buffer(8)
 
         self.emu.write_u32(attribute_payload_ptr, 2**10)
@@ -670,7 +671,7 @@ class IosOs(PosixOs):
 
         self.emu.write_pointer(dyld_all_images.address, attribute_payload_ptr)
 
-        # dyld3::AllImages::platform
+        # dyld3::AllImages::platform()
         platform_ptr = self.emu.create_buffer(0x144)
         self.emu.write_u32(platform_ptr + 0x140, 2)
 
@@ -809,7 +810,7 @@ class IosOs(PosixOs):
         if g_user_unlocked_since_boot:
             self.emu.write_u8(g_user_unlocked_since_boot.address, 1)
 
-    def _init_system_module(self, name: str, module: Module):
+    def _perform_module_init(self, name: str, module: Module):
         """For certain system modules, perform additional initialization before
         and after Objective-C initialization."""
         if name == "libsystem_kernel.dylib":
@@ -839,11 +840,12 @@ class IosOs(PosixOs):
         elif name == "CoreText":
             self.emu.call_symbol("___CTInitialize")
 
-    def init_tlv(self, module: Module):
-        """Initialize thread-local variables for the module."""
+    def notify_load(self, module: Module):
+        """Triggered after the module is loaded."""
         if not self.emu.find_module("libdyld.dylib"):
             return
 
+        # Initialize thread-local variables
         self.emu.call_symbol(
             "_tlv_load_notification",
             module.macho_info.image_header,
@@ -851,7 +853,7 @@ class IosOs(PosixOs):
         )
 
     def init_objc(self, module: Module):
-        """Initialize Objective-C for the module"""
+        """Initialize Objective-C for the module."""
         if not self.emu.find_module("libobjc.A.dylib"):
             return
 
@@ -941,7 +943,7 @@ class IosOs(PosixOs):
                 ]
                 self.emu.exec_init_array(init_array)
 
-            self._init_system_module(name, module)
+            self._perform_module_init(name, module)
 
     def _setup_bundle_dir(self):
         """Set bundle directory as current working directory."""
@@ -1162,8 +1164,8 @@ class IosOs(PosixOs):
             #
             #     time.sleep(0.1)
 
-            self.emu.logger.warning("Emulator ignored a semaphore wait.")
-            return 0
+            self.emu.logger.warning("Ignored a semaphore waiting.")
+            return -1
 
         self._semaphore_map[sem] -= 1
         return 0
