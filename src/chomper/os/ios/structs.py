@@ -448,6 +448,39 @@ class Statvfs64(ctypes.Structure):
     ]
 
 
+# sys/sysctl.h
+
+
+class ExternProc(ctypes.Structure):
+    _fields_ = [
+        ("_pad0", ctypes.c_char * 32),
+        ("p_flag", ctypes.c_int32),
+        ("p_stat", ctypes.c_char),
+        ("_pad1", ctypes.c_char * 3),
+        ("p_pid", ctypes.c_int32),
+        ("p_oppid", ctypes.c_int32),
+        ("_pad2", ctypes.c_char * 195),
+        ("p_comm", ctypes.c_char * 17),
+        ("_pad3", ctypes.c_char * 36),
+    ]
+
+
+class EProc(ctypes.Structure):
+    _fields_ = [
+        ("_pad0", ctypes.c_char * 264),
+        ("e_ppid", ctypes.c_int32),
+        ("e_pgid", ctypes.c_int32),
+        ("_pad1", ctypes.c_char * 80),
+    ]
+
+
+class KinfoProc(ctypes.Structure):
+    _fields_ = [
+        ("kp_proc", ExternProc),
+        ("kp_eproc", EProc),
+    ]
+
+
 # sys/un.h
 
 
@@ -520,6 +553,13 @@ class HostBasicInfo(ctypes.Structure):
         ("logical_cpu", ctypes.c_int32),
         ("logical_cpu_max", ctypes.c_int32),
         ("max_mem", ctypes.c_uint64),
+    ]
+
+
+class HostPreferredUserArch(ctypes.Structure):
+    _fields_ = [
+        ("cpu_type", ctypes.c_int32),
+        ("cpu_subtype", ctypes.c_int32),
     ]
 
 

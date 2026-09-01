@@ -1,4 +1,5 @@
 import ctypes
+import os
 import random
 import socket
 import time
@@ -9,7 +10,15 @@ from chomper.typing import SysctlReturnValue
 from chomper.utils import log_call
 
 from . import const
-from .structs import Timespec, IfMsghdr, IfaMsghdr, SockaddrIn, SockaddrIn6, SockaddrDl
+from .structs import (
+    Timespec,
+    IfMsghdr,
+    IfaMsghdr,
+    SockaddrIn,
+    SockaddrIn6,
+    SockaddrDl,
+    KinfoProc,
+)
 
 # CTL Type map
 CTL_TYPE_MAP: Dict[Tuple[int, int], str] = {
@@ -37,6 +46,7 @@ CTL_TYPE_MAP: Dict[Tuple[int, int], str] = {
     (const.CTL_HW, const.HW_NCPU): "hw.ncpu",
     (const.CTL_HW, const.HW_BYTEORDER): "hw.byteorder",
     (const.CTL_HW, const.HW_MEMSIZE): "hw.memsize",
+    (const.CTL_HW, const.HW_AVAILCPU): "hw.activecpu",
     (const.CTL_HW, const.HW_PAGESIZE): "hw.pagesize",
     (const.CTL_HW, const.HW_CACHELINE): "hw.cachelinesize",
     (const.CTL_HW, const.HW_L1ICACHESIZE): "hw.l1icachesize",
@@ -85,7 +95,7 @@ KERNEL_PARAMETERS: Dict[str, SysctlReturnValue] = {
     "hw.machine": "iPhone13,1",
     "hw.model": "D52gAP",
     "hw.target": "D52gAP",
-    "hw.product": "iPhone",
+    "hw.product": "iPhone13,1",
     "hw.ncpu": 6,
     "hw.byteorder": 1234,
     "hw.memsize": 3899293696,
@@ -105,6 +115,7 @@ KERNEL_PARAMETERS: Dict[str, SysctlReturnValue] = {
     "hw.l2cachesize": 4194304,
     "hw.tbfrequency": 24000000,
     "security.mac.sandbox.sentinel": ".sb-b524d45c",
+    "machdep.virtual_address_size": 39,
 }
 
 
@@ -200,15 +211,42 @@ def _get_iflist():
     return msgs
 
 
+def _get_kinfo_proc(emu, pid: int) -> Optional[KinfoProc]:
+    if pid != emu.os.getpid():
+        return None
+
+    comm = os.path.basename(emu.os.executable_path)[:16]
+
+    info = KinfoProc()
+
+    info.kp_proc.p_pid = pid
+    info.kp_proc.p_stat = const.SRUN
+    info.kp_proc.p_flag = const.P_LP64
+    info.kp_proc.p_oppid = 1
+    info.kp_proc.p_comm = comm.encode()
+
+    info.kp_eproc.e_ppid = 1
+    info.kp_eproc.e_pgid = pid
+
+    return info
+
+
 @log_call
-def sysctl(mib: Tuple[int, int, int, int, int, int]) -> Optional[SysctlReturnValue]:
-    ctl_type, ctl_ident, op = mib[0], mib[1], mib[4]
+def sysctl(
+    emu,
+    mib: Tuple[int, int, int, int, int, int],
+) -> Optional[SysctlReturnValue]:
+    ctl_type, ctl_ident = mib[0], mib[1]
 
     if (ctl_type, ctl_ident) in CTL_TYPE_MAP:
         return KERNEL_PARAMETERS[CTL_TYPE_MAP[(ctl_type, ctl_ident)]]
 
+    if ctl_type == const.CTL_KERN and ctl_ident == const.KERN_PROC:
+        if mib[2] == const.KERN_PROC_PID:
+            return _get_kinfo_proc(emu, mib[3])
+
     if ctl_type == const.CTL_NET and ctl_ident == const.PF_ROUTE:
-        if op == const.NET_RT_IFLIST:
+        if mib[4] == const.NET_RT_IFLIST:
             return _get_iflist()
 
     return None

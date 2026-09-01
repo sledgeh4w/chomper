@@ -149,6 +149,7 @@ SYSCALL_NAMES = {
     const.SYS_GETTID: "SYS_gettid",
     const.SYS_IDENTITYSVC: "SYS_identitysvc",
     const.SYS_PSYNCH_MUTEXWAIT: "SYS_psynch_mutexwait",
+    const.SYS_PSYNCH_CVWAIT: "SYS_psynch_cvwait",
     const.SYS_PROCESS_POLICY: "SYS_process_policy",
     const.SYS_MLOCKALL: "SYS_mlockall",
     const.SYS_ISSETUGID: "SYS_issetugid",
@@ -382,6 +383,7 @@ class IosSyscallHandler(BaseSyscallHandler):
             const.SYS_GETTID: self._handle_sys_gettid,
             const.SYS_IDENTITYSVC: self._handle_sys_identitysvc,
             const.SYS_PSYNCH_MUTEXWAIT: self._handle_sys_psynch_mutexwait,
+            const.SYS_PSYNCH_CVWAIT: self._handle_sys_psynch_cvwait,
             const.SYS_PROCESS_POLICY: self._handle_sys_process_policy,
             const.SYS_MLOCKALL: self._handle_sys_mlockall,
             const.SYS_ISSETUGID: self._handle_sys_issetugid,
@@ -1222,7 +1224,7 @@ class IosSyscallHandler(BaseSyscallHandler):
             self.emu.read_u32(name + 20),
         )
 
-        result = sysctl(mib)
+        result = sysctl(self.emu, mib)
         if result is None:
             self.emu.logger.warning(f"Unhandled sysctl command: {mib}")
             return -1
@@ -1368,6 +1370,10 @@ class IosSyscallHandler(BaseSyscallHandler):
     def _handle_sys_psynch_mutexwait():
         return 0
 
+    def _handle_sys_psynch_cvwait(self):
+        self.emu.logger.warning("Ignored a condition waiting.")
+        raise SystemOperationFailed("Wait condition", SyscallError.ETIMEDOUT)
+
     @staticmethod
     def _handle_sys_process_policy():
         return 0
@@ -1401,6 +1407,7 @@ class IosSyscallHandler(BaseSyscallHandler):
         return 0
 
     def _handle_sys_semwait_signal(self):
+        self.emu.logger.warning("Ignored a signal waiting.")
         raise SystemOperationFailed("Wait signal", SyscallError.ETIMEDOUT)
 
     def _handle_sys_proc_info(self):
@@ -1520,7 +1527,7 @@ class IosSyscallHandler(BaseSyscallHandler):
         return 0
 
     def _handle_sys_bsdthread_create(self):
-        self.emu.logger.warning("Emulator ignored a thread create reqeust.")
+        self.emu.logger.warning("Ignored a thread create request.")
         self.emu.log_backtrace()
 
         return 0

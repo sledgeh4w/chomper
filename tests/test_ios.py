@@ -382,6 +382,12 @@ def test_ui_device(emu_ios, objc):
 
         device.call_method("setBatteryMonitoringEnabled:", 1)
 
+        battery_level = device.call_method("batteryLevel")
+        assert battery_level > 0
+
+        battery_state = device.call_method("batteryState")
+        assert battery_state
+
         vendor_identifier = device.call_method("identifierForVendor")
         assert vendor_identifier
 

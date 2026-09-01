@@ -6,12 +6,12 @@ from typing import Callable, Dict, Optional
 from unicorn import Uc, UcError
 
 from chomper.exceptions import EmulatorCrashed, ObjCUnrecognizedSelector
+from chomper.loader import Module
 from chomper.objc import ObjcRuntime, ObjcObject
 from chomper.typing import HookContext
 from chomper.utils import struct_to_bytes
 
 from .structs import DlInfo
-
 
 hooks: Dict[str, Callable] = {}
 
@@ -256,15 +256,59 @@ def hook_dyld_shared_cache_real_path(
     return path
 
 
+def _get_image_by_index(emu, index: int) -> Optional[Module]:
+    if index == 0 and emu.modules:
+        # Treat the last loaded module as the main image
+        return emu.modules[-1]
+    if index - 1 < len(emu.modules):
+        return emu.modules[index - 1]
+    return None
+
+
+@register_hook("__dyld_image_count")
+def hook_dyld_image_count(uc: Uc, address: int, size: int, user_data: HookContext):
+    emu = user_data["emu"]
+
+    return len(emu.modules)
+
+
 @register_hook("__dyld_get_image_header")
 def hook_dyld_get_image_header(uc: Uc, address: int, size: int, user_data: HookContext):
     emu = user_data["emu"]
 
-    if emu.modules:
-        module = emu.modules[-1]
-        return module.macho_info.image_header
+    index = emu.get_arg(0)
+    module = _get_image_by_index(emu, index)
 
-    return 0
+    if not module:
+        return 0
+
+    return module.macho_info.image_header
+
+
+@register_hook("__dyld_get_image_name")
+def hook_dyld_get_image_name(uc: Uc, address: int, size: int, user_data: HookContext):
+    emu = user_data["emu"]
+
+    index = emu.get_arg(0)
+    module = _get_image_by_index(emu, index)
+
+    if not module:
+        return 0
+
+    install_name = module.macho_info.install_name
+    bundle_path = os.path.dirname(emu.ios_os.executable_path)
+
+    if not install_name:
+        # Main executable
+        image_name = f"{bundle_path}/{module.name}"
+    elif install_name.startswith("@rpath/"):
+        # Application libraries
+        image_name = f"{bundle_path}/{install_name[7:]}"
+    else:
+        # System libraries
+        image_name = install_name
+
+    return emu.create_const_string(image_name)
 
 
 @register_hook("__dyld_get_image_vmaddr_slide")
@@ -273,11 +317,13 @@ def hook_dyld_get_image_vmaddr_slide(
 ):
     emu = user_data["emu"]
 
-    if emu.modules:
-        module = emu.modules[-1]
-        return module.base - module.macho_info.image_base
+    index = emu.get_arg(0)
+    module = _get_image_by_index(emu, index)
 
-    return 0
+    if not module:
+        return 0
+
+    return module.base - module.macho_info.image_base
 
 
 @register_hook("__NSGetExecutablePath")
@@ -648,3 +694,10 @@ def hook_read_class(uc: Uc, address: int, size: int, user_data: HookContext):
         emu.uc.context_restore(context)
 
     return result
+
+
+@register_hook("_libSystem_initializer")
+def hook_lib_system_initializer(
+    uc: Uc, address: int, size: int, user_data: HookContext
+):
+    pass
