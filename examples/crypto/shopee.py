@@ -7,7 +7,7 @@ from chomper.objc import ObjcRuntime
 base_path = os.path.abspath(os.path.dirname(__file__))
 
 rootfs_path = os.path.join(base_path, "../../rootfs/ios")
-module_path = os.path.join(base_path, "../../examples/binaries/ios/com.beeasy.shopee.sg/ShopeeSG")
+module_path = os.path.join(base_path, "../../samples/ios/com.beeasy.shopee.sg/ShopeeSG")
 
 
 def hook_dispatch_group_wait(uc, address, size, user_data):

@@ -7,7 +7,7 @@ from chomper.objc import ObjcRuntime
 base_path = os.path.abspath(os.path.dirname(__file__))
 
 rootfs_path = os.path.join(base_path, "../../rootfs/ios")
-module_path = os.path.join(base_path, "../../examples/binaries/ios/com.jiangjia.gif/gifCommonFramework")
+module_path = os.path.join(base_path, "../../samples/ios/com.jiangjia.gif/gifCommonFramework")
 
 
 def hook_ksecurity_perf_report_sg_perf_report(uc, address, size, user_data):

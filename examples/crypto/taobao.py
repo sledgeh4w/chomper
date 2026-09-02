@@ -7,7 +7,7 @@ from chomper.objc import ObjcRuntime
 base_path = os.path.abspath(os.path.dirname(__file__))
 
 rootfs_path = os.path.join(base_path, "../../rootfs/ios")
-module_path = os.path.join(base_path, "../../examples/binaries/ios/com.taobao.taobao4iphone/Taobao4iPhone")
+module_path = os.path.join(base_path, "../../samples/ios/com.taobao.taobao4iphone/Taobao4iPhone")
 
 
 def main():

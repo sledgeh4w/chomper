@@ -53,7 +53,7 @@ emu = Chomper(
 )
 
 # Load program
-discover = emu.load_module("examples/binaries/ios/com.xingin.discover/8.74/discover")
+discover = emu.load_module("samples/ios/com.xingin.discover/8.74/discover")
 
 s = "Mocha"
 
@@ -86,7 +86,7 @@ emu = Chomper(
 
 objc = ObjcRuntime(emu)
 
-emu.load_module("examples/binaries/ios/cn.com.scal.sichuanair/zsch")
+emu.load_module("samples/ios/cn.com.scal.sichuanair/zsch")
 
 # Use this context manager to ensure that Objective-C objects can be automatically released
 with objc.autorelease_pool():
@@ -119,7 +119,7 @@ emu = Chomper(
 # Load dependency libraries
 emu.load_module("rootfs/android/system/lib64/libz.so")
 
-libszstone = emu.load_module("examples/binaries/android/com.shizhuang.duapp/libszstone.so")
+libszstone = emu.load_module("samples/android/com.shizhuang.duapp/libszstone.so")
 
 s = "Mocha"
 
@@ -132,4 +132,4 @@ result = emu.read_bytes(result_buf, result_len)
 ```
 
 ## Examples
-There are some security algorithm emulation codes in [algorithms](https://github.com/sledgeh4w/chomper/tree/main/examples/algorithms).
+There are some cryptographic algorithms emulation codes in [crypto](https://github.com/sledgeh4w/chomper/tree/main/examples/crypto).

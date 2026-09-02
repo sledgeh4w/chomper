@@ -203,7 +203,7 @@ class IosOs(PosixOs):
     MACH_PORT_START_VALUE = 65536
     MACH_PORT_MAX_NUM = 10000
 
-    MACH_SERVICES = {
+    MACH_SERVERS = {
         "com.apple.system.notification_center": MACH_PORT_NOTIFICATION_CENTER,
         "com.apple.CARenderServer": MACH_PORT_CA_RENDER_SERVER,
         "com.apple.lsd.advertisingidentifiers": MACH_PORT_ADVERTISING_IDENTIFIERS,
@@ -253,7 +253,7 @@ class IosOs(PosixOs):
             max_num=self.MACH_PORT_MAX_NUM,
         )
 
-        self._mach_services = {}
+        self._mach_servers = {}
 
         # Mach msg
         self._mach_msg_handler = MachMsgHandler(self.emu, self._mach_port_manager)
@@ -1193,8 +1193,8 @@ class IosOs(PosixOs):
         Returns:
             The port of this mach service.
         """
-        if name in self._mach_services:
-            return self._mach_services[name]
+        if name in self._mach_servers:
+            return self._mach_servers[name]
 
         return 0
 
@@ -1287,8 +1287,8 @@ class IosOs(PosixOs):
 
         self._setup_bundle_dir()
 
-        # Setup mach services
-        self._mach_services.update(self.MACH_SERVICES)
+        # Setup mach servers
+        self._mach_servers.update(self.MACH_SERVERS)
 
         modules = SYSTEM_MODULES.copy()
 
