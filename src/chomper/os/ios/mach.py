@@ -247,12 +247,22 @@ class MachMsgHandler:
 
         if flavor == const.HOST_BASIC_INFO:
             info = HostBasicInfo(
-                # TODO: Fill values
+                max_cpus=6,
+                avail_cpus=6,
+                memory_size=0xF0A44000,
+                cpu_type=const.CPU_TYPE_ARM64,
+                cpu_subtype=const.CPU_SUBTYPE_ARM64E,
+                cpu_threadtype=0,
+                physical_cpu=6,
+                physical_cpu_max=6,
+                logical_cpu=6,
+                logical_cpu_max=6,
+                max_mem=0xF0A44000,
             )
         elif flavor == const.HOST_PREFERRED_USER_ARCH:
             info = HostPreferredUserArch(
                 cpu_type=const.CPU_TYPE_ARM64,
-                cpu_subtype=const.CPU_SUBTYPE_ARM64_ALL,
+                cpu_subtype=const.CPU_SUBTYPE_ARM64E,
             )
         else:
             self.emu.logger.warning(f"Unhandled host_info: flavor={flavor}")
@@ -320,7 +330,7 @@ class MachMsgHandler:
                 msg_body,
                 int_to_bytes(0, 4),
                 int_to_bytes(const.KERN_SUCCESS, 4),
-                int_to_bytes(count, 4),
+                int_to_bytes(ctypes.sizeof(VmStatistics) // 4, 4),
                 struct_to_bytes(info),
             )
         else:
@@ -359,7 +369,7 @@ class MachMsgHandler:
                 msg_body,
                 int_to_bytes(0, 4),
                 int_to_bytes(const.KERN_SUCCESS, 4),
-                int_to_bytes(count, 4),
+                int_to_bytes(ctypes.sizeof(VmStatistics64) // 4, 4),
                 struct_to_bytes(info),
             )
         else:
@@ -1140,12 +1150,26 @@ class MachMsgHandler:
         name = "LCD"
         device_name = "primary"
 
-        width = 1080
-        height = 2340
+        pixel_width = 1080
+        pixel_height = 2340
+        scale = 3
+
+        display_width = 1125
+        display_height = 2436
+        refresh_rate = 60
+
         frame_duration = float_to_bytes(
-            1.0 / 60,
+            1.0 / refresh_rate,
             precision=DOUBLE_PRECISION,
         )
+
+        display_mode = (
+            display_width | (display_height << 14) | ((refresh_rate << 16) << 29)
+        )
+
+        modes_data = int_to_bytes(display_mode, 8)
+        modes_buf = self.emu.create_buffer(len(modes_data))
+        self.emu.write_bytes(modes_buf, modes_data)
 
         data = (
             bytes(0x14)
@@ -1154,19 +1178,23 @@ class MachMsgHandler:
             + self._encode_mig_str(device_name, 0x40)
             + bytes(4)
             + self._encode_mig_str("", 0x100)
-            + int_to_bytes(0, 4)
-            + int_to_bytes(-1, 8, signed=True)  # current mode
-            + int_to_bytes(-1, 8, signed=True)  # preferred mode
+            + int_to_bytes(len(modes_data), 4)
+            + int_to_bytes(display_mode, 8)  # current mode
+            + int_to_bytes(display_mode, 8)  # preferred mode
             + frame_duration  # latency
-            + int_to_bytes(0, 4)  # bounds.origin.x
-            + int_to_bytes(0, 4)  # bounds.origin.y
-            + int_to_bytes(width, 4)  # bounds.size.width
-            + int_to_bytes(height, 4)  # bounds.size.height
-            + bytes(0x28)
+            + int_to_bytes(0, 4)
+            + int_to_bytes(0, 4)
+            + int_to_bytes(display_width, 4)
+            + int_to_bytes(display_height, 4)
+            + bytes(8)
+            + int_to_bytes(pixel_width, 4)
+            + int_to_bytes(pixel_height, 4)
+            + bytes(0x18)
             + frame_duration  # refresh rate
             + frame_duration  # heartbeat rate
             + bytes(0x30)
-            + frame_duration
+            + int_to_bytes(0, 4)
+            + int_to_bytes(scale, 4)
             + bytes(0x18)
         )
 
@@ -1175,12 +1203,12 @@ class MachMsgHandler:
         )
 
         ool_descriptor = MachMsgOolDescriptor(
-            address=0,
+            address=modes_buf,
             deallocate=0,
             copy=0,
             disposition=0,
             type=const.MACH_MSG_OOL_DESCRIPTOR,
-            size=0,
+            size=len(modes_data),
         )
 
         port_descriptor = MachMsgPortDescriptor(
@@ -1246,8 +1274,13 @@ class MachMsgHandler:
 
         self.emu.logger.info(f"key='{key}'")
 
-        if key == "State:/Network/Global/Proxies":
-            config = {
+        configs = {
+            "Setup:/System": {
+                "ComputerName": "iPhone",
+                "ComputerNameEncoding": 0x08000100,
+                "HostName": "iPhone",
+            },
+            "State:/Network/Global/Proxies": {
                 "ExceptionsList": [
                     "*.local",
                     "169.254/16",
@@ -1262,8 +1295,11 @@ class MachMsgHandler:
                         "FTPPassive": 1,
                     }
                 },
-            }
-        else:
+            },
+        }
+
+        config = configs.get(key)
+        if config is None:
             self.emu.logger.warning(f"Unhandled configget: key='{key}'")
             return const.KERN_RESOURCE_SHORTAGE
 

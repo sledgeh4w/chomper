@@ -4,6 +4,7 @@ import plistlib
 import random
 import shutil
 import socket
+import stat
 import string
 import sys
 from contextlib import contextmanager
@@ -20,13 +21,28 @@ from chomper.loader import MachoLoader, Module
 from chomper.os.device import NullDevice, RandomDevice, UrandomDevice
 from chomper.os.posix import FileProperty, FdType, PosixOs, SyscallError
 from chomper.os.handle import HandleManager
-from chomper.utils import log_call, struct_to_bytes, to_unsigned, read_struct
+from chomper.utils import (
+    log_call,
+    int_to_bytes,
+    struct_to_bytes,
+    to_unsigned,
+    read_struct,
+)
 
 from . import const
 from .fixup import SystemModuleFixer
 from .hooks import get_hooks, hook_read_class
 from .mach import MachMsgHandler
-from .structs import Dirent, Flock, Kevent, SockaddrIn, Stat64, Statfs64, Timespec
+from .structs import (
+    Attrlist,
+    Dirent,
+    Flock,
+    Kevent,
+    SockaddrIn,
+    Stat64,
+    Statfs64,
+    Timespec,
+)
 from .syscall import IosSyscallHandler
 from .xpc import XpcMessageHandler
 
@@ -321,7 +337,7 @@ class IosOs(PosixOs):
 
         return _flags
 
-    def _construct_stat(self, st: os.stat_result) -> ctypes.Structure:
+    def _make_stat(self, st: os.stat_result) -> ctypes.Structure:
         if sys.platform == "win32":
             block_size = 4096
 
@@ -342,6 +358,11 @@ class IosOs(PosixOs):
         mtime = Timespec.from_time_ns(st.st_mtime_ns)
         ctime = Timespec.from_time_ns(st.st_ctime_ns)
 
+        if sys.platform == "darwin":
+            birthtime = Timespec.from_time_ns(int(st.st_birthtime * 10**9))
+        else:
+            birthtime = Timespec.from_time_ns(st.st_ctime_ns)
+
         return Stat64(
             st_dev=st.st_dev,
             st_mode=st.st_mode,
@@ -353,13 +374,14 @@ class IosOs(PosixOs):
             st_atimespec=atime,
             st_mtimespec=mtime,
             st_ctimespec=ctime,
+            st_birthtimespec=birthtime,
             st_size=st.st_size,
             st_blocks=blocks,
             st_blksize=blksize,
             st_flags=flags,
         )
 
-    def _construct_device_stat(self) -> ctypes.Structure:
+    def _make_device_stat(self) -> ctypes.Structure:
         atime = Timespec.from_time_ns(0)
         mtime = Timespec.from_time_ns(0)
         ctime = Timespec.from_time_ns(0)
@@ -381,7 +403,7 @@ class IosOs(PosixOs):
             st_flags=0,
         )
 
-    def _construct_statfs(self) -> ctypes.Structure:
+    def _make_statfs(self) -> ctypes.Structure:
         return Statfs64(
             f_bsize=4096,
             f_iosize=1048576,
@@ -401,7 +423,7 @@ class IosOs(PosixOs):
             % self._boot_hash.encode("utf-8"),
         )
 
-    def _construct_sockaddr_in(self, address: str, port: int) -> ctypes.Structure:
+    def _make_sockaddr_in(self, address: str, port: int) -> ctypes.Structure:
         return SockaddrIn(
             sin_len=ctypes.sizeof(SockaddrIn),
             sin_family=self.AF_INET,
@@ -409,7 +431,7 @@ class IosOs(PosixOs):
             sin_addr=int.from_bytes(socket.inet_aton(address), "little"),
         )
 
-    def _construct_flock(self, lock_type: int) -> ctypes.Structure:
+    def _make_flock(self, lock_type: int) -> ctypes.Structure:
         return Flock(
             l_start=0,
             l_len=0,
@@ -434,13 +456,164 @@ class IosOs(PosixOs):
         return self._tid
 
     def _check_kqueue(self, kq: int):
-        """Check kqueue."""
         self._check_fd(kq)
 
         fd_type = self._file_manager.get_prop(kq, "type")
 
         if fd_type != FdType.KQUEUE:
             raise SystemOperationFailed(f"Bad kqueue: {kq}", SyscallError.EBADF)
+
+    @log_call
+    def getattrlist(self, path: str, alist_ptr: int, buf: int, buf_size: int) -> int:
+        alist = read_struct(self.emu, alist_ptr, Attrlist)
+
+        real_path = self.emu.os._get_real_path(path)
+
+        try:
+            st = os.stat(real_path)
+        except OSError:
+            return -1
+
+        if sys.platform == "win32":
+            block_size = 4096
+
+            blocks = st.st_size // (block_size // 8) + 1
+            blksize = block_size
+        else:
+            blocks = st.st_blocks
+            blksize = st.st_blksize
+
+        if sys.platform == "darwin":
+            birthtime = Timespec.from_time_ns(int(st.st_birthtime * 10**9))
+        else:
+            birthtime = Timespec.from_time_ns(st.st_ctime_ns)
+
+        common_attrs = [
+            (const.ATTR_CMN_NAME, os.path.basename(path)),
+            (const.ATTR_CMN_DEVID, int_to_bytes(st.st_dev, 4)),
+            (const.ATTR_CMN_FSID, int_to_bytes(0, 8)),
+            (
+                const.ATTR_CMN_OBJTYPE,
+                int_to_bytes(2 if stat.S_ISDIR(st.st_mode) else 1, 4),
+            ),
+            (const.ATTR_CMN_OBJTAG, int_to_bytes(0, 4)),
+            (const.ATTR_CMN_OBJID, int_to_bytes(st.st_ino, 8)),
+            (const.ATTR_CMN_OBJPERMANENTID, int_to_bytes(st.st_ino, 8)),
+            (const.ATTR_CMN_PAROBJID, int_to_bytes(2, 8)),
+            (const.ATTR_CMN_SCRIPT, int_to_bytes(0, 4)),
+            (const.ATTR_CMN_CRTIME, struct_to_bytes(birthtime)),
+            (
+                const.ATTR_CMN_MODTIME,
+                struct_to_bytes(Timespec.from_time_ns(st.st_mtime_ns)),
+            ),
+            (
+                const.ATTR_CMN_CHGTIME,
+                struct_to_bytes(Timespec.from_time_ns(st.st_ctime_ns)),
+            ),
+            (
+                const.ATTR_CMN_ACCTIME,
+                struct_to_bytes(Timespec.from_time_ns(st.st_atime_ns)),
+            ),
+            (const.ATTR_CMN_BKUPTIME, struct_to_bytes(Timespec.from_time_ns(0))),
+            (const.ATTR_CMN_FNDRINFO, bytes(32)),
+            (const.ATTR_CMN_OWNERID, int_to_bytes(st.st_uid, 4)),
+            (const.ATTR_CMN_GRPID, int_to_bytes(st.st_gid, 4)),
+            (const.ATTR_CMN_ACCESSMASK, int_to_bytes(st.st_mode & 0o7777, 4)),
+            (const.ATTR_CMN_FLAGS, int_to_bytes(getattr(st, "st_flags", 0), 4)),
+            (const.ATTR_CMN_GEN_COUNT, int_to_bytes(0, 4)),
+            (const.ATTR_CMN_DOCUMENT_ID, int_to_bytes(0, 4)),
+            (const.ATTR_CMN_USERACCESS, int_to_bytes(7, 4)),
+            (const.ATTR_CMN_EXTENDED_SECURITY, int_to_bytes(0, 8)),
+            (const.ATTR_CMN_UUID, bytes(16)),
+            (const.ATTR_CMN_GRPUUID, bytes(16)),
+            (const.ATTR_CMN_FILEID, int_to_bytes(st.st_ino, 8)),
+            (const.ATTR_CMN_PARENTID, int_to_bytes(2, 8)),
+            (const.ATTR_CMN_FULLPATH, path),
+            (
+                const.ATTR_CMN_ADDEDTIME,
+                struct_to_bytes(Timespec.from_time_ns(0)),
+            ),
+            (const.ATTR_CMN_DATA_PROTECT_FLAGS, int_to_bytes(0, 4)),
+        ]
+
+        file_attrs = [
+            (const.ATTR_FILE_LINKCOUNT, int_to_bytes(st.st_nlink, 4)),
+            (const.ATTR_FILE_TOTALSIZE, int_to_bytes(st.st_size, 8)),
+            (const.ATTR_FILE_ALLOCSIZE, int_to_bytes(blocks * 512, 8)),
+            (const.ATTR_FILE_IOBLOCKSIZE, int_to_bytes(blksize, 4)),
+            (const.ATTR_FILE_DEVTYPE, int_to_bytes(0, 4)),
+            (const.ATTR_FILE_FORKCOUNT, int_to_bytes(0, 4)),
+            (const.ATTR_FILE_DATALENGTH, int_to_bytes(st.st_size, 8)),
+            (const.ATTR_FILE_DATAALLOCSIZE, int_to_bytes(blocks * 512, 8)),
+            (const.ATTR_FILE_RSRCLENGTH, int_to_bytes(0, 8)),
+            (const.ATTR_FILE_RSRCALLOCSIZE, int_to_bytes(0, 8)),
+        ]
+
+        # Record `attrreference_t`, process them together at the end
+        attr_refs = []
+
+        payload = bytearray(4)
+
+        returned_attrs = False
+
+        if alist.commonattr & const.ATTR_CMN_RETURNED_ATTRS:
+            returned_attrs = True
+            payload.extend(bytes(20))
+
+        returned_groups = []
+
+        for attrs, requested in (
+            (common_attrs, alist.commonattr),
+            (file_attrs, alist.fileattr),
+        ):
+            returned = 0
+
+            for bit, attr in attrs:
+                if not requested & bit:
+                    continue
+
+                if isinstance(attr, str):
+                    attr_refs.append((len(payload), attr.encode("utf-8") + b"\x00"))
+                    # `attrreference_t` placeholder
+                    payload.extend(bytes(8))
+                elif isinstance(attr, bytes):
+                    payload.extend(attr)
+                else:
+                    continue
+
+                returned |= bit
+
+            returned_groups.append(returned)
+
+        common_returned, file_returned = returned_groups
+
+        for field_off, data in attr_refs:
+            data_off = len(payload)
+            payload.extend(data)
+            payload[field_off : field_off + 4] = int_to_bytes(data_off - field_off, 4)
+            payload[field_off + 4 : field_off + 8] = int_to_bytes(len(data), 4)
+
+        payload[:4] = int_to_bytes(len(payload), 4)
+
+        if returned_attrs:
+            returned_list = [
+                common_returned,
+                0,
+                0,
+                file_returned,
+                0,
+            ]
+
+            for index, returned in enumerate(returned_list):
+                offset = 4 + index * 4
+                payload[offset : offset + 4] = int_to_bytes(returned, 4)
+
+        if buf_size < 4:
+            return -1
+
+        self.emu.write_bytes(buf, bytes(payload[:buf_size]))
+
+        return 0
 
     @log_call
     def getdirentries(self, fd: int, offset: int) -> Optional[bytes]:

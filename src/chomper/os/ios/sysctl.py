@@ -135,7 +135,7 @@ NETWORK_INTERFACES = [
 ]
 
 
-def _construct_sockaddr_in(address: str) -> SockaddrIn:
+def _make_sockaddr_in(address: str) -> SockaddrIn:
     return SockaddrIn(
         sin_len=ctypes.sizeof(SockaddrIn),
         sin_family=const.AF_INET,
@@ -143,7 +143,7 @@ def _construct_sockaddr_in(address: str) -> SockaddrIn:
     )
 
 
-def _construct_sockaddr_in6(address: str) -> SockaddrIn6:
+def _make_sockaddr_in6(address: str) -> SockaddrIn6:
     return SockaddrIn6(
         sin6_len=ctypes.sizeof(SockaddrIn),
         sin6_family=const.AF_INET,
@@ -200,12 +200,12 @@ def _get_iflist():
             )
 
             if address["family"] == "inet":
-                mask = _construct_sockaddr_in(address["mask"])
-                addr = _construct_sockaddr_in(address["address"])
+                mask = _make_sockaddr_in(address["mask"])
+                addr = _make_sockaddr_in(address["address"])
                 msgs.extend([mask, addr])
             elif address["family"] == "inet6":
-                mask = _construct_sockaddr_in6(address["mask"])
-                addr = _construct_sockaddr_in6(address["address"])
+                mask = _make_sockaddr_in6(address["mask"])
+                addr = _make_sockaddr_in6(address["address"])
                 msgs.extend([mask, addr])
 
     return msgs
@@ -222,7 +222,7 @@ def _get_kinfo_proc(emu, pid: int) -> Optional[KinfoProc]:
     info.kp_proc.p_pid = pid
     info.kp_proc.p_stat = const.SRUN
     info.kp_proc.p_flag = const.P_LP64
-    info.kp_proc.p_oppid = 1
+    info.kp_proc.p_oppid = 0
     info.kp_proc.p_comm = comm.encode()
 
     info.kp_eproc.e_ppid = 1

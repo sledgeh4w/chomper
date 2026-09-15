@@ -1215,6 +1215,11 @@ class IosSyscallHandler(BaseSyscallHandler):
         oldp = self.emu.get_arg(2)
         oldlenp = self.emu.get_arg(3)
 
+        if oldlenp:
+            oldlen = self.emu.read_u64(oldlenp)
+        else:
+            oldlen = 0
+
         mib = (
             self.emu.read_u32(name),
             self.emu.read_u32(name + 4),
@@ -1237,7 +1242,10 @@ class IosSyscallHandler(BaseSyscallHandler):
             elif isinstance(result, bytes):
                 self.emu.write_bytes(oldp, result)
             elif isinstance(result, int):
-                self.emu.write_u64(oldp, result)
+                if oldlen >= 8:
+                    self.emu.write_u64(oldp, result)
+                else:
+                    self.emu.write_u32(oldp, result)
             elif isinstance(result, list):
                 offset = 0
                 for st in result:
@@ -1284,9 +1292,13 @@ class IosSyscallHandler(BaseSyscallHandler):
 
         return self.emu.os.open(path, flags, mode)
 
-    @staticmethod
-    def _handle_sys_getattrlist():
-        return -1
+    def _handle_sys_getattrlist(self):
+        path = self.emu.read_string(self.emu.get_arg(0))
+        alist_ptr = self.emu.get_arg(1)
+        buf = self.emu.get_arg(2)
+        buf_size = self.emu.get_arg(3)
+
+        return self.emu.ios_os.getattrlist(path, alist_ptr, buf, buf_size)
 
     @staticmethod
     def _handle_sys_setattrlist():
@@ -1335,6 +1347,11 @@ class IosSyscallHandler(BaseSyscallHandler):
         oldp = self.emu.get_arg(2)
         oldlenp = self.emu.get_arg(3)
 
+        if oldlenp:
+            oldlen = self.emu.read_u64(oldlenp)
+        else:
+            oldlen = 0
+
         result = sysctlbyname(name)
         if result is None:
             self.emu.logger.warning(f"Unhandled sysctl command: {name}")
@@ -1346,7 +1363,10 @@ class IosSyscallHandler(BaseSyscallHandler):
             elif isinstance(result, str):
                 self.emu.write_string(oldp, result)
             elif isinstance(result, int):
-                self.emu.write_u64(oldp, result)
+                if oldlen >= 8:
+                    self.emu.write_u64(oldp, result)
+                else:
+                    self.emu.write_u32(oldp, result)
 
         if oldlenp:
             if isinstance(result, ctypes.Structure):

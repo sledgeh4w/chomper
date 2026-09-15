@@ -402,15 +402,15 @@ class PosixOs(ABC):
         return buffer
 
     @abc.abstractmethod
-    def _construct_stat(self, st: os.stat_result) -> ctypes.Structure:
+    def _make_stat(self, st: os.stat_result) -> ctypes.Structure:
         pass
 
     @abc.abstractmethod
-    def _construct_device_stat(self) -> ctypes.Structure:
+    def _make_device_stat(self) -> ctypes.Structure:
         pass
 
     @abc.abstractmethod
-    def _construct_statfs(self) -> ctypes.Structure:
+    def _make_statfs(self) -> ctypes.Structure:
         pass
 
     def _get_file_property(self, path: str) -> Optional[FileProperty]:
@@ -528,7 +528,7 @@ class PosixOs(ABC):
 
     def _stat(self, path: str) -> bytes:
         real_path = self._get_real_path(path)
-        st = self._construct_stat(os.stat(real_path))
+        st = self._make_stat(os.stat(real_path))
         return struct_to_bytes(st)
 
     def _rename(self, old: str, new: str):
@@ -714,11 +714,11 @@ class PosixOs(ABC):
             return self._stat(path)
 
         if self._is_dev_fd(fd):
-            st = self._construct_device_stat()
+            st = self._make_device_stat()
             return struct_to_bytes(st)
 
         real_fd = self._get_fd_real_fd(fd)
-        st = self._construct_stat(os.fstat(real_fd))
+        st = self._make_stat(os.fstat(real_fd))
         return struct_to_bytes(st)
 
     @log_call
@@ -735,7 +735,7 @@ class PosixOs(ABC):
         if path:
             pass
 
-        st = self._construct_statfs()
+        st = self._make_statfs()
         return struct_to_bytes(st)
 
     @log_call
@@ -743,7 +743,7 @@ class PosixOs(ABC):
         if fd:
             pass
 
-        st = self._construct_statfs()
+        st = self._make_statfs()
         return struct_to_bytes(st)
 
     @log_call
@@ -1182,7 +1182,7 @@ class PosixOs(ABC):
         real_sock.shutdown(shut_map[how])
 
     @abc.abstractmethod
-    def _construct_sockaddr_in(self, address: str, port: int) -> ctypes.Structure:
+    def _make_sockaddr_in(self, address: str, port: int) -> ctypes.Structure:
         pass
 
     @log_call
@@ -1194,7 +1194,7 @@ class PosixOs(ABC):
 
         real_sock = self._get_fd_sock(sock)
         address, port = real_sock.getpeername()
-        st = self._construct_sockaddr_in(address, port)
+        st = self._make_sockaddr_in(address, port)
 
         return struct_to_bytes(st)
 
@@ -1207,12 +1207,12 @@ class PosixOs(ABC):
 
         real_sock = self._get_fd_sock(sock)
         address, port = real_sock.getsockname()
-        st = self._construct_sockaddr_in(address, port)
+        st = self._make_sockaddr_in(address, port)
 
         return struct_to_bytes(st)
 
     @abc.abstractmethod
-    def _construct_flock(self, lock_type: int) -> ctypes.Structure:
+    def _make_flock(self, lock_type: int) -> ctypes.Structure:
         pass
 
     @log_call
@@ -1224,7 +1224,7 @@ class PosixOs(ABC):
                 return os.O_WRONLY
             return os.O_RDWR
         elif cmd == self.F_GETLK:
-            st = self._construct_flock(self.F_UNLCK)
+            st = self._make_flock(self.F_UNLCK)
             self.emu.write_bytes(arg, struct_to_bytes(st))
         elif cmd == self.F_SETLK:
             pass

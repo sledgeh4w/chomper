@@ -95,7 +95,7 @@ class AndroidOs(PosixOs):
 
         return _flags
 
-    def _construct_stat(self, st: os.stat_result) -> ctypes.Structure:
+    def _make_stat(self, st: os.stat_result) -> ctypes.Structure:
         if sys.platform == "win32":
             block_size = 4096
 
@@ -127,7 +127,7 @@ class AndroidOs(PosixOs):
             st_ctim=ctime,
         )
 
-    def _construct_device_stat(self) -> ctypes.Structure:
+    def _make_device_stat(self) -> ctypes.Structure:
         atime = Timespec.from_time_ns(0)
         mtime = Timespec.from_time_ns(0)
         ctime = Timespec.from_time_ns(0)
@@ -148,13 +148,13 @@ class AndroidOs(PosixOs):
             st_ctim=ctime,
         )
 
-    def _construct_statfs(self) -> ctypes.Structure:
+    def _make_statfs(self) -> ctypes.Structure:
         return ctypes.Structure()
 
-    def _construct_sockaddr_in(self, address: str, port: int) -> ctypes.Structure:
+    def _make_sockaddr_in(self, address: str, port: int) -> ctypes.Structure:
         return ctypes.Structure()
 
-    def _construct_flock(self, lock_type: int) -> ctypes.Structure:
+    def _make_flock(self, lock_type: int) -> ctypes.Structure:
         return ctypes.Structure()
 
     def getuid(self) -> int:
