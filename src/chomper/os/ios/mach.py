@@ -3,12 +3,13 @@ from __future__ import annotations
 import ctypes
 import plistlib
 import time
-from typing import Dict, TYPE_CHECKING
+from dataclasses import dataclass
+from typing import Dict, Optional, TYPE_CHECKING
 
 from unicorn import arm64_const, UcError
 
 from chomper.const import DOUBLE_PRECISION
-from chomper.os.handle import HandleManager
+from chomper.os.posix.handle import HandleManager
 from chomper.utils import read_struct, struct_to_bytes, int_to_bytes, float_to_bytes
 
 from . import const
@@ -32,12 +33,22 @@ if TYPE_CHECKING:
     from chomper.core import Chomper
 
 
+@dataclass
+class MachPortEntry:
+    port: Optional[int] = None
+    tid: Optional[int] = None
+
+
 class MachMsgHandler:
     """Handle mach msg."""
 
-    def __init__(self, emu: Chomper, mach_port_manager: HandleManager):
+    def __init__(
+        self,
+        emu: Chomper,
+        mach_ports: HandleManager[MachPortEntry],
+    ):
         self.emu = emu
-        self.mach_port_manager = mach_port_manager
+        self.mach_ports = mach_ports
 
         self._notify_server = NotifyServer()
 
@@ -138,11 +149,10 @@ class MachMsgHandler:
     def handle_rcv_msg(self, msg: int, rcv_name: int) -> int:
         result = None
 
-        if self.mach_port_manager.validate(rcv_name):
-            port = self.mach_port_manager.get_prop(rcv_name, "port")
+        entry = self.mach_ports.get(rcv_name)
 
-            if port == self.emu.ios_os.MACH_PORT_DEBUG_CONTROL:
-                result = const.MACH_RCV_TIMED_OUT
+        if entry and entry.port == self.emu.ios_os.MACH_PORT_DEBUG_CONTROL:
+            result = const.MACH_RCV_TIMED_OUT
 
         if result is None:
             result = const.MACH_RCV_TIMED_OUT
@@ -225,7 +235,7 @@ class MachMsgHandler:
         elif remote_port == self.emu.ios_os.MACH_PORT_CONFIGD:
             if msgh_id == 20010:
                 result = self._handle_configget(msg, msgh)
-        elif self.mach_port_manager.validate(remote_port):
+        elif self.mach_ports.validate(remote_port):
             if msgh_id == 3603:
                 result = self._handle_thread_get_state(msg, msgh)
 
@@ -394,11 +404,9 @@ class MachMsgHandler:
         return const.KERN_SUCCESS
 
     def _handle_task_threads(self, msg: int, msgh: MachMsgHeader) -> int:
-        thread_act = self.mach_port_manager.new()
+        thread_act = self.mach_ports.new(MachPortEntry(tid=self.emu.ios_os.gettid()))
         if not thread_act:
             return const.KERN_RESOURCE_SHORTAGE
-
-        self.mach_port_manager.set_prop(thread_act, "tid", self.emu.ios_os.gettid())
 
         thread_act_list = [thread_act]
 
@@ -507,10 +515,10 @@ class MachMsgHandler:
 
         self.emu.logger.info(f"special_port={special_port}, which_port={which_port}")
 
-        if self.mach_port_manager.validate(special_port):
-            if which_port in task_port_map:
-                port = task_port_map[which_port]
-                self.mach_port_manager.set_prop(special_port, "port", port)
+        entry = self.mach_ports.get(special_port)
+
+        if entry and which_port in task_port_map:
+            entry.port = task_port_map[which_port]
 
         msg_header = MachMsgHeader(
             msgh_bits=0,
@@ -631,7 +639,8 @@ class MachMsgHandler:
     def _handle_thread_get_state(self, msg: int, msgh: MachMsgHeader) -> int:
         flavor = self.emu.read_s32(msg + 0x20)
 
-        tid = self.mach_port_manager.get_prop(msgh.msgh_remote_port, "tid")
+        entry = self.mach_ports.get(msgh.msgh_remote_port)
+        tid = entry.tid if entry else None
 
         if flavor == const.ARM_THREAD_STATE64:
             thread_state = Arm64ThreadState64()
@@ -1037,7 +1046,7 @@ class MachMsgHandler:
         msg: int,
         msgh: MachMsgHeader,
     ) -> int:
-        port = self.mach_port_manager.new()
+        port = self.mach_ports.new(MachPortEntry())
 
         if not port:
             return const.KERN_RESOURCE_SHORTAGE

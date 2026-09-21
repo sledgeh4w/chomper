@@ -7,14 +7,14 @@ class DeviceFile(ABC):
     """Virtual device file."""
 
     READABLE: bool = False
-    WRITEABLE: bool = False
+    WRITABLE: bool = False
     SEEKABLE: bool = False
 
     def readable(self) -> bool:
         return self.READABLE
 
     def writable(self) -> bool:
-        return self.WRITEABLE
+        return self.WRITABLE
 
     def seekable(self) -> bool:
         return self.SEEKABLE
@@ -31,7 +31,7 @@ class DeviceFile(ABC):
 
 class NullDevice(DeviceFile):
     READABLE = True
-    WRITEABLE = True
+    WRITABLE = True
     SEEKABLE = False
 
     def read(self, size: int = -1) -> Optional[bytes]:
@@ -43,7 +43,7 @@ class NullDevice(DeviceFile):
 
 class RandomDevice(DeviceFile):
     READABLE = True
-    WRITEABLE = False
+    WRITABLE = False
     SEEKABLE = False
 
     def read(self, size: int = -1) -> Optional[bytes]:

@@ -18,9 +18,11 @@ from chomper.exceptions import (
 )
 from chomper.feature import Feature
 from chomper.loader import MachoLoader, Module
-from chomper.os.device import NullDevice, RandomDevice, UrandomDevice
-from chomper.os.posix import FileProperty, FdType, PosixOs, SyscallError
-from chomper.os.handle import HandleManager
+from chomper.os.posix import FileProperty, PosixOs
+from chomper.os.posix.device import NullDevice, RandomDevice, UrandomDevice
+from chomper.os.posix.error import SyscallError
+from chomper.os.posix.file import DirEntry, SocketEntry
+from chomper.os.posix.handle import HandleManager
 from chomper.utils import (
     log_call,
     int_to_bytes,
@@ -32,7 +34,8 @@ from chomper.utils import (
 from . import const
 from .fixup import SystemModuleFixer
 from .hooks import get_hooks, hook_read_class
-from .mach import MachMsgHandler
+from .kqueue import KQueueEntry
+from .mach import MachMsgHandler, MachPortEntry
 from .structs import (
     Attrlist,
     Dirent,
@@ -264,7 +267,7 @@ class IosOs(PosixOs):
         self._semaphore_queue = {}
 
         # Mach port
-        self._mach_port_manager = HandleManager(
+        self._mach_ports: HandleManager[MachPortEntry] = HandleManager(
             start_value=self.MACH_PORT_START_VALUE,
             max_num=self.MACH_PORT_MAX_NUM,
         )
@@ -272,7 +275,7 @@ class IosOs(PosixOs):
         self._mach_servers = {}
 
         # Mach msg
-        self._mach_msg_handler = MachMsgHandler(self.emu, self._mach_port_manager)
+        self._mach_msg_handler = MachMsgHandler(self.emu, self._mach_ports)
 
         # Xpc message
         self._xpc_message_handler = XpcMessageHandler(self.emu)
@@ -337,7 +340,27 @@ class IosOs(PosixOs):
 
         return _flags
 
-    def _make_stat(self, st: os.stat_result) -> ctypes.Structure:
+    def _make_stat(self, st: Optional[os.stat_result]) -> ctypes.Structure:
+        if st is None:
+            empty = Timespec.from_time_ns(0)
+
+            return Stat64(
+                st_dev=0,
+                st_mode=0x2000,
+                st_nlink=0,
+                st_ino=0,
+                st_uid=0,
+                st_gid=0,
+                st_rdev=0,
+                st_atimespec=empty,
+                st_mtimespec=empty,
+                st_ctimespec=empty,
+                st_size=0,
+                st_blocks=0,
+                st_blksize=0,
+                st_flags=0,
+            )
+
         if sys.platform == "win32":
             block_size = 4096
 
@@ -381,41 +404,40 @@ class IosOs(PosixOs):
             st_flags=flags,
         )
 
-    def _make_device_stat(self) -> ctypes.Structure:
-        atime = Timespec.from_time_ns(0)
-        mtime = Timespec.from_time_ns(0)
-        ctime = Timespec.from_time_ns(0)
+    def _make_statfs(self, path: str) -> ctypes.Structure:
+        if path:
+            pass
 
-        return Stat64(
-            st_dev=0,
-            st_mode=0x2000,
-            st_nlink=0,
-            st_ino=0,
-            st_uid=0,
-            st_gid=0,
-            st_rdev=0,
-            st_atimespec=atime,
-            st_mtimespec=mtime,
-            st_ctimespec=ctime,
-            st_size=0,
-            st_blocks=0,
-            st_blksize=0,
-            st_flags=0,
-        )
+        dev = (1 << 24) | 7  # makedev(major=1, minor=7)
+        fsid = dev | (24 << 32)
 
-    def _make_statfs(self) -> ctypes.Structure:
+        blocks = 31218501
+        bfree = blocks * 95 // 100
+        reserve = blocks * 10 // 100
+        bavail = bfree - reserve
+
+        files = blocks * 40
+        ffree = files * 99 // 100
+
         return Statfs64(
             f_bsize=4096,
-            f_iosize=1048576,
-            f_blocks=31218501,
-            f_bfree=29460883,
-            f_bavail=25672822,
-            f_files=1248740040,
-            f_ffree=1248421957,
-            f_fsid=103095992327,
+            f_iosize=1 << 20,
+            f_blocks=blocks,
+            f_bfree=bfree,
+            f_bavail=bavail,
+            f_files=files,
+            f_ffree=ffree,
+            f_fsid=fsid,
             f_owner=0,
             f_type=24,
-            f_flags=343986176,
+            f_flags=(
+                const.MNT_LOCAL
+                | const.MNT_ROOTFS
+                | const.MNT_DOVOLFS
+                | const.MNT_JOURNALED
+                | const.MNT_MULTILABEL
+                | const.MNT_NOATIME
+            ),
             f_fssubtype=0,
             f_fstypename=b"apfs",
             f_mntonname=b"/",
@@ -454,14 +476,6 @@ class IosOs(PosixOs):
 
     def gettid(self) -> int:
         return self._tid
-
-    def _check_kqueue(self, kq: int):
-        self._check_fd(kq)
-
-        fd_type = self._file_manager.get_prop(kq, "type")
-
-        if fd_type != FdType.KQUEUE:
-            raise SystemOperationFailed(f"Bad kqueue: {kq}", SyscallError.EBADF)
 
     @log_call
     def getattrlist(self, path: str, alist_ptr: int, buf: int, buf_size: int) -> int:
@@ -617,11 +631,12 @@ class IosOs(PosixOs):
 
     @log_call
     def getdirentries(self, fd: int, offset: int) -> Optional[bytes]:
-        if not self._is_dir_fd(fd):
+        entry = self._get_fd_entry(fd)
+
+        if not isinstance(entry, DirEntry):
             raise SystemOperationFailed(f"Not a directory: {fd}", SyscallError.ENOTDIR)
 
-        path = self._get_fd_path(fd)
-        real_path = self._get_real_path(path)
+        real_path = self._get_real_path(entry.path)
 
         dir_entries = list(os.scandir(real_path))
         if offset >= len(dir_entries):
@@ -665,9 +680,7 @@ class IosOs(PosixOs):
         dst_dir_fd: int,
         dst_path: str,
     ):
-        self._check_fd(src_fd)
-
-        src_path = self._get_fd_path(src_fd)
+        src_path = self._get_fd_entry(src_fd).path
         dst_path = self._resolve_dir_fd(dst_dir_fd, dst_path)
 
         self._clonefile(src_path, dst_path)
@@ -705,7 +718,7 @@ class IosOs(PosixOs):
 
     @log_call
     def sendfile(self, fd: int, sock: int, offset: int, length_ptr: int):
-        real_sock = self._get_fd_sock(sock)
+        entry = self._get_fd_entry(sock, SocketEntry)
         length = self.emu.read_s64(length_ptr)
 
         sent = 0
@@ -724,14 +737,14 @@ class IosOs(PosixOs):
             off = 0
 
             while off < len(data):
-                off += real_sock.send(data[off:])
+                off += entry.inner_sock.send(data[off:])
                 self.emu.write_s64(length_ptr, sent + off)
 
             sent += off
 
     @log_call
     def kqueue(self) -> int:
-        return self._new_fd(FdType.KQUEUE)
+        return self._new_fd(KQueueEntry())
 
     @log_call
     def kevent(
@@ -743,7 +756,7 @@ class IosOs(PosixOs):
         n_event: int,
         timeout: int,
     ) -> int:
-        self._check_kqueue(kq)
+        self._get_fd_entry(kq, KQueueEntry)
 
         change_list = []
         event_list = []
@@ -1353,12 +1366,12 @@ class IosOs(PosixOs):
 
     @log_call
     def mach_port_construct(self) -> int:
-        mach_port = self._mach_port_manager.new()
+        mach_port = self._mach_ports.new(MachPortEntry())
         return mach_port if mach_port else 0
 
     @log_call
     def mach_port_destruct(self, mach_port: int):
-        self._mach_port_manager.free(mach_port)
+        self._mach_ports.free(mach_port)
 
     def bootstrap_look_up(self, name: str) -> int:
         """Find registered mach service.

@@ -9,8 +9,10 @@ from chomper.arch import arm64_arch
 from chomper.const import TLS_ADDRESS
 from chomper.exceptions import SystemOperationFailed
 from chomper.loader import ELFLoader
-from chomper.os.device import NullDevice, RandomDevice, UrandomDevice
-from chomper.os.posix import FileProperty, PosixOs, SyscallError
+from chomper.os.posix import FileProperty, PosixOs
+from chomper.os.posix.device import NullDevice, RandomDevice, UrandomDevice
+from chomper.os.posix.error import SyscallError
+from chomper.os.posix.file import DirEntry
 from chomper.utils import log_call, struct_to_bytes, to_unsigned
 
 from .hooks import get_hooks
@@ -95,7 +97,26 @@ class AndroidOs(PosixOs):
 
         return _flags
 
-    def _make_stat(self, st: os.stat_result) -> ctypes.Structure:
+    def _make_stat(self, st: Optional[os.stat_result]) -> ctypes.Structure:
+        if st is None:
+            empty = Timespec.from_time_ns(0)
+
+            return Stat64(
+                st_dev=0,
+                st_ino=0,
+                st_mode=0x2000,
+                st_nlink=0,
+                st_uid=0,
+                st_gid=0,
+                st_rdev=0,
+                st_size=0,
+                st_blksize=0,
+                st_blocks=0,
+                st_atim=empty,
+                st_mtim=empty,
+                st_ctim=empty,
+            )
+
         if sys.platform == "win32":
             block_size = 4096
 
@@ -127,36 +148,6 @@ class AndroidOs(PosixOs):
             st_ctim=ctime,
         )
 
-    def _make_device_stat(self) -> ctypes.Structure:
-        atime = Timespec.from_time_ns(0)
-        mtime = Timespec.from_time_ns(0)
-        ctime = Timespec.from_time_ns(0)
-
-        return Stat64(
-            st_dev=0,
-            st_ino=0,
-            st_mode=0x2000,
-            st_nlink=0,
-            st_uid=0,
-            st_gid=0,
-            st_rdev=0,
-            st_size=0,
-            st_blksize=0,
-            st_blocks=0,
-            st_atim=atime,
-            st_mtim=mtime,
-            st_ctim=ctime,
-        )
-
-    def _make_statfs(self) -> ctypes.Structure:
-        return ctypes.Structure()
-
-    def _make_sockaddr_in(self, address: str, port: int) -> ctypes.Structure:
-        return ctypes.Structure()
-
-    def _make_flock(self, lock_type: int) -> ctypes.Structure:
-        return ctypes.Structure()
-
     def getuid(self) -> int:
         return self._uid
 
@@ -174,11 +165,12 @@ class AndroidOs(PosixOs):
 
     @log_call
     def getdents(self, fd: int) -> Optional[bytes]:
-        if not self._is_dir_fd(fd):
+        entry = self._get_fd_entry(fd)
+
+        if not isinstance(entry, DirEntry):
             raise SystemOperationFailed(f"Not a directory: {fd}", SyscallError.ENOTDIR)
 
-        path = self._get_fd_path(fd)
-        real_path = self._get_real_path(path)
+        real_path = self._get_real_path(entry.path)
 
         if fd in self._dir_read_offset:
             offset = self._dir_read_offset[fd]

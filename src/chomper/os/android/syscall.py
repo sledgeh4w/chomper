@@ -4,8 +4,8 @@ import os
 from typing import Callable
 
 from chomper.exceptions import SystemOperationFailed, ProgramTerminated
-from chomper.os.posix import SyscallError
-from chomper.os.syscall import BaseSyscallHandler
+from chomper.os.posix.error import SyscallError
+from chomper.os.posix.syscall import BaseSyscallHandler
 from chomper.utils import to_signed
 
 from . import const
