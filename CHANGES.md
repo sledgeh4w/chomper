@@ -1,3 +1,15 @@
+## v0.3.9
+
+Released: 2026-10-14
+
+- Add compatibility for `+[UIPasteboard generalPasteboard]`, `+[UIPasteboard pasteboardWithName:create:]` and `-[NSXMLParser initWithData:]`.
+- Implement `LC_REEXPORT_DYLIB` handling in `MachoLoader`.
+- Add float argument and return value support to native calls and Objective-C `msg_send`.
+- Optimize module loading performance.
+- Add screen bounds support.
+- Add battery level support.
+- Implement the reply for `_xpc_look_up_endpoint` requests.
+
 ## v0.3.8
 
 Released: 2026-04-22

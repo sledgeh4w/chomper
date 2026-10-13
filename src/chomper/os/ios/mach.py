@@ -860,7 +860,7 @@ class MachMsgHandler:
         routine = payload.get("routine")
 
         if subsystem == 3:  # launchd
-            if routine == 804:  # __xpc_look_up_endpoint
+            if routine == 804:  # _xpc_look_up_endpoint
                 return self._reply_xpc_look_up_endpoint(msg, payload)
 
         return self._reply_xpc_pipe_mach_msg(

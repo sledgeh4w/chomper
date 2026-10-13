@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "chomper"
-description = "A lightweight emulation framework for emulating security algorithms of iOS executables and libraries."
+description = "A lightweight emulation framework for emulating cryptographic algorithms of iOS executables and libraries."
 readme = "README.md"
 license = { text = "MIT" }
 authors = [
