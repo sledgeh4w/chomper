@@ -4,7 +4,7 @@ import ctypes
 import plistlib
 import time
 from dataclasses import dataclass
-from typing import Dict, Optional, TYPE_CHECKING
+from typing import Any, Dict, Optional, TYPE_CHECKING
 
 from unicorn import arm64_const, UcError
 
@@ -28,6 +28,7 @@ from .structs import (
     VmStatistics,
     VmStatistics64,
 )
+from .xpc import XpcPayloadParser, XpcPayloadSerializer
 
 if TYPE_CHECKING:
     from chomper.core import Chomper
@@ -52,6 +53,9 @@ class MachMsgHandler:
 
         self._notify_server = NotifyServer()
 
+        self._xpc_payload_parser = XpcPayloadParser(emu)
+        self._xpc_payload_serializer = XpcPayloadSerializer()
+
     def _get_task_port_map(self) -> Dict[int, int]:
         return {
             const.TASK_BOOTSTRAP_PORT: self.emu.ios_os.MACH_PORT_BOOTSTRAP,
@@ -64,6 +68,15 @@ class MachMsgHandler:
         declared = len(raw) + 1
         slot = (declared + 3) & ~3
         return int_to_bytes(declared, 4) + raw.ljust(slot, b"\x00")
+
+    def _parse_xpc_payload(self, msg: int, msgh: MachMsgHeader) -> Dict[str, Any]:
+        payload = msg + ctypes.sizeof(MachMsgHeader)
+
+        if msgh.msgh_bits & const.MACH_MSGH_BITS_COMPLEX:
+            descriptor_count = self.emu.read_u32(payload)
+            payload += 4 + descriptor_count * ctypes.sizeof(MachMsgPortDescriptor)
+
+        return self._xpc_payload_parser.parse(payload)
 
     def write_msg(
         self,
@@ -840,9 +853,43 @@ class MachMsgHandler:
         return const.KERN_SUCCESS
 
     def _handle_xpc_pipe_mach_msg(self, msg: int, msgh: MachMsgHeader) -> int:
+        payload = self._parse_xpc_payload(msg, msgh)
+        self.emu.logger.info("Received an xpc pipe request: %s", payload)
+
+        subsystem = payload.get("subsystem")
+        routine = payload.get("routine")
+
+        if subsystem == 3:  # launchd
+            if routine == 804:  # __xpc_look_up_endpoint
+                return self._reply_xpc_look_up_endpoint(msg, payload)
+
+        return self._reply_xpc_pipe_mach_msg(
+            msg,
+            self._xpc_payload_serializer.serialize({}),
+        )
+
+    def _reply_xpc_pipe_mach_msg(self, msg: int, payload: bytes, port: int = 0) -> int:
+        if port:
+            msgh_bits = const.MACH_MSGH_BITS_COMPLEX
+            descriptor = struct_to_bytes(
+                MachMsgPortDescriptor(
+                    name=port,
+                    disposition=const.MACH_MSG_TYPE_MOVE_SEND,
+                    type=const.MACH_MSG_PORT_DESCRIPTOR,
+                )
+            )
+        else:
+            msgh_bits = 0
+            descriptor = b""
+
         msg_header = MachMsgHeader(
-            msgh_bits=0,
-            msgh_size=0,
+            msgh_bits=msgh_bits,
+            msgh_size=(
+                ctypes.sizeof(MachMsgHeader)
+                + ctypes.sizeof(MachMsgBody)
+                + len(descriptor)
+                + len(payload)
+            ),
             msgh_remote_port=0,
             msgh_local_port=0,
             msgh_voucher_port=0,
@@ -850,20 +897,40 @@ class MachMsgHandler:
         )
 
         msg_body = MachMsgBody(
-            msgh_descriptor_count=0x40585043,
+            msgh_descriptor_count=1 if port else 0,
         )
 
-        audit_token = [0, 0, 0, 0, 0, self.emu.ios_os.getpid(), 0, 1]
+        audit_token = [0, 0, 0, 0, 0, 1, 0, 1]
 
         self.write_msg(
             msg,
             msg_header,
             msg_body,
-            int_to_bytes(0, 4),
+            descriptor,
+            payload,
+            bytes(0x14),
             b"".join([int_to_bytes(value, 4) for value in audit_token]),
         )
 
         return const.KERN_SUCCESS
+
+    def _reply_xpc_look_up_endpoint(self, msg: int, payload: Dict[str, Any]) -> int:
+        name = payload.get("name", "")
+
+        port = self.emu.ios_os.bootstrap_look_up(name)
+        if not port:
+            xpc_payload = self._xpc_payload_serializer.serialize({"error": 1100})
+            return self._reply_xpc_pipe_mach_msg(msg, xpc_payload)
+
+        reply = {
+            "error": 0,
+            "req_pid": {"$type": "uint64", "value": self.emu.ios_os.getpid()},
+            "rec_execcnt": {"$type": "uint64", "value": 1},
+            "port": {"$type": "mach_send_right", "value": port},
+        }
+        xpc_payload = self._xpc_payload_serializer.serialize(reply)
+
+        return self._reply_xpc_pipe_mach_msg(msg, xpc_payload, port)
 
     def _handle_clock_get_time(self, msg: int, msgh: MachMsgHeader) -> int:
         msg_header = MachMsgHeader(

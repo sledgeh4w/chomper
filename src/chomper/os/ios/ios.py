@@ -7,6 +7,7 @@ import socket
 import stat
 import string
 import sys
+import time
 from contextlib import contextmanager
 from typing import List, Optional
 
@@ -218,6 +219,7 @@ class IosOs(PosixOs):
     MACH_PORT_ADVERTISING_IDENTIFIERS = 4098
     MACH_PORT_BKS_HID_SERVER = 4099
     MACH_PORT_CONFIGD = 4100
+    MACH_PORT_SYSTEM_APP_SERVICES = 4101
 
     MACH_PORT_START_VALUE = 65536
     MACH_PORT_MAX_NUM = 10000
@@ -228,6 +230,7 @@ class IosOs(PosixOs):
         "com.apple.lsd.advertisingidentifiers": MACH_PORT_ADVERTISING_IDENTIFIERS,
         "com.apple.backboard.hid.services": MACH_PORT_BKS_HID_SERVER,
         "com.apple.SystemConfiguration.configd": MACH_PORT_CONFIGD,
+        "com.apple.frontboard.systemappservices": MACH_PORT_SYSTEM_APP_SERVICES,
     }
 
     def __init__(self, *args, **kwargs):
@@ -246,13 +249,15 @@ class IosOs(PosixOs):
 
         self._boot_hash = self._random_boot_hash()
 
+        self.boot_time_ns = time.time_ns() - random.randint(8, 24) * 3600 * 10**9
+
         self.executable_path = (
             f"/private/var/containers/Bundle/Application"
             f"/{BUNDLE_UUID}"
             f"/{BUNDLE_EXECUTABLE}.app"
             f"/{BUNDLE_EXECUTABLE}"
         )
-        self.executable_file = ""
+        self._executable_file = ""
 
         self.preferences = PREFERENCES.copy()
 
@@ -1179,12 +1184,12 @@ class IosOs(PosixOs):
         the executable, the runtime automatically extracts its `CFBundleIdentifier`
         and `CFBundleExecutable` values.
         """
-        self.executable_file = path
+        self._executable_file = path
 
         bundle_path = os.path.dirname(self.executable_path)
         container_path = os.path.dirname(bundle_path)
 
-        executable_dir = os.path.dirname(self.executable_file)
+        executable_dir = os.path.dirname(self._executable_file)
         info_path = os.path.join(executable_dir, "Info.plist")
 
         if os.path.exists(info_path):
@@ -1214,7 +1219,7 @@ class IosOs(PosixOs):
         # Set path forwarding to executable and Info.plist
         self.forward_path(
             src_path=self.executable_path,
-            dst_path=self.executable_file,
+            dst_path=self._executable_file,
         )
         self.forward_path(
             src_path=f"{bundle_path}/Info.plist",
@@ -1224,7 +1229,7 @@ class IosOs(PosixOs):
         self._setup_bundle_dir()
 
     def get_executable_file(self) -> str:
-        return self.executable_file
+        return self._executable_file
 
     def _create_fp(self, fd: int, mode: str, unbuffered: bool = False) -> int:
         """Wrap file descriptor to file object by calling `fdopen`.
@@ -1374,14 +1379,15 @@ class IosOs(PosixOs):
         self._mach_ports.free(mach_port)
 
     def bootstrap_look_up(self, name: str) -> int:
-        """Find registered mach service.
+        """Find registered mach server.
 
         Returns:
-            The port of this mach service.
+            The port of this mach server.
         """
         if name in self._mach_servers:
             return self._mach_servers[name]
 
+        self.emu.logger.warning("Unknown mach server: %s", name)
         return 0
 
     def mach_msg(

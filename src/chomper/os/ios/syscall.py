@@ -1352,7 +1352,7 @@ class IosSyscallHandler(BaseSyscallHandler):
         else:
             oldlen = 0
 
-        result = sysctlbyname(name)
+        result = sysctlbyname(self.emu, name)
         if result is None:
             self.emu.logger.warning(f"Unhandled sysctl command: {name}")
             return -1
@@ -1855,9 +1855,8 @@ class IosSyscallHandler(BaseSyscallHandler):
 
         return result
 
-    @staticmethod
-    def _handle_mach_absolute_time_trap():
-        return int(time.time_ns() % (3600 * 10**9))
+    def _handle_mach_absolute_time_trap(self):
+        return time.time_ns() - self.emu.ios_os.boot_time_ns
 
     def _handle_kernelrpc_mach_vm_allocate_trap(self):
         address = self.emu.get_arg(1)

@@ -3,12 +3,136 @@ from __future__ import annotations
 import binascii
 import uuid
 from io import BytesIO
-from typing import Any, Optional, TYPE_CHECKING
+from typing import Any, Dict, Optional, Tuple, TYPE_CHECKING
 
 from chomper.plist17lib import _BinaryPlist17Parser, _BinaryPlist17Writer
+from chomper.utils import int_to_bytes
 
 if TYPE_CHECKING:
     from chomper.core import Chomper
+
+
+class XpcPayloadParser:
+    """Parse the XPC payload of a mach msg into a Python object."""
+
+    def __init__(self, emu: Chomper):
+        self.emu = emu
+
+    def parse(self, payload: int) -> Any:
+        if self.emu.read_u32(payload) != 0x40585043:  # magic
+            self.emu.logger.warning(f"Unrecognized xpc payload at {hex(payload)}")
+            return {}
+
+        return self._parse_value(payload + 8)[0]
+
+    def _parse_value(self, address: int) -> Tuple[Any, int]:
+        wire_type = self.emu.read_u32(address)
+        offset = address + 4
+
+        value: Any
+
+        if wire_type == 0x3000:  # int64
+            value = self.emu.read_s64(offset)
+            offset += 8
+        elif wire_type == 0x4000:  # uint64
+            value = self.emu.read_u64(offset)
+            offset += 8
+        elif wire_type == 0x9000:  # string
+            length = self.emu.read_u32(offset)
+            value = self.emu.read_string(offset + 4)
+            offset += 4 + ((length + 3) & ~3)
+        elif wire_type == 0xF000:  # dictionary
+            value = self._parse_dict(offset)
+            wire_length = self.emu.read_u32(offset)
+            offset += 4 + wire_length
+        else:
+            self.emu.logger.warning(f"Unrecognized xpc wire type: {hex(wire_type)}")
+            value = None
+
+        return value, offset
+
+    def _parse_dict(self, address: int) -> Dict[str, Any]:
+        wire_length = self.emu.read_u32(address)
+        count = self.emu.read_u32(address + 4)
+
+        offset = address + 8
+        end = address + 4 + wire_length
+
+        data = {}
+
+        for _ in range(count):
+            if offset >= end:
+                break
+
+            key = self.emu.read_string(offset)
+            offset += (len(key) + 4) & ~3
+
+            value, offset = self._parse_value(offset)
+            if value is None:
+                # Failed to parse the field, skip the rest
+                break
+
+            data[key] = value
+
+        return data
+
+
+class XpcPayloadSerializer:
+    """Serialize an object into the XPC payload of a mach msg."""
+
+    def serialize(self, value: Any) -> bytes:
+        return (
+            int_to_bytes(0x40585043, 4)  # magic
+            + int_to_bytes(5, 4)  # version
+            + self._serialize_value(value)
+        )
+
+    @classmethod
+    def _serialize_value(cls, value: Any) -> bytes:
+        if isinstance(value, dict) and "$type" in value:
+            return cls._serialize_tagged(value)
+        elif isinstance(value, dict):
+            return int_to_bytes(0xF000, 4) + cls._serialize_dict(value)
+        elif isinstance(value, str):
+            return int_to_bytes(0x9000, 4) + cls._serialize_string(value)
+        elif isinstance(value, int):
+            return int_to_bytes(0x3000, 4) + int_to_bytes(value, 8, signed=True)
+        else:
+            raise TypeError(f"Unsupported type for xpc value: {type(value)}")
+
+    @staticmethod
+    def _serialize_string(value: str) -> bytes:
+        data = value.encode("utf-8") + b"\x00"
+        return int_to_bytes(len(data), 4) + data + bytes((4 - len(data) % 4) % 4)
+
+    @staticmethod
+    def _serialize_key(key: str) -> bytes:
+        raw = key.encode("utf-8") + b"\x00"
+        return raw + bytes((4 - len(raw) % 4) % 4)
+
+    @classmethod
+    def _serialize_dict(cls, value: Dict[str, Any]) -> bytes:
+        data = b"".join(
+            cls._serialize_key(key) + cls._serialize_value(item)
+            for key, item in value.items()
+        )
+
+        return (
+            int_to_bytes(4 + len(data), 4)  # wire length
+            + int_to_bytes(len(value), 4)  # count
+            + data
+        )
+
+    @staticmethod
+    def _serialize_tagged(value: Dict[str, Any]) -> bytes:
+        type_ = value["$type"]
+
+        if type_ == "uint64":
+            return int_to_bytes(0x4000, 4) + int_to_bytes(value["value"], 8)
+        elif type_ == "mach_send_right":
+            return int_to_bytes(0xD000, 4)
+        else:
+            raise TypeError(f"Unsupported xpc wire type: {type_}")
 
 
 class XpcMessageHandler:

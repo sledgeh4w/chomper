@@ -397,11 +397,6 @@ def hook_dispatch_barrier_async(
     return 0
 
 
-@register_hook("__xpc_look_up_endpoint")
-def hook_xpc_look_up_endpoint(uc: Uc, address: int, size: int, user_data: HookContext):
-    return 0
-
-
 @register_hook("__CFPreferencesCopyAppValueWithContainerAndConfiguration")
 def hook_cf_preferences_copy_app_value_with_container_and_configuration(
     uc: Uc, address: int, size: int, user_data: HookContext

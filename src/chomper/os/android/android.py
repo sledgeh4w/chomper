@@ -234,7 +234,7 @@ class AndroidOs(PosixOs):
             )
             self.add_file_property(file_prop)
 
-    def _enable_libc(self) -> bool:
+    def _load_libc(self) -> bool:
         """Attempt to load libc."""
         if not self.rootfs_path:
             return False
@@ -302,6 +302,6 @@ class AndroidOs(PosixOs):
         self._setup_tls()
         self._setup_file_properties()
 
-        if self._enable_libc():
+        if self._load_libc():
             self._setup_stdio()
             self._setup_environ()
