@@ -358,6 +358,9 @@ def test_ns_file_manager(emu_ios, objc):
         )
         assert attributes
 
+        creation_date = attributes.call_method("fileCreationDate")
+        assert creation_date
+
         path = objc.create_ns_string("/System/Library")
         directory_contents = file_manager.call_method("directoryContentsAtPath:", path)
         assert directory_contents
@@ -402,6 +405,12 @@ def test_ui_screen(emu_ios, objc):
 
         brightness = screen.call_method("brightness")
         assert brightness
+
+        scale = screen.call_method("scale")
+        assert scale
+
+        native_scale = screen.call_method("nativeScale")
+        assert native_scale
 
 
 def test_ui_font(emu_ios, objc):

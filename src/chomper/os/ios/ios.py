@@ -4,8 +4,10 @@ import plistlib
 import random
 import shutil
 import socket
+import stat
 import string
 import sys
+import time
 from contextlib import contextmanager
 from typing import List, Optional
 
@@ -17,16 +19,34 @@ from chomper.exceptions import (
 )
 from chomper.feature import Feature
 from chomper.loader import MachoLoader, Module
-from chomper.os.device import NullDevice, RandomDevice, UrandomDevice
-from chomper.os.posix import FileProperty, FdType, PosixOs, SyscallError
-from chomper.os.handle import HandleManager
-from chomper.utils import log_call, struct_to_bytes, to_unsigned, read_struct
+from chomper.os.posix import FileProperty, PosixOs
+from chomper.os.posix.device import NullDevice, RandomDevice, UrandomDevice
+from chomper.os.posix.error import SyscallError
+from chomper.os.posix.file import DirEntry, SocketEntry
+from chomper.os.posix.handle import HandleManager
+from chomper.utils import (
+    log_call,
+    int_to_bytes,
+    struct_to_bytes,
+    to_unsigned,
+    read_struct,
+)
 
 from . import const
 from .fixup import SystemModuleFixer
 from .hooks import get_hooks, hook_read_class
-from .mach import MachMsgHandler
-from .structs import Dirent, Flock, Kevent, SockaddrIn, Stat64, Statfs64, Timespec
+from .kqueue import KQueueEntry
+from .mach import MachMsgHandler, MachPortEntry
+from .structs import (
+    Attrlist,
+    Dirent,
+    Flock,
+    Kevent,
+    SockaddrIn,
+    Stat64,
+    Statfs64,
+    Timespec,
+)
 from .syscall import IosSyscallHandler
 from .xpc import XpcMessageHandler
 
@@ -199,6 +219,7 @@ class IosOs(PosixOs):
     MACH_PORT_ADVERTISING_IDENTIFIERS = 4098
     MACH_PORT_BKS_HID_SERVER = 4099
     MACH_PORT_CONFIGD = 4100
+    MACH_PORT_SYSTEM_APP_SERVICES = 4101
 
     MACH_PORT_START_VALUE = 65536
     MACH_PORT_MAX_NUM = 10000
@@ -209,6 +230,7 @@ class IosOs(PosixOs):
         "com.apple.lsd.advertisingidentifiers": MACH_PORT_ADVERTISING_IDENTIFIERS,
         "com.apple.backboard.hid.services": MACH_PORT_BKS_HID_SERVER,
         "com.apple.SystemConfiguration.configd": MACH_PORT_CONFIGD,
+        "com.apple.frontboard.systemappservices": MACH_PORT_SYSTEM_APP_SERVICES,
     }
 
     def __init__(self, *args, **kwargs):
@@ -227,13 +249,15 @@ class IosOs(PosixOs):
 
         self._boot_hash = self._random_boot_hash()
 
+        self.boot_time_ns = time.time_ns() - random.randint(8, 24) * 3600 * 10**9
+
         self.executable_path = (
             f"/private/var/containers/Bundle/Application"
             f"/{BUNDLE_UUID}"
             f"/{BUNDLE_EXECUTABLE}.app"
             f"/{BUNDLE_EXECUTABLE}"
         )
-        self.executable_file = ""
+        self._executable_file = ""
 
         self.preferences = PREFERENCES.copy()
 
@@ -248,7 +272,7 @@ class IosOs(PosixOs):
         self._semaphore_queue = {}
 
         # Mach port
-        self._mach_port_manager = HandleManager(
+        self._mach_ports: HandleManager[MachPortEntry] = HandleManager(
             start_value=self.MACH_PORT_START_VALUE,
             max_num=self.MACH_PORT_MAX_NUM,
         )
@@ -256,7 +280,7 @@ class IosOs(PosixOs):
         self._mach_servers = {}
 
         # Mach msg
-        self._mach_msg_handler = MachMsgHandler(self.emu, self._mach_port_manager)
+        self._mach_msg_handler = MachMsgHandler(self.emu, self._mach_ports)
 
         # Xpc message
         self._xpc_message_handler = XpcMessageHandler(self.emu)
@@ -321,7 +345,27 @@ class IosOs(PosixOs):
 
         return _flags
 
-    def _construct_stat(self, st: os.stat_result) -> ctypes.Structure:
+    def _make_stat(self, st: Optional[os.stat_result]) -> ctypes.Structure:
+        if st is None:
+            empty = Timespec.from_time_ns(0)
+
+            return Stat64(
+                st_dev=0,
+                st_mode=0x2000,
+                st_nlink=0,
+                st_ino=0,
+                st_uid=0,
+                st_gid=0,
+                st_rdev=0,
+                st_atimespec=empty,
+                st_mtimespec=empty,
+                st_ctimespec=empty,
+                st_size=0,
+                st_blocks=0,
+                st_blksize=0,
+                st_flags=0,
+            )
+
         if sys.platform == "win32":
             block_size = 4096
 
@@ -342,6 +386,11 @@ class IosOs(PosixOs):
         mtime = Timespec.from_time_ns(st.st_mtime_ns)
         ctime = Timespec.from_time_ns(st.st_ctime_ns)
 
+        if sys.platform == "darwin":
+            birthtime = Timespec.from_time_ns(int(st.st_birthtime * 10**9))
+        else:
+            birthtime = Timespec.from_time_ns(st.st_ctime_ns)
+
         return Stat64(
             st_dev=st.st_dev,
             st_mode=st.st_mode,
@@ -353,47 +402,47 @@ class IosOs(PosixOs):
             st_atimespec=atime,
             st_mtimespec=mtime,
             st_ctimespec=ctime,
+            st_birthtimespec=birthtime,
             st_size=st.st_size,
             st_blocks=blocks,
             st_blksize=blksize,
             st_flags=flags,
         )
 
-    def _construct_device_stat(self) -> ctypes.Structure:
-        atime = Timespec.from_time_ns(0)
-        mtime = Timespec.from_time_ns(0)
-        ctime = Timespec.from_time_ns(0)
+    def _make_statfs(self, path: str) -> ctypes.Structure:
+        if path:
+            pass
 
-        return Stat64(
-            st_dev=0,
-            st_mode=0x2000,
-            st_nlink=0,
-            st_ino=0,
-            st_uid=0,
-            st_gid=0,
-            st_rdev=0,
-            st_atimespec=atime,
-            st_mtimespec=mtime,
-            st_ctimespec=ctime,
-            st_size=0,
-            st_blocks=0,
-            st_blksize=0,
-            st_flags=0,
-        )
+        dev = (1 << 24) | 7  # makedev(major=1, minor=7)
+        fsid = dev | (24 << 32)
 
-    def _construct_statfs(self) -> ctypes.Structure:
+        blocks = 31218501
+        bfree = blocks * 95 // 100
+        reserve = blocks * 10 // 100
+        bavail = bfree - reserve
+
+        files = blocks * 40
+        ffree = files * 99 // 100
+
         return Statfs64(
             f_bsize=4096,
-            f_iosize=1048576,
-            f_blocks=31218501,
-            f_bfree=29460883,
-            f_bavail=25672822,
-            f_files=1248740040,
-            f_ffree=1248421957,
-            f_fsid=103095992327,
+            f_iosize=1 << 20,
+            f_blocks=blocks,
+            f_bfree=bfree,
+            f_bavail=bavail,
+            f_files=files,
+            f_ffree=ffree,
+            f_fsid=fsid,
             f_owner=0,
             f_type=24,
-            f_flags=343986176,
+            f_flags=(
+                const.MNT_LOCAL
+                | const.MNT_ROOTFS
+                | const.MNT_DOVOLFS
+                | const.MNT_JOURNALED
+                | const.MNT_MULTILABEL
+                | const.MNT_NOATIME
+            ),
             f_fssubtype=0,
             f_fstypename=b"apfs",
             f_mntonname=b"/",
@@ -401,7 +450,7 @@ class IosOs(PosixOs):
             % self._boot_hash.encode("utf-8"),
         )
 
-    def _construct_sockaddr_in(self, address: str, port: int) -> ctypes.Structure:
+    def _make_sockaddr_in(self, address: str, port: int) -> ctypes.Structure:
         return SockaddrIn(
             sin_len=ctypes.sizeof(SockaddrIn),
             sin_family=self.AF_INET,
@@ -409,7 +458,7 @@ class IosOs(PosixOs):
             sin_addr=int.from_bytes(socket.inet_aton(address), "little"),
         )
 
-    def _construct_flock(self, lock_type: int) -> ctypes.Structure:
+    def _make_flock(self, lock_type: int) -> ctypes.Structure:
         return Flock(
             l_start=0,
             l_len=0,
@@ -433,22 +482,166 @@ class IosOs(PosixOs):
     def gettid(self) -> int:
         return self._tid
 
-    def _check_kqueue(self, kq: int):
-        """Check kqueue."""
-        self._check_fd(kq)
+    @log_call
+    def getattrlist(self, path: str, alist_ptr: int, buf: int, buf_size: int) -> int:
+        alist = read_struct(self.emu, alist_ptr, Attrlist)
 
-        fd_type = self._file_manager.get_prop(kq, "type")
+        real_path = self.emu.os._get_real_path(path)
 
-        if fd_type != FdType.KQUEUE:
-            raise SystemOperationFailed(f"Bad kqueue: {kq}", SyscallError.EBADF)
+        try:
+            st = os.stat(real_path)
+        except OSError:
+            return -1
+
+        if sys.platform == "win32":
+            block_size = 4096
+
+            blocks = st.st_size // (block_size // 8) + 1
+            blksize = block_size
+        else:
+            blocks = st.st_blocks
+            blksize = st.st_blksize
+
+        if sys.platform == "darwin":
+            birthtime = Timespec.from_time_ns(int(st.st_birthtime * 10**9))
+        else:
+            birthtime = Timespec.from_time_ns(st.st_ctime_ns)
+
+        common_attrs = [
+            (const.ATTR_CMN_NAME, os.path.basename(path)),
+            (const.ATTR_CMN_DEVID, int_to_bytes(st.st_dev, 4)),
+            (const.ATTR_CMN_FSID, int_to_bytes(0, 8)),
+            (
+                const.ATTR_CMN_OBJTYPE,
+                int_to_bytes(2 if stat.S_ISDIR(st.st_mode) else 1, 4),
+            ),
+            (const.ATTR_CMN_OBJTAG, int_to_bytes(0, 4)),
+            (const.ATTR_CMN_OBJID, int_to_bytes(st.st_ino, 8)),
+            (const.ATTR_CMN_OBJPERMANENTID, int_to_bytes(st.st_ino, 8)),
+            (const.ATTR_CMN_PAROBJID, int_to_bytes(2, 8)),
+            (const.ATTR_CMN_SCRIPT, int_to_bytes(0, 4)),
+            (const.ATTR_CMN_CRTIME, struct_to_bytes(birthtime)),
+            (
+                const.ATTR_CMN_MODTIME,
+                struct_to_bytes(Timespec.from_time_ns(st.st_mtime_ns)),
+            ),
+            (
+                const.ATTR_CMN_CHGTIME,
+                struct_to_bytes(Timespec.from_time_ns(st.st_ctime_ns)),
+            ),
+            (
+                const.ATTR_CMN_ACCTIME,
+                struct_to_bytes(Timespec.from_time_ns(st.st_atime_ns)),
+            ),
+            (const.ATTR_CMN_BKUPTIME, struct_to_bytes(Timespec.from_time_ns(0))),
+            (const.ATTR_CMN_FNDRINFO, bytes(32)),
+            (const.ATTR_CMN_OWNERID, int_to_bytes(st.st_uid, 4)),
+            (const.ATTR_CMN_GRPID, int_to_bytes(st.st_gid, 4)),
+            (const.ATTR_CMN_ACCESSMASK, int_to_bytes(st.st_mode & 0o7777, 4)),
+            (const.ATTR_CMN_FLAGS, int_to_bytes(getattr(st, "st_flags", 0), 4)),
+            (const.ATTR_CMN_GEN_COUNT, int_to_bytes(0, 4)),
+            (const.ATTR_CMN_DOCUMENT_ID, int_to_bytes(0, 4)),
+            (const.ATTR_CMN_USERACCESS, int_to_bytes(7, 4)),
+            (const.ATTR_CMN_EXTENDED_SECURITY, int_to_bytes(0, 8)),
+            (const.ATTR_CMN_UUID, bytes(16)),
+            (const.ATTR_CMN_GRPUUID, bytes(16)),
+            (const.ATTR_CMN_FILEID, int_to_bytes(st.st_ino, 8)),
+            (const.ATTR_CMN_PARENTID, int_to_bytes(2, 8)),
+            (const.ATTR_CMN_FULLPATH, path),
+            (
+                const.ATTR_CMN_ADDEDTIME,
+                struct_to_bytes(Timespec.from_time_ns(0)),
+            ),
+            (const.ATTR_CMN_DATA_PROTECT_FLAGS, int_to_bytes(0, 4)),
+        ]
+
+        file_attrs = [
+            (const.ATTR_FILE_LINKCOUNT, int_to_bytes(st.st_nlink, 4)),
+            (const.ATTR_FILE_TOTALSIZE, int_to_bytes(st.st_size, 8)),
+            (const.ATTR_FILE_ALLOCSIZE, int_to_bytes(blocks * 512, 8)),
+            (const.ATTR_FILE_IOBLOCKSIZE, int_to_bytes(blksize, 4)),
+            (const.ATTR_FILE_DEVTYPE, int_to_bytes(0, 4)),
+            (const.ATTR_FILE_FORKCOUNT, int_to_bytes(0, 4)),
+            (const.ATTR_FILE_DATALENGTH, int_to_bytes(st.st_size, 8)),
+            (const.ATTR_FILE_DATAALLOCSIZE, int_to_bytes(blocks * 512, 8)),
+            (const.ATTR_FILE_RSRCLENGTH, int_to_bytes(0, 8)),
+            (const.ATTR_FILE_RSRCALLOCSIZE, int_to_bytes(0, 8)),
+        ]
+
+        # Record `attrreference_t`, process them together at the end
+        attr_refs = []
+
+        payload = bytearray(4)
+
+        returned_attrs = False
+
+        if alist.commonattr & const.ATTR_CMN_RETURNED_ATTRS:
+            returned_attrs = True
+            payload.extend(bytes(20))
+
+        returned_groups = []
+
+        for attrs, requested in (
+            (common_attrs, alist.commonattr),
+            (file_attrs, alist.fileattr),
+        ):
+            returned = 0
+
+            for bit, attr in attrs:
+                if not requested & bit:
+                    continue
+
+                if isinstance(attr, str):
+                    attr_refs.append((len(payload), attr.encode("utf-8") + b"\x00"))
+                    # `attrreference_t` placeholder
+                    payload.extend(bytes(8))
+                elif isinstance(attr, bytes):
+                    payload.extend(attr)
+                else:
+                    continue
+
+                returned |= bit
+
+            returned_groups.append(returned)
+
+        common_returned, file_returned = returned_groups
+
+        for field_off, data in attr_refs:
+            data_off = len(payload)
+            payload.extend(data)
+            payload[field_off : field_off + 4] = int_to_bytes(data_off - field_off, 4)
+            payload[field_off + 4 : field_off + 8] = int_to_bytes(len(data), 4)
+
+        payload[:4] = int_to_bytes(len(payload), 4)
+
+        if returned_attrs:
+            returned_list = [
+                common_returned,
+                0,
+                0,
+                file_returned,
+                0,
+            ]
+
+            for index, returned in enumerate(returned_list):
+                offset = 4 + index * 4
+                payload[offset : offset + 4] = int_to_bytes(returned, 4)
+
+        if buf_size < 4:
+            return -1
+
+        self.emu.write_bytes(buf, bytes(payload[:buf_size]))
+
+        return 0
 
     @log_call
     def getdirentries(self, fd: int, offset: int) -> Optional[bytes]:
-        if not self._is_dir_fd(fd):
+        entry = self._get_fd_entry(fd)
+
+        if not isinstance(entry, DirEntry):
             raise SystemOperationFailed(f"Not a directory: {fd}", SyscallError.ENOTDIR)
 
-        path = self._get_fd_path(fd)
-        real_path = self._get_real_path(path)
+        real_path = self._get_real_path(entry.path)
 
         dir_entries = list(os.scandir(real_path))
         if offset >= len(dir_entries):
@@ -492,9 +685,7 @@ class IosOs(PosixOs):
         dst_dir_fd: int,
         dst_path: str,
     ):
-        self._check_fd(src_fd)
-
-        src_path = self._get_fd_path(src_fd)
+        src_path = self._get_fd_entry(src_fd).path
         dst_path = self._resolve_dir_fd(dst_dir_fd, dst_path)
 
         self._clonefile(src_path, dst_path)
@@ -532,7 +723,7 @@ class IosOs(PosixOs):
 
     @log_call
     def sendfile(self, fd: int, sock: int, offset: int, length_ptr: int):
-        real_sock = self._get_fd_sock(sock)
+        entry = self._get_fd_entry(sock, SocketEntry)
         length = self.emu.read_s64(length_ptr)
 
         sent = 0
@@ -551,14 +742,14 @@ class IosOs(PosixOs):
             off = 0
 
             while off < len(data):
-                off += real_sock.send(data[off:])
+                off += entry.inner_sock.send(data[off:])
                 self.emu.write_s64(length_ptr, sent + off)
 
             sent += off
 
     @log_call
     def kqueue(self) -> int:
-        return self._new_fd(FdType.KQUEUE)
+        return self._new_fd(KQueueEntry())
 
     @log_call
     def kevent(
@@ -570,7 +761,7 @@ class IosOs(PosixOs):
         n_event: int,
         timeout: int,
     ) -> int:
-        self._check_kqueue(kq)
+        self._get_fd_entry(kq, KQueueEntry)
 
         change_list = []
         event_list = []
@@ -993,12 +1184,12 @@ class IosOs(PosixOs):
         the executable, the runtime automatically extracts its `CFBundleIdentifier`
         and `CFBundleExecutable` values.
         """
-        self.executable_file = path
+        self._executable_file = path
 
         bundle_path = os.path.dirname(self.executable_path)
         container_path = os.path.dirname(bundle_path)
 
-        executable_dir = os.path.dirname(self.executable_file)
+        executable_dir = os.path.dirname(self._executable_file)
         info_path = os.path.join(executable_dir, "Info.plist")
 
         if os.path.exists(info_path):
@@ -1028,7 +1219,7 @@ class IosOs(PosixOs):
         # Set path forwarding to executable and Info.plist
         self.forward_path(
             src_path=self.executable_path,
-            dst_path=self.executable_file,
+            dst_path=self._executable_file,
         )
         self.forward_path(
             src_path=f"{bundle_path}/Info.plist",
@@ -1038,7 +1229,7 @@ class IosOs(PosixOs):
         self._setup_bundle_dir()
 
     def get_executable_file(self) -> str:
-        return self.executable_file
+        return self._executable_file
 
     def _create_fp(self, fd: int, mode: str, unbuffered: bool = False) -> int:
         """Wrap file descriptor to file object by calling `fdopen`.
@@ -1180,22 +1371,23 @@ class IosOs(PosixOs):
 
     @log_call
     def mach_port_construct(self) -> int:
-        mach_port = self._mach_port_manager.new()
+        mach_port = self._mach_ports.new(MachPortEntry())
         return mach_port if mach_port else 0
 
     @log_call
     def mach_port_destruct(self, mach_port: int):
-        self._mach_port_manager.free(mach_port)
+        self._mach_ports.free(mach_port)
 
     def bootstrap_look_up(self, name: str) -> int:
-        """Find registered mach service.
+        """Find registered mach server.
 
         Returns:
-            The port of this mach service.
+            The port of this mach server.
         """
         if name in self._mach_servers:
             return self._mach_servers[name]
 
+        self.emu.logger.warning("Unknown mach server: %s", name)
         return 0
 
     def mach_msg(

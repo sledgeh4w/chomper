@@ -27,9 +27,33 @@ def main():
 
     emu.load_module(module_path)
 
+    ns_url_class = objc.find_class("NSURL")
+    ns_mutable_url_request_class = objc.find_class("NSMutableURLRequest")
+
     du_sanwa_sdk_class = objc.find_class("DuSanwaSDK")
 
     with objc.autorelease_pool():
+        # Encrypt
+        url_str = "https://app.dewu.com/api/v1/app/index/ice/flow/product/detailV5"
+        url = ns_url_class.call_method("URLWithString:", objc.create_ns_string(url_str))
+
+        request = ns_mutable_url_request_class.call_method("alloc")
+        request.call_method("init")
+
+        request.call_method("setURL:", url)
+        request.call_method("setHTTPMethod:", objc.create_ns_string("POST"))
+        request.call_method("setHTTPBody:", objc.create_ns_data(b'{"spuId": "1001219"}'))
+        request.call_method(
+            "setValue:forHTTPHeaderField:",
+            objc.create_ns_string("application/json"),
+            objc.create_ns_string("Content-Type"),
+        )
+
+        encrypt_result = du_sanwa_sdk_class.call_method("duSecDouEncodeWithRequest:", request)
+        encrypt_result_str = emu.read_string(encrypt_result.call_method("HTTPBody").call_method("bytes"))
+
+        emu.logger.info("Encrypt result: %s", encrypt_result_str)
+
         # Decrypt
         headers = objc.create_ns_dictionary({
             "sks": "2,1,0",

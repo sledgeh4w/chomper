@@ -9,8 +9,8 @@ from typing import Callable
 from unicorn import arm64_const
 
 from chomper.exceptions import SystemOperationFailed, ProgramTerminated
-from chomper.os.posix import SyscallError
-from chomper.os.syscall import BaseSyscallHandler
+from chomper.os.posix.error import SyscallError
+from chomper.os.posix.syscall import BaseSyscallHandler
 from chomper.utils import to_signed, struct_to_bytes, read_struct
 
 from . import const
@@ -1215,6 +1215,11 @@ class IosSyscallHandler(BaseSyscallHandler):
         oldp = self.emu.get_arg(2)
         oldlenp = self.emu.get_arg(3)
 
+        if oldlenp:
+            oldlen = self.emu.read_u64(oldlenp)
+        else:
+            oldlen = 0
+
         mib = (
             self.emu.read_u32(name),
             self.emu.read_u32(name + 4),
@@ -1237,7 +1242,10 @@ class IosSyscallHandler(BaseSyscallHandler):
             elif isinstance(result, bytes):
                 self.emu.write_bytes(oldp, result)
             elif isinstance(result, int):
-                self.emu.write_u64(oldp, result)
+                if oldlen >= 8:
+                    self.emu.write_u64(oldp, result)
+                else:
+                    self.emu.write_u32(oldp, result)
             elif isinstance(result, list):
                 offset = 0
                 for st in result:
@@ -1284,9 +1292,13 @@ class IosSyscallHandler(BaseSyscallHandler):
 
         return self.emu.os.open(path, flags, mode)
 
-    @staticmethod
-    def _handle_sys_getattrlist():
-        return -1
+    def _handle_sys_getattrlist(self):
+        path = self.emu.read_string(self.emu.get_arg(0))
+        alist_ptr = self.emu.get_arg(1)
+        buf = self.emu.get_arg(2)
+        buf_size = self.emu.get_arg(3)
+
+        return self.emu.ios_os.getattrlist(path, alist_ptr, buf, buf_size)
 
     @staticmethod
     def _handle_sys_setattrlist():
@@ -1335,7 +1347,12 @@ class IosSyscallHandler(BaseSyscallHandler):
         oldp = self.emu.get_arg(2)
         oldlenp = self.emu.get_arg(3)
 
-        result = sysctlbyname(name)
+        if oldlenp:
+            oldlen = self.emu.read_u64(oldlenp)
+        else:
+            oldlen = 0
+
+        result = sysctlbyname(self.emu, name)
         if result is None:
             self.emu.logger.warning(f"Unhandled sysctl command: {name}")
             return -1
@@ -1346,7 +1363,10 @@ class IosSyscallHandler(BaseSyscallHandler):
             elif isinstance(result, str):
                 self.emu.write_string(oldp, result)
             elif isinstance(result, int):
-                self.emu.write_u64(oldp, result)
+                if oldlen >= 8:
+                    self.emu.write_u64(oldp, result)
+                else:
+                    self.emu.write_u32(oldp, result)
 
         if oldlenp:
             if isinstance(result, ctypes.Structure):
@@ -1835,9 +1855,8 @@ class IosSyscallHandler(BaseSyscallHandler):
 
         return result
 
-    @staticmethod
-    def _handle_mach_absolute_time_trap():
-        return int(time.time_ns() % (3600 * 10**9))
+    def _handle_mach_absolute_time_trap(self):
+        return time.time_ns() - self.emu.ios_os.boot_time_ns
 
     def _handle_kernelrpc_mach_vm_allocate_trap(self):
         address = self.emu.get_arg(1)

@@ -66,14 +66,11 @@ KERNEL_PARAMETERS: Dict[str, SysctlReturnValue] = {
     ),
     "kern.maxvnodes": 5700,
     "kern.maxproc": 2000,
-    "kern.argmax": "262144",
+    "kern.argmax": 262144,
     "kern.hostname": "iPhone",
     "kern.hostid": 0,
     "kern.ngroups": 16,
     "kern.saved_ids": 1,
-    "kern.boottime": Timespec.from_time_ns(
-        time.time_ns() - random.randint(8, 24) * 3600 * 10**9
-    ),
     "kern.nisdomainname": "",
     "kern.maxfilesperproc": 10240,
     "kern.ipc.maxsockbuf": 6291456,
@@ -135,7 +132,7 @@ NETWORK_INTERFACES = [
 ]
 
 
-def _construct_sockaddr_in(address: str) -> SockaddrIn:
+def _make_sockaddr_in(address: str) -> SockaddrIn:
     return SockaddrIn(
         sin_len=ctypes.sizeof(SockaddrIn),
         sin_family=const.AF_INET,
@@ -143,7 +140,7 @@ def _construct_sockaddr_in(address: str) -> SockaddrIn:
     )
 
 
-def _construct_sockaddr_in6(address: str) -> SockaddrIn6:
+def _make_sockaddr_in6(address: str) -> SockaddrIn6:
     return SockaddrIn6(
         sin6_len=ctypes.sizeof(SockaddrIn),
         sin6_family=const.AF_INET,
@@ -200,12 +197,12 @@ def _get_iflist():
             )
 
             if address["family"] == "inet":
-                mask = _construct_sockaddr_in(address["mask"])
-                addr = _construct_sockaddr_in(address["address"])
+                mask = _make_sockaddr_in(address["mask"])
+                addr = _make_sockaddr_in(address["address"])
                 msgs.extend([mask, addr])
             elif address["family"] == "inet6":
-                mask = _construct_sockaddr_in6(address["mask"])
-                addr = _construct_sockaddr_in6(address["address"])
+                mask = _make_sockaddr_in6(address["mask"])
+                addr = _make_sockaddr_in6(address["address"])
                 msgs.extend([mask, addr])
 
     return msgs
@@ -222,13 +219,17 @@ def _get_kinfo_proc(emu, pid: int) -> Optional[KinfoProc]:
     info.kp_proc.p_pid = pid
     info.kp_proc.p_stat = const.SRUN
     info.kp_proc.p_flag = const.P_LP64
-    info.kp_proc.p_oppid = 1
+    info.kp_proc.p_oppid = 0
     info.kp_proc.p_comm = comm.encode()
 
     info.kp_eproc.e_ppid = 1
     info.kp_eproc.e_pgid = pid
 
     return info
+
+
+def _get_boot_time(emu) -> Timespec:
+    return Timespec.from_time_ns(emu.ios_os.boot_time_ns)
 
 
 @log_call
@@ -241,11 +242,12 @@ def sysctl(
     if (ctl_type, ctl_ident) in CTL_TYPE_MAP:
         return KERNEL_PARAMETERS[CTL_TYPE_MAP[(ctl_type, ctl_ident)]]
 
-    if ctl_type == const.CTL_KERN and ctl_ident == const.KERN_PROC:
+    if ctl_type == const.CTL_KERN and ctl_ident == const.KERN_BOOTTIME:
+        return _get_boot_time(emu)
+    elif ctl_type == const.CTL_KERN and ctl_ident == const.KERN_PROC:
         if mib[2] == const.KERN_PROC_PID:
             return _get_kinfo_proc(emu, mib[3])
-
-    if ctl_type == const.CTL_NET and ctl_ident == const.PF_ROUTE:
+    elif ctl_type == const.CTL_NET and ctl_ident == const.PF_ROUTE:
         if mib[4] == const.NET_RT_IFLIST:
             return _get_iflist()
 
@@ -253,10 +255,12 @@ def sysctl(
 
 
 @log_call
-def sysctlbyname(name: str) -> Optional[SysctlReturnValue]:
+def sysctlbyname(emu, name: str) -> Optional[SysctlReturnValue]:
     result = KERNEL_PARAMETERS.get(name)
 
-    if name == "kern.osvariant_status" and isinstance(result, int):
+    if name == "kern.boottime":
+        return _get_boot_time(emu)
+    elif name == "kern.osvariant_status" and isinstance(result, int):
         # can_has_debugger = 3
         result |= 3 << 2
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import abc
+import copy
 import ctypes
 import os
 import posixpath
@@ -9,10 +10,8 @@ import sys
 import shutil
 import time
 from abc import ABC
-from dataclasses import dataclass
-from enum import Enum
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple, Type, TYPE_CHECKING
+from typing import Dict, List, Optional, overload, Tuple, Type, TYPE_CHECKING, TypeVar
 
 from chomper.loader import BaseLoader
 from chomper.exceptions import SystemOperationFailed
@@ -21,6 +20,8 @@ from chomper.log import get_logger
 from chomper.utils import log_call, safe_join, struct_to_bytes, to_signed
 
 from .device import DeviceFile
+from .error import SyscallError
+from .file import FileProperty, FdEntry, FileEntry, DirEntry, DeviceEntry, SocketEntry
 from .handle import HandleManager
 from .syscall import BaseSyscallHandler
 
@@ -28,36 +29,7 @@ if TYPE_CHECKING:
     from chomper.core import Chomper
 
 
-class SyscallError(Enum):
-    EPERM = 1
-    ENOENT = 2
-    EBADF = 3
-    EACCES = 4
-    EFAULT = 5
-    EEXIST = 6
-    ENOTDIR = 7
-    EINVAL = 8
-    EMFILE = 9
-    ETIMEDOUT = 10
-
-
-class FdType(Enum):
-    FILE = 1
-    DIR = 2
-    DEV = 3
-    SOCK = 4
-
-    # iOS only
-    KQUEUE = 100
-
-
-@dataclass
-class FileProperty:
-    path: str
-    is_dir: bool
-    readable: bool
-    writeable: bool
-    executable: bool
+FdEntryT = TypeVar("FdEntryT", bound=FdEntry)
 
 
 class PosixOs(ABC):
@@ -107,7 +79,7 @@ class PosixOs(ABC):
         self._path_map: Dict[str, str] = {}
 
         # File descriptor
-        self._file_manager = HandleManager(
+        self._fds: HandleManager[FdEntry] = HandleManager(
             start_value=self.FD_START_VALUE,
             max_num=self.FD_MAX_NUM,
         )
@@ -120,12 +92,18 @@ class PosixOs(ABC):
 
         # Standard I/O
         if sys.stdin.isatty():
-            self._stdin_fd = self._new_fd(FdType.FILE, real_fd=sys.stdin.fileno())
+            self._stdin_fd = self._new_fd(
+                FileEntry(real_fd=sys.stdin.fileno(), path="/dev/null")
+            )
         else:
             self._stdin_fd = 0
 
-        self._stdout_fd = self._new_fd(FdType.FILE, real_fd=sys.stdout.fileno())
-        self._stderr_fd = self._new_fd(FdType.FILE, real_fd=sys.stderr.fileno())
+        self._stdout_fd = self._new_fd(
+            FileEntry(real_fd=sys.stdout.fileno(), path="/dev/null")
+        )
+        self._stderr_fd = self._new_fd(
+            FileEntry(real_fd=sys.stderr.fileno(), path="/dev/null")
+        )
 
         # Mapping files
         self._mapping_files: Dict[int, str] = {}
@@ -243,115 +221,37 @@ class PosixOs(ABC):
     def raise_permission_denied():
         raise SystemOperationFailed("No permission", SyscallError.EPERM)
 
-    def _new_fd(self, fd_type: FdType, **kwargs) -> int:
+    def _new_fd(self, entry: FdEntry) -> int:
         """Create a new file descriptor."""
-        if fd_type not in (value for value in FdType):
-            return 0
-
-        fd = self._file_manager.new()
-        if not fd:
-            return 0
-
-        self._file_manager.set_prop(fd, "type", fd_type)
-
-        for key, value in kwargs.items():
-            self._file_manager.set_prop(fd, key, value)
+        fd = self._fds.new(entry)
+        if fd is None:
+            raise SystemOperationFailed("Too many open files", SyscallError.EMFILE)
 
         return fd
 
-    def _is_file_fd(self, fd: int) -> bool:
-        return self._file_manager.get_prop(fd, "type") == FdType.FILE
+    @overload
+    def _get_fd_entry(self, fd: int) -> FdEntry:
+        pass
 
-    def _is_dir_fd(self, fd: int) -> bool:
-        return self._file_manager.get_prop(fd, "type") == FdType.DIR
+    @overload
+    def _get_fd_entry(self, fd: int, entry_cls: Type[FdEntryT]) -> FdEntryT:
+        pass
 
-    def _is_dev_fd(self, fd: int) -> bool:
-        return self._file_manager.get_prop(fd, "type") == FdType.DEV
+    def _get_fd_entry(
+        self,
+        fd: int,
+        entry_cls: Optional[Type[FdEntry]] = None,
+    ) -> FdEntry:
+        if entry_cls is None:
+            entry_cls = FdEntry
 
-    def _is_sock_fd(self, fd: int) -> bool:
-        return self._file_manager.get_prop(fd, "type") == FdType.SOCK
-
-    def _get_fd_real_fd(self, fd: int) -> int:
-        real_fd = self._file_manager.get_prop(fd, "real_fd")
-
-        assert isinstance(real_fd, int)
-
-        return real_fd
-
-    def _get_fd_path(self, fd: int) -> str:
-        path = self._file_manager.get_prop(fd, "path")
-
-        assert isinstance(path, str)
-
-        return path
-
-    def _get_fd_device(self, fd: int) -> DeviceFile:
-        device = self._file_manager.get_prop(fd, "device")
-
-        assert isinstance(device, DeviceFile)
-
-        return device
-
-    def _get_fd_sock(self, fd: int) -> socket.socket:
-        sock = self._file_manager.get_prop(fd, "sock")
-
-        assert isinstance(sock, socket.socket)
-
-        return sock
-
-    def _get_fd_family(self, fd: int) -> int:
-        family = self._file_manager.get_prop(fd, "family")
-
-        assert isinstance(family, int)
-
-        return family
-
-    def _device_read(self, fd: int, size: int) -> bytes:
-        device = self._get_fd_device(fd)
-        if not device.readable():
-            raise SystemOperationFailed("Not support read", SyscallError.EBADF)
-
-        result = device.read(size)
-        if result is None:
-            return b""
-
-        return result
-
-    def _device_write(self, fd: int, data: bytes) -> int:
-        device = self._get_fd_device(fd)
-        if not device.writable():
-            raise SystemOperationFailed("Not support write", SyscallError.EBADF)
-
-        result = device.write(data)
-        if result is None:
-            return 0
-
-        return result
-
-    def _device_seek(self, fd: int, offset: int, whence: int) -> int:
-        device = self._get_fd_device(fd)
-        if not device.seekable():
-            raise SystemOperationFailed("Not support seek", SyscallError.EBADF)
-
-        return device.seek(offset, whence)
-
-    def _check_fd(self, fd: int):
-        """Check file descriptor.
-
-        Raises:
-            BadFileDescriptor: If bad file descriptor.
-        """
-        if not self._file_manager.validate(fd):
+        entry = self._fds.get_as(fd, entry_cls)
+        if entry is None:
             raise SystemOperationFailed(
                 f"Bad file descriptor: {fd}", SyscallError.EBADF
             )
 
-    def _check_sock(self, sock: int):
-        """Check socket."""
-        self._check_fd(sock)
-
-        if not self._is_sock_fd(sock):
-            raise SystemOperationFailed(f"Bad socket: {sock}", SyscallError.EBADF)
+        return entry
 
     @staticmethod
     @abc.abstractmethod
@@ -365,8 +265,8 @@ class PosixOs(ABC):
         elif dir_fd == to_signed(self.AT_FDCWD, size=4):
             return posixpath.join(self._working_dir, path)
         else:
-            dir_path = self._get_fd_path(dir_fd)
-            return posixpath.join(dir_path, path)
+            entry = self._get_fd_entry(dir_fd, DirEntry)
+            return posixpath.join(entry.path, path)
 
     def _resolve_path(self, path: str) -> str:
         if path.startswith("/"):
@@ -401,17 +301,11 @@ class PosixOs(ABC):
 
         return buffer
 
-    @abc.abstractmethod
-    def _construct_stat(self, st: os.stat_result) -> ctypes.Structure:
-        pass
+    def _make_stat(self, st: Optional[os.stat_result]) -> ctypes.Structure:
+        raise NotImplementedError
 
-    @abc.abstractmethod
-    def _construct_device_stat(self) -> ctypes.Structure:
-        pass
-
-    @abc.abstractmethod
-    def _construct_statfs(self) -> ctypes.Structure:
-        pass
+    def _make_statfs(self, path: str) -> ctypes.Structure:
+        raise NotImplementedError
 
     def _get_file_property(self, path: str) -> Optional[FileProperty]:
         for prop in self._file_properties:
@@ -458,43 +352,24 @@ class PosixOs(ABC):
         absolute_path = self._get_absolute_path(path)
 
         if os.path.isdir(real_path):
-            return self._new_fd(FdType.DIR, path=absolute_path)
+            return self._new_fd(DirEntry(path=absolute_path))
 
         if path in self._devices:
             device = self._devices[path]()
-            return self._new_fd(
-                FdType.DEV,
-                path=absolute_path,
-                device=device,
-            )
+            return self._new_fd(DeviceEntry(path=absolute_path, device=device))
 
         # Check file creation permissions
         if flags & os.O_CREAT:
             self._check_dir_writeable(path)
 
         real_fd = os.open(real_path, flags, mode)
-        return self._new_fd(
-            FdType.FILE,
-            path=absolute_path,
-            real_fd=real_fd,
-        )
+        return self._new_fd(FileEntry(path=absolute_path, real_fd=real_fd))
 
     def _close(self, fd: int):
-        self._check_fd(fd)
+        entry = self._get_fd_entry(fd, FdEntry)
+        entry.close()
 
-        if self._is_sock_fd(fd):
-            if self._file_manager.has_prop(fd, "sock"):
-                sock = self._get_fd_sock(fd)
-                sock.close()
-
-        if self._is_file_fd(fd):
-            real_fd = self._get_fd_real_fd(fd)
-            try:
-                os.close(real_fd)
-            except OSError:
-                pass
-
-        self._file_manager.free(fd)
+        self._fds.free(fd)
 
     def _link(self, src_path: str, dst_path: str):
         self._check_dir_writeable(dst_path)
@@ -528,7 +403,7 @@ class PosixOs(ABC):
 
     def _stat(self, path: str) -> bytes:
         real_path = self._get_real_path(path)
-        st = self._construct_stat(os.stat(real_path))
+        st = self._make_stat(os.stat(real_path))
         return struct_to_bytes(st)
 
     def _rename(self, old: str, new: str):
@@ -539,11 +414,10 @@ class PosixOs(ABC):
 
         # On Windows, a file cannot be deleted before its file descriptor is closed.
         if sys.platform == "win32":
-            for fd in self._file_manager.iter_handles():
-                path = self._file_manager.get_prop(fd, "path")
-                if path and path == self._get_absolute_path(old):
-                    real_fd = self._get_fd_real_fd(fd)
-                    os.close(real_fd)
+            for fd, _ in self._fds.items():
+                entry = self._fds.get_as(fd, FileEntry)
+                if entry and entry.path == self._get_absolute_path(old):
+                    os.close(entry.real_fd)
 
         try:
             os.rename(real_old, real_new)
@@ -567,31 +441,15 @@ class PosixOs(ABC):
 
     @log_call
     def read(self, fd: int, size: int) -> bytes:
-        self._check_fd(fd)
-
-        if self._is_dev_fd(fd):
-            return self._device_read(fd, size)
-        elif self._is_sock_fd(fd):
-            sock = self._get_fd_sock(fd)
-            return sock.recv(size)
-
-        real_fd = self._get_fd_real_fd(fd)
-        return os.read(real_fd, size)
+        entry = self._get_fd_entry(fd, FdEntry)
+        return entry.read(size)
 
     @log_call
     def write(self, fd: int, buf: int, size: int) -> int:
-        self._check_fd(fd)
-
+        entry = self._get_fd_entry(fd, FdEntry)
         data = self.emu.read_bytes(buf, size)
 
-        if self._is_dev_fd(fd):
-            return self._device_write(fd, data)
-        elif self._is_sock_fd(fd):
-            sock = self._get_fd_sock(fd)
-            return sock.send(data)
-
-        real_fd = self._get_fd_real_fd(fd)
-        return os.write(real_fd, data)
+        return entry.write(data)
 
     @log_call
     def open(self, path: str, flags: int, mode: int) -> int:
@@ -610,28 +468,25 @@ class PosixOs(ABC):
 
     @log_call
     def dup(self, fd: int) -> int:
-        self._check_fd(fd)
+        entry = self._get_fd_entry(fd, FdEntry)
 
-        new_fd = self._file_manager.new()
+        new_fd = self._fds.new(copy.copy(entry))
         if new_fd is None:
             raise SystemOperationFailed("Too many open files", SyscallError.EMFILE)
-
-        for name, value in self._file_manager.iter_props(fd):
-            self._file_manager.set_prop(new_fd, name, value)
 
         return new_fd
 
     @log_call
     def dup2(self, old_fd: int, new_fd: int):
-        self._check_fd(old_fd)
+        entry = self._get_fd_entry(old_fd, FdEntry)
 
         if old_fd == new_fd:
             return
 
-        if self._file_manager.validate(new_fd):
+        if self._fds.validate(new_fd):
             self._close(new_fd)
 
-        result = self._file_manager.new(value=new_fd)
+        result = self._fds.new(copy.copy(entry), value=new_fd)
         if result is None:
             raise SystemOperationFailed(
                 f"Bad file descriptor: {new_fd}", SyscallError.EBADF
@@ -693,13 +548,8 @@ class PosixOs(ABC):
 
     @log_call
     def lseek(self, fd: int, offset: int, whence: int) -> int:
-        self._check_fd(fd)
-
-        if self._is_dev_fd(fd):
-            return self._device_seek(fd, offset, whence)
-
-        real_fd = self._get_fd_real_fd(fd)
-        return os.lseek(real_fd, offset, whence)
+        entry = self._get_fd_entry(fd, FdEntry)
+        return entry.seek(offset, whence)
 
     @log_call
     def stat(self, path: str) -> bytes:
@@ -707,19 +557,18 @@ class PosixOs(ABC):
 
     @log_call
     def fstat(self, fd: int) -> bytes:
-        self._check_fd(fd)
+        entry = self._get_fd_entry(fd, FdEntry)
 
-        if self._is_dir_fd(fd):
-            path = self._get_fd_path(fd)
-            return self._stat(path)
-
-        if self._is_dev_fd(fd):
-            st = self._construct_device_stat()
+        if isinstance(entry, DirEntry):
+            return self._stat(entry.path)
+        elif isinstance(entry, DeviceEntry):
+            st = self._make_stat(None)
             return struct_to_bytes(st)
-
-        real_fd = self._get_fd_real_fd(fd)
-        st = self._construct_stat(os.fstat(real_fd))
-        return struct_to_bytes(st)
+        elif isinstance(entry, FileEntry):
+            st = self._make_stat(os.fstat(entry.real_fd))
+            return struct_to_bytes(st)
+        else:
+            return b""
 
     @log_call
     def fstatat(self, dir_fd: int, path: str) -> bytes:
@@ -732,29 +581,22 @@ class PosixOs(ABC):
 
     @log_call
     def statfs(self, path: str) -> bytes:
-        if path:
-            pass
-
-        st = self._construct_statfs()
+        st = self._make_statfs(path)
         return struct_to_bytes(st)
 
     @log_call
     def fstatfs(self, fd: int) -> bytes:
-        if fd:
-            pass
+        entry = self._get_fd_entry(fd)
 
-        st = self._construct_statfs()
+        st = self._make_statfs(entry.path)
         return struct_to_bytes(st)
 
     @log_call
     def fsync(self, fd: int):
-        self._check_fd(fd)
+        entry = self._get_fd_entry(fd, FdEntry)
 
-        if self._is_dir_fd(fd):
-            return
-
-        real_fd = self._get_fd_real_fd(fd)
-        os.fsync(real_fd)
+        if isinstance(entry, FileEntry):
+            os.fsync(entry.real_fd)
 
     @log_call
     def rename(self, old: str, new: str):
@@ -791,15 +633,14 @@ class PosixOs(ABC):
         os.rmdir(real_path)
 
     def _pread(self, fd: int, size: int, offset: int) -> bytes:
-        self._check_fd(fd)
-        real_fd = self._get_fd_real_fd(fd)
+        entry = self._get_fd_entry(fd, FileEntry)
 
-        pos = os.lseek(real_fd, 0, os.SEEK_CUR)
-        os.lseek(real_fd, offset, os.SEEK_SET)
+        pos = os.lseek(entry.real_fd, 0, os.SEEK_CUR)
+        os.lseek(entry.real_fd, offset, os.SEEK_SET)
 
-        data = os.read(real_fd, size)
+        data = os.read(entry.real_fd, size)
 
-        os.lseek(real_fd, pos, os.SEEK_SET)
+        os.lseek(entry.real_fd, pos, os.SEEK_SET)
 
         return data
 
@@ -809,23 +650,23 @@ class PosixOs(ABC):
 
     @log_call
     def pwrite(self, fd: int, buf: int, size: int, offset: int) -> int:
-        self._check_fd(fd)
+        entry = self._get_fd_entry(fd, FdEntry)
 
         data = self.emu.read_bytes(buf, size)
 
-        if self._is_dev_fd(fd):
-            return self._device_write(fd, data)
+        if isinstance(entry, DeviceEntry):
+            return entry.write(data)
+        elif isinstance(entry, FileEntry):
+            pos = os.lseek(entry.real_fd, 0, os.SEEK_CUR)
+            os.lseek(entry.real_fd, offset, os.SEEK_SET)
 
-        real_fd = self._get_fd_real_fd(fd)
+            result = os.write(entry.real_fd, data)
 
-        pos = os.lseek(real_fd, 0, os.SEEK_CUR)
-        os.lseek(real_fd, offset, os.SEEK_SET)
+            os.lseek(entry.real_fd, pos, os.SEEK_SET)
 
-        result = os.write(real_fd, data)
-
-        os.lseek(real_fd, pos, os.SEEK_SET)
-
-        return result
+            return result
+        else:
+            return 0
 
     @log_call
     def chmod(self, path: str, mode: int):
@@ -850,10 +691,12 @@ class PosixOs(ABC):
 
     @log_call
     def fchdir(self, fd: int):
-        if self._is_dev_fd(fd):
+        entry = self._get_fd_entry(fd, FdEntry)
+
+        if not isinstance(entry, DirEntry):
             raise SystemOperationFailed(f"Not a directory: {fd}", SyscallError.ENOTDIR)
 
-        self._chdir(self._get_fd_path(fd))
+        self._chdir(entry.path)
 
     @log_call
     def chown(self, path: str, uid: int, gid: int):
@@ -905,7 +748,7 @@ class PosixOs(ABC):
 
         # Unix sockets
         if domain == self.AF_UNIX:
-            return self._new_fd(FdType.SOCK)
+            return self._new_fd(SocketEntry())
 
         if (
             domain not in domain_map
@@ -920,7 +763,7 @@ class PosixOs(ABC):
 
         sock = socket.socket(domain, sock_type, protocol)
 
-        return self._new_fd(FdType.SOCK, sock=sock)
+        return self._new_fd(SocketEntry(sock=sock))
 
     def _read_inet_host(self, address: int) -> Tuple[str, int]:
         port_n = self.emu.read_u16(address + 2)
@@ -945,17 +788,17 @@ class PosixOs(ABC):
         if not Feature.SOCKET_ENABLED:
             self.raise_permission_denied()
 
-        self._check_sock(sock)
+        entry = self._get_fd_entry(sock, SocketEntry)
 
         family = self.emu.read_u8(address + 1)
         if family == self.AF_UNIX:
             path = self.emu.read_string(address + 2)
             if path == "/var/run/mDNSResponder":
-                self._file_manager.set_prop(sock, "family", family)
-                self._file_manager.set_prop(sock, "path", path)
+                entry.family = family
+                entry.path = path
                 return 0
         elif family in (self.AF_INET, self.AF_INET6):
-            self._file_manager.set_prop(sock, "family", family)
+            entry.family = family
 
             if family == self.AF_INET6:
                 host, port = self._read_inet64_host(address)
@@ -966,8 +809,7 @@ class PosixOs(ABC):
                 f"Establishing socket connection: host={host}, port={port}"
             )
 
-            real_sock = self._get_fd_sock(sock)
-            real_sock.connect((host, port))
+            entry.inner_sock.connect((host, port))
 
             return 0
         else:
@@ -980,11 +822,11 @@ class PosixOs(ABC):
         if not Feature.SOCKET_ENABLED:
             self.raise_permission_denied()
 
-        self._check_sock(sock)
+        entry = self._get_fd_entry(sock, SocketEntry)
 
         family = self.emu.read_u8(address + 1)
         if family in (self.AF_INET, self.AF_INET6):
-            self._file_manager.set_prop(sock, "family", family)
+            entry.family = family
 
             if family == self.AF_INET6:
                 host, port = self._read_inet64_host(address)
@@ -993,8 +835,7 @@ class PosixOs(ABC):
 
             self.logger.info(f"Bind socket to: host={host}, port={port}")
 
-            real_sock = self._get_fd_sock(sock)
-            real_sock.bind((host, port))
+            entry.inner_sock.bind((host, port))
 
             return 0
         else:
@@ -1007,10 +848,8 @@ class PosixOs(ABC):
         if not Feature.SOCKET_ENABLED:
             self.raise_permission_denied()
 
-        self._check_sock(sock)
-
-        real_sock = self._get_fd_sock(sock)
-        real_sock.listen(backlog)
+        entry = self._get_fd_entry(sock, SocketEntry)
+        entry.inner_sock.listen(backlog)
 
         return 0
 
@@ -1024,11 +863,11 @@ class PosixOs(ABC):
         if not Feature.SOCKET_ENABLED:
             return None
 
-        read_fd = self._new_fd(FdType.SOCK)
-        self._file_manager.set_prop(read_fd, "family", domain)
+        read_fd = self._fds.new(SocketEntry(family=domain))
+        write_fd = self._fds.new(SocketEntry(family=domain))
 
-        write_fd = self._new_fd(FdType.SOCK)
-        self._file_manager.set_prop(write_fd, "family", domain)
+        if read_fd is None or write_fd is None:
+            return None
 
         return read_fd, write_fd
 
@@ -1067,15 +906,13 @@ class PosixOs(ABC):
         if not Feature.SOCKET_ENABLED:
             self.raise_permission_denied()
 
-        self._check_sock(sock)
-
+        entry = self._get_fd_entry(sock, SocketEntry)
         data = self.emu.read_bytes(buffer, length)
 
-        if self._get_fd_family(sock) == self.AF_UNIX:
+        if entry.family == self.AF_UNIX:
             return len(data)
 
-        real_sock = self._get_fd_sock(sock)
-        real_sock.send(data)
+        entry.inner_sock.send(data)
 
         return len(data)
 
@@ -1113,14 +950,12 @@ class PosixOs(ABC):
         if not Feature.SOCKET_ENABLED:
             self.raise_permission_denied()
 
-        self._check_sock(sock)
+        entry = self._get_fd_entry(sock, SocketEntry)
 
-        if self._get_fd_family(sock) == self.AF_UNIX:
+        if entry.family == self.AF_UNIX:
             return 0
 
-        real_sock = self._get_fd_sock(sock)
-        recv_bytes = real_sock.recv(length)
-
+        recv_bytes = entry.inner_sock.recv(length)
         self.emu.write_bytes(buffer, recv_bytes)
 
         return len(recv_bytes)
@@ -1173,28 +1008,25 @@ class PosixOs(ABC):
             self.SHUT_RDWR: socket.SHUT_RDWR,
         }
 
-        self._check_sock(sock)
-        real_sock = self._get_fd_sock(sock)
+        entry = self._get_fd_entry(sock, SocketEntry)
 
         if how not in shut_map:
             raise SystemOperationFailed("Invalid argument", SyscallError.EINVAL)
 
-        real_sock.shutdown(shut_map[how])
+        entry.inner_sock.shutdown(shut_map[how])
 
-    @abc.abstractmethod
-    def _construct_sockaddr_in(self, address: str, port: int) -> ctypes.Structure:
-        pass
+    def _make_sockaddr_in(self, address: str, port: int) -> ctypes.Structure:
+        raise NotImplementedError
 
     @log_call
     def getpeername(self, sock: int) -> bytes:
         if not Feature.SOCKET_ENABLED:
             self.raise_permission_denied()
 
-        self._check_sock(sock)
+        entry = self._get_fd_entry(sock, SocketEntry)
 
-        real_sock = self._get_fd_sock(sock)
-        address, port = real_sock.getpeername()
-        st = self._construct_sockaddr_in(address, port)
+        address, port = entry.inner_sock.getpeername()
+        st = self._make_sockaddr_in(address, port)
 
         return struct_to_bytes(st)
 
@@ -1203,17 +1035,15 @@ class PosixOs(ABC):
         if not Feature.SOCKET_ENABLED:
             self.raise_permission_denied()
 
-        self._check_sock(sock)
+        entry = self._get_fd_entry(sock, SocketEntry)
 
-        real_sock = self._get_fd_sock(sock)
-        address, port = real_sock.getsockname()
-        st = self._construct_sockaddr_in(address, port)
+        address, port = entry.inner_sock.getsockname()
+        st = self._make_sockaddr_in(address, port)
 
         return struct_to_bytes(st)
 
-    @abc.abstractmethod
-    def _construct_flock(self, lock_type: int) -> ctypes.Structure:
-        pass
+    def _make_flock(self, lock_type: int) -> ctypes.Structure:
+        raise NotImplementedError
 
     @log_call
     def fcntl(self, fd: int, cmd: int, arg: int) -> int:
@@ -1224,14 +1054,14 @@ class PosixOs(ABC):
                 return os.O_WRONLY
             return os.O_RDWR
         elif cmd == self.F_GETLK:
-            st = self._construct_flock(self.F_UNLCK)
+            st = self._make_flock(self.F_UNLCK)
             self.emu.write_bytes(arg, struct_to_bytes(st))
         elif cmd == self.F_SETLK:
             pass
         elif cmd == self.F_GETPATH:
-            path = self._get_fd_path(fd)
-            if path:
-                self.emu.write_string(arg, path)
+            entry = self._get_fd_entry(fd)
+            if entry.path:
+                self.emu.write_string(arg, entry.path)
         else:
             self.emu.logger.warning(f"Unhandled fcntl command: {cmd}")
 
@@ -1239,10 +1069,9 @@ class PosixOs(ABC):
 
     @log_call
     def ftruncate(self, fd: int, length: int):
-        self._check_fd(fd)
-        real_fd = self._get_fd_real_fd(fd)
+        entry = self._get_fd_entry(fd, FileEntry)
 
-        os.ftruncate(real_fd, length)
+        os.ftruncate(entry.real_fd, length)
 
     @log_call
     def utimes(self, path: str, times: Optional[Tuple[float, float]]):
@@ -1252,9 +1081,8 @@ class PosixOs(ABC):
 
     @log_call
     def futimes(self, fd: int, times: Optional[Tuple[float, float]]):
-        self._check_fd(fd)
-        path = self._get_fd_path(fd)
-        real_path = self._get_real_path(path)
+        entry = self._get_fd_entry(fd)
+        real_path = self._get_real_path(entry.path)
 
         os.utime(real_path, times)
 
@@ -1263,7 +1091,7 @@ class PosixOs(ABC):
         addr = self.emu.create_buffer(length)
 
         if fd != -1:
-            self._check_fd(fd)
+            entry = self._get_fd_entry(fd)
 
             chunk_size = 1024 * 1024
             content = b""
@@ -1276,7 +1104,7 @@ class PosixOs(ABC):
 
             self.emu.write_bytes(addr, content[offset:])
 
-            self._mapping_files[addr] = self._get_fd_path(fd)
+            self._mapping_files[addr] = entry.path
 
         return addr
 

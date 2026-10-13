@@ -227,7 +227,14 @@ def hook_dlsym(uc: Uc, address: int, size: int, user_data: HookContext):
 def hook_dyld_program_sdk_at_least(
     uc: Uc, address: int, size: int, user_data: HookContext
 ):
-    return 0
+    emu = user_data["emu"]
+
+    required_version = (emu.get_arg(0) >> 32) & 0xFFFFFF
+
+    # 14.4.0
+    sdk_version = 0x0E0400
+
+    return int(bool(required_version and sdk_version >= required_version))
 
 
 @register_hook("_dyld_image_header_containing_address")
@@ -390,11 +397,6 @@ def hook_dispatch_barrier_async(
     return 0
 
 
-@register_hook("__xpc_look_up_endpoint")
-def hook_xpc_look_up_endpoint(uc: Uc, address: int, size: int, user_data: HookContext):
-    return 0
-
-
 @register_hook("__CFPreferencesCopyAppValueWithContainerAndConfiguration")
 def hook_cf_preferences_copy_app_value_with_container_and_configuration(
     uc: Uc, address: int, size: int, user_data: HookContext
@@ -493,6 +495,16 @@ def hook_sec_item_add(uc: Uc, address: int, size: int, user_data: HookContext):
         emu.read_pointer(emu.get_symbol("_kSecValueData").address),
     )
 
+    if isinstance(sec_value_data, ObjcObject) and sec_value_data.value:
+        length = sec_value_data.call_method("length")
+        bytes_ptr = sec_value_data.call_method("bytes")
+
+        assert isinstance(length, int)
+        assert isinstance(bytes_ptr, int)
+
+        raw_data = emu.read_bytes(bytes_ptr, length)
+        sec_value_data = ObjcObject(objc, objc.create_cf_data(raw_data))
+
     item = _read_sec_attributes(emu)
     item["SecValueData"] = sec_value_data
 
@@ -569,6 +581,7 @@ def hook_sec_item_copy_matching(
             )
         elif sec_return_data.value == cf_boolean_true:
             result = match_result["SecValueData"].value
+            emu.call_symbol("_CFRetain", result)
         else:
             result = 0
     else:
