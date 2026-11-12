@@ -9,7 +9,7 @@ import string
 import sys
 import time
 from contextlib import contextmanager
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 from chomper.const import TLS_ADDRESS
 from chomper.exceptions import (
@@ -33,7 +33,7 @@ from chomper.utils import (
 )
 
 from . import const
-from .fixup import SystemModuleFixer
+from .fixup import FixupContext, SystemModuleFixer
 from .hooks import get_hooks, hook_read_class
 from .kqueue import KQueueEntry
 from .mach import MachMsgHandler, MachPortEntry
@@ -175,6 +175,8 @@ SYMBOLIC_LINKS = {
 BUNDLE_UUID = "2305AA14-F491-40E0-BF02-88BDBABF51AE"
 BUNDLE_EXECUTABLE = "Chomper"
 
+DATA_UUID = "7D878894-D8F2-4ABA-BEDE-0830FEB26D28"
+
 PREFERENCES = {
     "AppleLanguages": [
         "zh-Hans",
@@ -220,6 +222,7 @@ class IosOs(PosixOs):
     MACH_PORT_BKS_HID_SERVER = 4099
     MACH_PORT_CONFIGD = 4100
     MACH_PORT_SYSTEM_APP_SERVICES = 4101
+    MACH_PORT_SECURITYD = 4102
 
     MACH_PORT_START_VALUE = 65536
     MACH_PORT_MAX_NUM = 10000
@@ -231,6 +234,7 @@ class IosOs(PosixOs):
         "com.apple.backboard.hid.services": MACH_PORT_BKS_HID_SERVER,
         "com.apple.SystemConfiguration.configd": MACH_PORT_CONFIGD,
         "com.apple.frontboard.systemappservices": MACH_PORT_SYSTEM_APP_SERVICES,
+        "com.apple.securityd": MACH_PORT_SECURITYD,
     }
 
     def __init__(self, *args, **kwargs):
@@ -238,8 +242,7 @@ class IosOs(PosixOs):
 
         self._loader = MachoLoader(self.emu)
         self._syscall_handler = IosSyscallHandler(self.emu)
-
-        self._initialized = False
+        self._fixup_context = FixupContext()
 
         # mobile user
         self._uid = 501
@@ -249,17 +252,19 @@ class IosOs(PosixOs):
 
         self._boot_hash = self._random_boot_hash()
 
-        self.boot_time_ns = time.time_ns() - random.randint(8, 24) * 3600 * 10**9
+        self._boot_time_ns = time.time_ns() - random.randint(8, 24) * 3600 * 10**9
 
-        self.executable_path = (
+        self._bundle_path = (
             f"/private/var/containers/Bundle/Application"
             f"/{BUNDLE_UUID}"
             f"/{BUNDLE_EXECUTABLE}.app"
-            f"/{BUNDLE_EXECUTABLE}"
         )
+        self._data_path = f"/private/var/mobile/Containers/Data/Application/{DATA_UUID}"
+
+        self._executable_path = f"{self._bundle_path}/{BUNDLE_EXECUTABLE}"
         self._executable_file = ""
 
-        self.preferences = PREFERENCES.copy()
+        self._preferences = PREFERENCES.copy()
 
         self._pthread_ptr = None
         self._pthread_errno = None
@@ -286,7 +291,7 @@ class IosOs(PosixOs):
         self._xpc_message_handler = XpcMessageHandler(self.emu)
 
         # keychain
-        self._sec_items = []
+        self._sec_items: List[Dict[str, Any]] = []
 
     @property
     def loader(self) -> MachoLoader:
@@ -295,6 +300,22 @@ class IosOs(PosixOs):
     @property
     def syscall_handler(self) -> IosSyscallHandler:
         return self._syscall_handler
+
+    @property
+    def boot_time_ns(self) -> int:
+        return self._boot_time_ns
+
+    @property
+    def bundle_path(self) -> str:
+        return self._bundle_path
+
+    @property
+    def executable_path(self) -> str:
+        return self._executable_path
+
+    @property
+    def preferences(self) -> Dict[str, Any]:
+        return self._preferences
 
     def get_errno(self) -> int:
         errno = self.emu.get_symbol("_errno")
@@ -883,19 +904,20 @@ class IosOs(PosixOs):
     def _init_lib_system_c(self):
         # __program_vars_init
         argc = self.emu.create_buffer(8)
-        self.emu.write_int(argc, 0, 8)
+        self.emu.write_int(argc, 1, 8)
 
         nx_argc_pointer = self.emu.get_symbol("_NXArgc_pointer")
         self.emu.write_pointer(nx_argc_pointer.address, argc)
 
-        argv_val = self.emu.create_buffer(8)
-        self.emu.write_string(argv_val, "")
+        argv = self.emu.create_buffer(8 * 2)
+        self.emu.write_pointer(argv, self.emu.create_string(self._executable_path))
+        self.emu.write_pointer(argv + 8, 0)
 
-        argv = self.emu.create_buffer(8)
-        self.emu.write_pointer(argv, argv_val)
+        nx_argv = self.emu.create_buffer(8)
+        self.emu.write_pointer(nx_argv, argv)
 
         nx_argv_pointer = self.emu.get_symbol("_NXArgv_pointer")
-        self.emu.write_pointer(nx_argv_pointer.address, argv)
+        self.emu.write_pointer(nx_argv_pointer.address, nx_argv)
 
         environ = self.emu.create_buffer(8)
         self.emu.write_pointer(environ, self._create_environ(ENVIRON_VARIABLES))
@@ -982,11 +1004,6 @@ class IosOs(PosixOs):
                 amkrtemp_sentinel.address,
                 self.emu.create_string(""),
             )
-
-        # CoreFoundation
-        is_cf_prefs_d = self.emu.get_symbol("_isCFPrefsD")
-        if is_cf_prefs_d:
-            self.emu.write_u8(is_cf_prefs_d.address, 1)
 
         # BackBoardServices
         bks_hid_sever_port = self.emu.get_symbol("_BKSHIDServerPort")
@@ -1123,7 +1140,7 @@ class IosOs(PosixOs):
             )
 
             # Fixup must be executed before initializing Objective-C
-            fixer = SystemModuleFixer(self.emu, module)
+            fixer = SystemModuleFixer(self.emu, module, self._fixup_context)
             fixer.fixup_all()
 
             # Execute initialization functions after fixup
@@ -1138,10 +1155,9 @@ class IosOs(PosixOs):
 
     def _setup_bundle_dir(self):
         """Set bundle directory as current working directory."""
-        bundle_path = os.path.dirname(self.executable_path)
-        container_path = os.path.dirname(bundle_path)
+        container_path = os.path.dirname(self._bundle_path)
 
-        self.set_working_dir(bundle_path)
+        self.set_working_dir(self._bundle_path)
 
         local_container_path = os.path.join(
             self.rootfs_path,
@@ -1157,18 +1173,11 @@ class IosOs(PosixOs):
         )
 
         self.forward_path(container_path, local_container_path)
-        self.forward_path(bundle_path, local_bundle_path)
-
-        # Set env `HOME`
-        if self._initialized:
-            with self.emu.memory_scope() as mem:
-                key = mem.create_string("HOME")
-                value = mem.create_string(bundle_path)
-                self.emu.call_symbol("_setenv", key, value, 1)
+        self.forward_path(self._bundle_path, local_bundle_path)
 
         # Setting bundle dir permissions
         file_prop = FileProperty(
-            path=bundle_path,
+            path=self._bundle_path,
             is_dir=True,
             readable=True,
             writeable=True,
@@ -1186,8 +1195,7 @@ class IosOs(PosixOs):
         """
         self._executable_file = path
 
-        bundle_path = os.path.dirname(self.executable_path)
-        container_path = os.path.dirname(bundle_path)
+        container_path = os.path.dirname(self._bundle_path)
 
         executable_dir = os.path.dirname(self._executable_file)
         info_path = os.path.join(executable_dir, "Info.plist")
@@ -1198,11 +1206,11 @@ class IosOs(PosixOs):
 
             bundle_executable = info_data["CFBundleExecutable"]
 
-            bundle_path = f"{container_path}/{bundle_executable}.app"
-            self.executable_path = f"{bundle_path}/{bundle_executable}"
+            self._bundle_path = f"{container_path}/{bundle_executable}.app"
+            self._executable_path = f"{self._bundle_path}/{bundle_executable}"
 
-            progname_str = self.emu.create_string(self.executable_path.split("/")[-1])
-            process_path_str = self.emu.create_string(self.executable_path)
+            progname_str = self.emu.create_string(self._executable_path.split("/")[-1])
+            process_path_str = self.emu.create_string(self._executable_path)
 
             progname = self.emu.create_buffer(8)
             self.emu.write_pointer(progname, progname_str)
@@ -1218,11 +1226,11 @@ class IosOs(PosixOs):
 
         # Set path forwarding to executable and Info.plist
         self.forward_path(
-            src_path=self.executable_path,
+            src_path=self._executable_path,
             dst_path=self._executable_file,
         )
         self.forward_path(
-            src_path=f"{bundle_path}/Info.plist",
+            src_path=f"{self._bundle_path}/Info.plist",
             dst_path=info_path,
         )
 
@@ -1440,24 +1448,37 @@ class IosOs(PosixOs):
         self._set_tid(original_tid)
         self.set_dispatch_queue(original_queue)
 
-    def sec_item_add(self, attributes: dict):
-        self._sec_items.append(attributes)
+    @staticmethod
+    def _is_sec_item_matched(item: Dict[str, Any], query: Dict[str, Any]) -> bool:
+        for key, value in query.items():
+            if key not in item or item[key] != value:
+                return False
 
-    def sec_item_copy_matching(self, query: dict) -> Optional[dict]:
-        match_keys = ["SecClass", "SecAttrKeyType"]
+        return True
 
-        for item in self._sec_items:
-            if all((query[key] == item[key] for key in match_keys)):
-                return item
+    def sec_item_add(self, attributes: Dict[str, Any]):
+        self._sec_items.append(dict(attributes))
 
-        return None
+    def sec_item_copy_matching(self, query: Dict[str, Any]) -> List[Dict[str, Any]]:
+        return [
+            item for item in self._sec_items if self._is_sec_item_matched(item, query)
+        ]
 
-    def sec_item_delete(self, query: dict):
-        match_keys = ["SecClass", "SecAttrKeyType"]
+    def sec_item_update(self, query: Dict[str, Any], attributes: Dict[str, Any]) -> int:
+        items = self.sec_item_copy_matching(query)
 
-        for item in self._sec_items:
-            if all((query[key] == item[key] for key in match_keys)):
-                self._sec_items.remove(item)
+        for item in items:
+            item.update(attributes)
+
+        return len(items)
+
+    def sec_item_delete(self, query: Dict[str, Any]) -> int:
+        items = self.sec_item_copy_matching(query)
+
+        for item in items:
+            self._sec_items.remove(item)
+
+        return len(items)
 
     def initialize(self):
         # Setup hooks
@@ -1493,4 +1514,8 @@ class IosOs(PosixOs):
 
         self._setup_stdio()
 
-        self._initialized = True
+        # Set env `HOME`
+        with self.emu.memory_scope() as mem:
+            key = mem.create_string("HOME")
+            value = mem.create_string(self._data_path)
+            self.emu.call_symbol("_setenv", key, value, 1)

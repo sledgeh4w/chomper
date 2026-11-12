@@ -239,17 +239,19 @@ def sysctl(
 ) -> Optional[SysctlReturnValue]:
     ctl_type, ctl_ident = mib[0], mib[1]
 
+    if ctl_type == const.CTL_KERN:
+        if ctl_ident == const.KERN_BOOTTIME:
+            return _get_boot_time(emu)
+        elif ctl_ident == const.KERN_PROC:
+            if mib[2] == const.KERN_PROC_PID:
+                return _get_kinfo_proc(emu, mib[3])
+    elif ctl_type == const.CTL_NET:
+        if ctl_ident == const.PF_ROUTE:
+            if mib[4] == const.NET_RT_IFLIST:
+                return _get_iflist()
+
     if (ctl_type, ctl_ident) in CTL_TYPE_MAP:
         return KERNEL_PARAMETERS[CTL_TYPE_MAP[(ctl_type, ctl_ident)]]
-
-    if ctl_type == const.CTL_KERN and ctl_ident == const.KERN_BOOTTIME:
-        return _get_boot_time(emu)
-    elif ctl_type == const.CTL_KERN and ctl_ident == const.KERN_PROC:
-        if mib[2] == const.KERN_PROC_PID:
-            return _get_kinfo_proc(emu, mib[3])
-    elif ctl_type == const.CTL_NET and ctl_ident == const.PF_ROUTE:
-        if mib[4] == const.NET_RT_IFLIST:
-            return _get_iflist()
 
     return None
 

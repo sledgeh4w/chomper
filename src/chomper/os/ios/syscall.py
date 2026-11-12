@@ -778,12 +778,16 @@ class IosSyscallHandler(BaseSyscallHandler):
         buf_size = self.emu.get_arg(2)
 
         result = self.emu.os.readlink(path)
-        if result is None or len(result) > buf_size:
+        if result is None:
             return -1
 
-        self.emu.write_string(buf, result)
+        data = result.encode()
+        if len(data) > buf_size:
+            return -1
 
-        return 0
+        self.emu.write_bytes(buf, data)
+
+        return len(data)
 
     def _handle_sys_execve(self):
         self.emu.os.raise_permission_denied()
@@ -1605,7 +1609,18 @@ class IosSyscallHandler(BaseSyscallHandler):
         self.emu.logger.info(f"Received a mac syscall command: {cmd}")
 
         if cmd == "Sandbox":
-            pass
+            if self.emu.get_arg(1) == 2:
+                params = self.emu.get_arg(2)
+
+                operation_ptr = self.emu.read_pointer(params + 0x10)
+                operation = self.emu.read_string(operation_ptr) if operation_ptr else ""
+
+                if operation == "mach-lookup":
+                    service_ptr = self.emu.read_pointer(params + 0x20)
+                    service = self.emu.read_string(service_ptr) if service_ptr else ""
+
+                    if service == "com.apple.cfprefsd.daemon":
+                        self.emu.write_u64(self.emu.read_pointer(params), 0)
         else:
             self.emu.logger.warning(f"Unhandled mac syscall command: {cmd}")
 
@@ -1716,10 +1731,20 @@ class IosSyscallHandler(BaseSyscallHandler):
     def _handle_sys_readlinkat(self):
         dir_fd = to_signed(self.emu.get_arg(0), 4)
         path = self.emu.read_string(self.emu.get_arg(1))
+        buf = self.emu.get_arg(2)
+        buf_size = self.emu.get_arg(3)
 
-        self.emu.os.readlinkat(dir_fd, path)
+        result = self.emu.os.readlinkat(dir_fd, path)
+        if result is None:
+            return -1
 
-        return 0
+        data = result.encode()
+        if len(data) > buf_size:
+            return -1
+
+        self.emu.write_bytes(buf, data)
+
+        return len(data)
 
     def _handle_sys_symlinkat(self):
         src_dir_fd = to_signed(self.emu.get_arg(0), 4)
