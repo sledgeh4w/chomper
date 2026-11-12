@@ -7,7 +7,6 @@ from unicorn import Uc, UcError
 
 from chomper.exceptions import EmulatorCrashed, ObjCUnrecognizedSelector
 from chomper.loader import Module
-from chomper.objc import ObjcRuntime, ObjcObject
 from chomper.typing import HookContext
 from chomper.utils import struct_to_bytes
 
@@ -303,7 +302,7 @@ def hook_dyld_get_image_name(uc: Uc, address: int, size: int, user_data: HookCon
         return 0
 
     install_name = module.macho_info.install_name
-    bundle_path = os.path.dirname(emu.ios_os.executable_path)
+    bundle_path = emu.ios_os.bundle_path
 
     if not install_name:
         # Main executable
@@ -397,24 +396,6 @@ def hook_dispatch_barrier_async(
     return 0
 
 
-@register_hook("__CFPreferencesCopyAppValueWithContainerAndConfiguration")
-def hook_cf_preferences_copy_app_value_with_container_and_configuration(
-    uc: Uc, address: int, size: int, user_data: HookContext
-):
-    emu = user_data["emu"]
-    objc = ObjcRuntime(emu)
-
-    str_ptr = objc.msg_send(emu.get_arg(0), "UTF8String")
-    assert isinstance(str_ptr, int)
-
-    key = emu.read_string(str_ptr)
-
-    if key in emu.ios_os.preferences:
-        return objc.create_cf_string(emu.ios_os.preferences[key])
-
-    return 0
-
-
 @register_hook("__CFBundleCreateInfoDictFromMainExecutable")
 def hook_cf_bundle_create_info_dict_from_main_executable(
     uc: Uc, address: int, size: int, user_data: HookContext
@@ -446,183 +427,6 @@ def hook_cf_bundle_create_info_dict_from_main_executable(
         )
 
     return cf_bundle
-
-
-@register_hook("___CFXPreferencesCopyCurrentApplicationStateWithDeadlockAvoidance")
-def hook_cf_x_preferences_copy_current_application_state_with_deadlock_avoidance(
-    uc: Uc, address: int, size: int, user_data: HookContext
-):
-    emu = user_data["emu"]
-    objc = ObjcRuntime(emu)
-
-    return objc.create_cf_dictionary(emu.ios_os.preferences)
-
-
-def _read_sec_attributes(emu):
-    objc = ObjcRuntime(emu)
-
-    attributes = emu.get_arg(0)
-
-    sec_class = objc.msg_send(
-        attributes,
-        "objectForKey:",
-        emu.read_pointer(emu.get_symbol("_kSecClass").address),
-    )
-    sec_attr_key_type = objc.msg_send(
-        attributes,
-        "objectForKey:",
-        emu.read_pointer(emu.get_symbol("_kSecAttrKeyType").address),
-    )
-
-    attrs_dict = {
-        "SecClass": sec_class,
-        "SecAttrKeyType": sec_attr_key_type,
-    }
-
-    return attrs_dict
-
-
-@register_hook("_SecItemAdd")
-def hook_sec_item_add(uc: Uc, address: int, size: int, user_data: HookContext):
-    emu = user_data["emu"]
-    objc = ObjcRuntime(emu)
-
-    attributes = emu.get_arg(0)
-
-    sec_value_data = objc.msg_send(
-        attributes,
-        "objectForKey:",
-        emu.read_pointer(emu.get_symbol("_kSecValueData").address),
-    )
-
-    if isinstance(sec_value_data, ObjcObject) and sec_value_data.value:
-        length = sec_value_data.call_method("length")
-        bytes_ptr = sec_value_data.call_method("bytes")
-
-        assert isinstance(length, int)
-        assert isinstance(bytes_ptr, int)
-
-        raw_data = emu.read_bytes(bytes_ptr, length)
-        sec_value_data = ObjcObject(objc, objc.create_cf_data(raw_data))
-
-    item = _read_sec_attributes(emu)
-    item["SecValueData"] = sec_value_data
-
-    emu.ios_os.sec_item_add(item)
-
-    return 0
-
-
-@register_hook("_SecItemUpdate")
-def hook_sec_item_update(uc: Uc, address: int, size: int, user_data: HookContext):
-    return 0
-
-
-@register_hook("_SecItemDelete")
-def hook_sec_item_delete(uc: Uc, address: int, size: int, user_data: HookContext):
-    emu = user_data["emu"]
-
-    query = _read_sec_attributes(emu)
-    emu.ios_os.sec_item_delete(query)
-
-    return 0
-
-
-@register_hook("_SecItemCopyMatching")
-def hook_sec_item_copy_matching(
-    uc: Uc, address: int, size: int, user_data: HookContext
-):
-    emu = user_data["emu"]
-    objc = ObjcRuntime(emu)
-
-    attributes = emu.get_arg(0)
-    result_ptr = emu.get_arg(1)
-
-    sec_return_data = objc.msg_send(
-        attributes,
-        "objectForKey:",
-        emu.read_pointer(emu.get_symbol("_kSecReturnData").address),
-    )
-    assert isinstance(sec_return_data, ObjcObject)
-
-    sec_return_ref = objc.msg_send(
-        attributes,
-        "objectForKey:",
-        emu.read_pointer(emu.get_symbol("_kSecReturnRef").address),
-    )
-    assert isinstance(sec_return_ref, ObjcObject)
-
-    sec_return_attributes = objc.msg_send(
-        attributes,
-        "objectForKey:",
-        emu.read_pointer(emu.get_symbol("_kSecReturnAttributes").address),
-    )
-    assert isinstance(sec_return_attributes, ObjcObject)
-
-    sec_match_limit = objc.msg_send(
-        attributes,
-        "objectForKey:",
-        emu.read_pointer(emu.get_symbol("_kSecMatchLimit").address),
-    )
-    assert isinstance(sec_match_limit, ObjcObject)
-
-    cf_boolean_true = emu.read_pointer(emu.get_symbol("_kCFBooleanTrue").address)
-
-    query = _read_sec_attributes(emu)
-    match_result = emu.ios_os.sec_item_copy_matching(query)
-
-    if match_result:
-        if sec_return_ref.value == cf_boolean_true:
-            result = emu.call_symbol(
-                "_SecKeyCreateWithData",
-                match_result["SecValueData"].value,
-                attributes,
-                0,
-            )
-        elif sec_return_data.value == cf_boolean_true:
-            result = match_result["SecValueData"].value
-            emu.call_symbol("_CFRetain", result)
-        else:
-            result = 0
-    else:
-        sec_match_limit_all = emu.read_pointer(
-            emu.get_symbol("_kSecMatchLimitAll").address
-        )
-
-        if sec_match_limit.value == sec_match_limit_all:
-            result = objc.create_cf_array([])
-        elif sec_return_attributes.value == cf_boolean_true:
-            result = objc.create_cf_dictionary({})
-        elif sec_return_data.value == cf_boolean_true:
-            # result = objc.create_cf_data(b"")
-            result = 0
-        else:
-            result = 0
-
-    if result_ptr:
-        emu.write_u64(result_ptr, result)
-
-    return 0
-
-
-@register_hook("_bootstrap_look_up3")
-def hook_bootstrap_look_up3(uc: Uc, address: int, size: int, user_data: HookContext):
-    emu = user_data["emu"]
-
-    service_name = emu.read_string(emu.get_arg(1))
-    service_port = emu.get_arg(2)
-
-    emu.logger.info(
-        "'bootstrap_look_up3' is called to look up '%s' service", service_name
-    )
-
-    port = emu.ios_os.bootstrap_look_up(service_name)
-    if not port:
-        return 1100
-
-    emu.write_u32(service_port, port)
-
-    return 0
 
 
 @register_hook("_xpc_connection_send_message_with_reply_sync")

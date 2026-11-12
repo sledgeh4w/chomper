@@ -41,7 +41,7 @@ class MachPortEntry:
 
 
 class MachMsgHandler:
-    """Handle mach msg."""
+    """Receive and reply mach msgs."""
 
     def __init__(
         self,
@@ -82,10 +82,13 @@ class MachMsgHandler:
         self,
         msg: int,
         msg_header: MachMsgHeader,
-        msg_body: MachMsgBody,
+        msg_body: Optional[MachMsgBody],
         *args,
     ):
-        data = struct_to_bytes(msg_header) + struct_to_bytes(msg_body) + b"".join(args)
+        data = struct_to_bytes(msg_header)
+        if msg_body is not None:
+            data += struct_to_bytes(msg_body)
+        data += b"".join(args)
 
         if len(data) < msg_header.msgh_size:
             data += bytes(msg_header.msgh_size - len(data))
@@ -862,6 +865,9 @@ class MachMsgHandler:
         if subsystem == 3:  # launchd
             if routine == 804:  # _xpc_look_up_endpoint
                 return self._reply_xpc_look_up_endpoint(msg, payload)
+        elif subsystem == 5:  # bootstrap
+            if routine == 207:  # bootstrap_look_up/2/3
+                return self._reply_xpc_look_up_endpoint(msg, payload)
 
         return self._reply_xpc_pipe_mach_msg(
             msg,
@@ -869,8 +875,11 @@ class MachMsgHandler:
         )
 
     def _reply_xpc_pipe_mach_msg(self, msg: int, payload: bytes, port: int = 0) -> int:
+        msg_body: Optional[MachMsgBody]
+
         if port:
             msgh_bits = const.MACH_MSGH_BITS_COMPLEX
+            msg_body = MachMsgBody(msgh_descriptor_count=1)
             descriptor = struct_to_bytes(
                 MachMsgPortDescriptor(
                     name=port,
@@ -880,13 +889,14 @@ class MachMsgHandler:
             )
         else:
             msgh_bits = 0
+            msg_body = None
             descriptor = b""
 
         msg_header = MachMsgHeader(
             msgh_bits=msgh_bits,
             msgh_size=(
                 ctypes.sizeof(MachMsgHeader)
-                + ctypes.sizeof(MachMsgBody)
+                + (ctypes.sizeof(MachMsgBody) if msg_body else 0)
                 + len(descriptor)
                 + len(payload)
             ),
@@ -894,10 +904,6 @@ class MachMsgHandler:
             msgh_local_port=0,
             msgh_voucher_port=0,
             msgh_id=0x20000000,
-        )
-
-        msg_body = MachMsgBody(
-            msgh_descriptor_count=1 if port else 0,
         )
 
         audit_token = [0, 0, 0, 0, 0, 1, 0, 1]
@@ -919,7 +925,7 @@ class MachMsgHandler:
 
         port = self.emu.ios_os.bootstrap_look_up(name)
         if not port:
-            xpc_payload = self._xpc_payload_serializer.serialize({"error": 1100})
+            xpc_payload = self._xpc_payload_serializer.serialize({"error": 124})
             return self._reply_xpc_pipe_mach_msg(msg, xpc_payload)
 
         reply = {

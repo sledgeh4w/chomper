@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import binascii
+import plistlib
 import uuid
 from io import BytesIO
 from typing import Any, Dict, Optional, Tuple, TYPE_CHECKING
 
+from chomper.objc import ObjcRuntime
 from chomper.plist17lib import _BinaryPlist17Parser, _BinaryPlist17Writer
-from chomper.utils import int_to_bytes
+from chomper.utils import bytes_to_float, int_to_bytes
 
 if TYPE_CHECKING:
     from chomper.core import Chomper
@@ -41,6 +43,9 @@ class XpcPayloadParser:
             length = self.emu.read_u32(offset)
             value = self.emu.read_string(offset + 4)
             offset += 4 + ((length + 3) & ~3)
+        elif wire_type == 0xA000:  # uuid
+            value = self.emu.read_bytes(offset, 16)
+            offset += 16
         elif wire_type == 0xF000:  # dictionary
             value = self._parse_dict(offset)
             wire_length = self.emu.read_u32(offset)
@@ -98,7 +103,7 @@ class XpcPayloadSerializer:
         elif isinstance(value, int):
             return int_to_bytes(0x3000, 4) + int_to_bytes(value, 8, signed=True)
         else:
-            raise TypeError(f"Unsupported type for xpc value: {type(value)}")
+            raise TypeError(f"Unsupported xpc type: {type(value).__name__}")
 
     @staticmethod
     def _serialize_string(value: str) -> bytes:
@@ -132,7 +137,7 @@ class XpcPayloadSerializer:
         elif type_ == "mach_send_right":
             return int_to_bytes(0xD000, 4)
         else:
-            raise TypeError(f"Unsupported xpc wire type: {type_}")
+            raise TypeError(f"Unsupported wire type: {type_!r}")
 
 
 class XpcMessageHandler:
@@ -141,43 +146,184 @@ class XpcMessageHandler:
     def __init__(self, emu: Chomper):
         self.emu = emu
 
-    def get_connection_name(self, connection: int) -> str:
-        name_ptr = self.emu.call_symbol("_xpc_connection_get_name", connection)
-        if not name_ptr:
-            return ""
-        return self.emu.read_string(name_ptr)
-
-    def _copy_description(self, obj: int) -> str:
-        desc_ptr = self.emu.call_symbol("_xpc_copy_description", obj)
-        return self.emu.read_string(desc_ptr)
-
-    def _dictionary_get_int64(self, obj: int, key: str) -> int:
+    def _create_xpc_dictionary(self, data: Optional[Dict[str, Any]] = None) -> int:
+        """Create a XPC dictionary based on a dict."""
         with self.emu.memory_scope() as mem:
-            return self.emu.call_symbol(
-                "_xpc_dictionary_get_int64",
+            dictionary = self.emu.call_symbol("_xpc_dictionary_create_empty")
+
+            for key, value in (data or {}).items():
+                key_ptr = mem.create_string(key)
+
+                if isinstance(value, bytes):
+                    value_ptr = mem.create_buffer(len(value))
+                    self.emu.write_bytes(value_ptr, value)
+
+                    self.emu.call_symbol(
+                        "_xpc_dictionary_set_data",
+                        dictionary,
+                        key_ptr,
+                        value_ptr,
+                        len(value),
+                    )
+                elif isinstance(value, dict):
+                    nested = self._create_xpc_dictionary(value)
+
+                    self.emu.call_symbol(
+                        "_xpc_dictionary_set_value",
+                        dictionary,
+                        key_ptr,
+                        nested,
+                    )
+                    self.emu.call_symbol("_xpc_release", nested)
+                elif isinstance(value, bool):
+                    self.emu.call_symbol(
+                        "_xpc_dictionary_set_bool",
+                        dictionary,
+                        key_ptr,
+                        int(value),
+                    )
+                elif isinstance(value, int):
+                    self.emu.call_symbol(
+                        "_xpc_dictionary_set_int64",
+                        dictionary,
+                        key_ptr,
+                        value,
+                    )
+                elif isinstance(value, str):
+                    self.emu.call_symbol(
+                        "_xpc_dictionary_set_string",
+                        dictionary,
+                        key_ptr,
+                        mem.create_string(value),
+                    )
+                elif isinstance(value, float):
+                    self.emu.call_symbol(
+                        "_xpc_dictionary_set_double",
+                        dictionary,
+                        key_ptr,
+                        float_args=[("double", value)],
+                    )
+                else:
+                    raise TypeError(f"Unsupported xpc type: {type(value).__name__}")
+
+            return dictionary
+
+    def _read_xpc_dictionary_value(self, obj: int, key: str) -> Any:
+        """Read the value of a key in a XPC dictionary."""
+        with self.emu.memory_scope() as mem:
+            value = self.emu.call_symbol(
+                "_xpc_dictionary_get_value",
                 obj,
                 mem.create_string(key),
             )
 
-    def _dictionary_get_data(self, obj: int, key: str) -> Optional[bytes]:
-        with self.emu.memory_scope() as mem:
-            key_ptr = mem.create_string(key)
-            length_out = mem.create_buffer(4)
+        if not value:
+            return None
 
+        type_id = self.emu.call_symbol("_xpc_get_type", value)
+
+        if type_id == self.emu.get_symbol("__xpc_type_null").address:
+            return None
+        elif type_id == self.emu.get_symbol("__xpc_type_bool").address:
+            return bool(self.emu.call_symbol("_xpc_bool_get_value", value))
+        elif type_id == self.emu.get_symbol("__xpc_type_int64").address:
+            result = self.emu.call_symbol("_xpc_int64_get_value", value)
+            return result - (1 << 64) if result >= (1 << 63) else result
+        elif type_id == self.emu.get_symbol("__xpc_type_uint64").address:
+            return self.emu.call_symbol("_xpc_uint64_get_value", value)
+        elif type_id == self.emu.get_symbol("__xpc_type_double").address:
             result = self.emu.call_symbol(
-                "_xpc_dictionary_get_data",
-                obj,
-                key_ptr,
-                length_out,
+                "_xpc_double_get_value",
+                value,
+                return_type="double",
             )
-            if not result:
-                return None
+            return bytes_to_float(result.to_bytes(8, self.emu.endian), self.emu.endian)
+        elif type_id == self.emu.get_symbol("__xpc_type_string").address:
+            string_ptr = self.emu.call_symbol("_xpc_string_get_string_ptr", value)
+            return self.emu.read_string(string_ptr)
+        elif type_id == self.emu.get_symbol("__xpc_type_data").address:
+            length = self.emu.call_symbol("_xpc_data_get_length", value)
+            bytes_ptr = self.emu.call_symbol("_xpc_data_get_bytes_ptr", value)
+            return self.emu.read_bytes(bytes_ptr, length)
+        elif type_id == self.emu.get_symbol("__xpc_type_uuid").address:
+            bytes_ptr = self.emu.call_symbol("_xpc_uuid_get_bytes", value)
+            return self.emu.read_bytes(bytes_ptr, 16)
 
-            length = self.emu.read_u32(length_out)
-            return self.emu.read_bytes(result, length)
+        return None
+
+    def _read_cf_string(self, obj: int) -> str:
+        length = self.emu.call_symbol("_CFStringGetLength", obj)
+        size = length * 4 + 1
+
+        with self.emu.memory_scope() as mem:
+            buffer = mem.create_buffer(size)
+
+            self.emu.call_symbol(
+                "_CFStringGetCString",
+                obj,
+                buffer,
+                size,
+                0x8000100,  # kCFStringEncodingUTF8
+            )
+
+            return self.emu.read_string(buffer)
+
+    def _read_cf_object(self, obj: int) -> Any:
+        """Convert a CF object into a Python object."""
+        type_id = self.emu.call_symbol("_CFGetTypeID", obj)
+
+        if type_id == self.emu.call_symbol("_CFBooleanGetTypeID"):
+            return bool(self.emu.call_symbol("_CFBooleanGetValue", obj))
+        elif type_id == self.emu.call_symbol("_CFStringGetTypeID"):
+            return self._read_cf_string(obj)
+        elif type_id == self.emu.call_symbol("_CFDataGetTypeID"):
+            length = self.emu.call_symbol("_CFDataGetLength", obj)
+            byte_ptr = self.emu.call_symbol("_CFDataGetBytePtr", obj)
+            return self.emu.read_bytes(byte_ptr, length)
+        elif type_id == self.emu.call_symbol("_CFNumberGetTypeID"):
+            with self.emu.memory_scope() as mem:
+                value = mem.create_buffer(8)
+
+                self.emu.call_symbol(
+                    "_CFNumberGetValue",
+                    obj,
+                    4,  # kCFNumberSInt64Type
+                    value,
+                )
+
+                return self.emu.read_s64(value)
+        elif type_id == self.emu.call_symbol("_CFArrayGetTypeID"):
+            count = self.emu.call_symbol("_CFArrayGetCount", obj)
+            array = []
+
+            for index in range(count):
+                value = self.emu.call_symbol("_CFArrayGetValueAtIndex", obj, index)
+                array.append(self._read_cf_object(value))
+
+            return array
+        elif type_id == self.emu.call_symbol("_CFDictionaryGetTypeID"):
+            count = self.emu.call_symbol("_CFDictionaryGetCount", obj)
+            dictionary = {}
+
+            with self.emu.memory_scope() as mem:
+                keys = mem.create_buffer(count * 8)
+                values = mem.create_buffer(count * 8)
+
+                self.emu.call_symbol("_CFDictionaryGetKeysAndValues", obj, keys, values)
+
+                for index in range(count):
+                    key = self._read_cf_string(self.emu.read_pointer(keys + index * 8))
+                    value = self._read_cf_object(
+                        self.emu.read_pointer(values + index * 8)
+                    )
+                    dictionary[key] = value
+
+                return dictionary
+
+        return None
 
     @classmethod
-    def _add_type_info(cls, obj: Any):
+    def _add_plist_type_info(cls, obj: Any):
         data = {}
         if isinstance(obj, int):
             data.update(
@@ -204,7 +350,7 @@ class XpcMessageHandler:
             data.update(
                 {
                     "type": "array",
-                    "value": [cls._add_type_info(item) for item in obj],
+                    "value": [cls._add_plist_type_info(item) for item in obj],
                 }
             )
         elif isinstance(obj, dict):
@@ -212,7 +358,8 @@ class XpcMessageHandler:
                 {
                     "type": "dict",
                     "value": {
-                        key: cls._add_type_info(value) for key, value in obj.items()
+                        key: cls._add_plist_type_info(value)
+                        for key, value in obj.items()
                     },
                 }
             )
@@ -224,15 +371,18 @@ class XpcMessageHandler:
                 }
             )
         else:
-            raise ValueError(f"Unsupported type: {type(obj)}")
+            raise ValueError(f"Unsupported type: {type(obj).__name__}")
         return data
 
     def handle_message(self, connection: int, message: int) -> int:
-        name = self.get_connection_name(connection)
-        desc = self._copy_description(message)
-        display = f"'{name}'" if name else hex(connection)
+        name_ptr = self.emu.call_symbol("_xpc_connection_get_name", connection)
+        desc_ptr = self.emu.call_symbol("_xpc_copy_description", message)
 
-        self.emu.logger.info("Received an xpc message to %s: %s", display, desc)
+        name = self.emu.read_string(name_ptr) if name_ptr else ""
+        desc = self.emu.read_string(desc_ptr) if desc_ptr else ""
+        connection_name = f"'{name}'" if name else hex(connection)
+
+        self.emu.logger.info("Received an xpc message to %s: %s", connection_name, desc)
 
         if not name:
             return 0
@@ -243,18 +393,18 @@ class XpcMessageHandler:
             sel_name = root_obj[0]
             return self.reply_ns_xpc_message(name, sel_name)
 
-        if name == "com.apple.SystemConfiguration.DNSConfiguration":
-            request_op = self._dictionary_get_int64(message, "request_op")
-            # _res_9_ninit
-            if request_op == 65537:
-                reply = self.emu.call_symbol("_xpc_dictionary_create_empty")
-                return reply
+        if name == "com.apple.cfprefsd.daemon":
+            return self._handle_cfprefsd_message(message)
+        elif name == "com.apple.securityd":
+            return self._handle_securityd_message(message)
+        elif name == "com.apple.SystemConfiguration.DNSConfiguration":
+            return self._handle_dns_configuration_message(message)
 
         return 0
 
     def parse_ns_xpc_message(self, message: int) -> Optional[Any]:
         # Parse object
-        root_data = self._dictionary_get_data(message, "root")
+        root_data = self._read_xpc_dictionary_value(message, "root")
         if not root_data:
             return None
 
@@ -271,25 +421,14 @@ class XpcMessageHandler:
     def create_ns_xpc_reply(self, obj: Any) -> int:
         write_io = BytesIO()
         plist_writer = _BinaryPlist17Writer(write_io)
-        plist_writer.write(self._add_type_info(obj), with_type_info=True)
+        plist_writer.write(self._add_plist_type_info(obj), with_type_info=True)
         reply_data = write_io.getvalue()
 
-        with self.emu.memory_scope() as mem:
-            key_root = mem.create_string("root")
-
-            reply_buf = mem.create_buffer(len(reply_data))
-            self.emu.write_bytes(reply_buf, reply_data)
-
-            reply = self.emu.call_symbol("_xpc_dictionary_create_empty")
-            self.emu.call_symbol(
-                "_xpc_dictionary_set_data",
-                reply,
-                key_root,
-                reply_buf,
-                len(reply_data),
-            )
-
-        return reply
+        return self._create_xpc_dictionary(
+            {
+                "root": reply_data,
+            }
+        )
 
     def reply_ns_xpc_message(self, name: str, sel_name: str) -> int:
         reply_obj = None
@@ -340,6 +479,129 @@ class XpcMessageHandler:
             return 0
 
         return self.create_ns_xpc_reply(reply_obj)
+
+    def _handle_cfprefsd_message(self, message: int) -> int:
+        operation = self._read_xpc_dictionary_value(message, "CFPreferencesOperation")
+        if operation in (1, 5):
+            plist_data = plistlib.dumps(
+                self.emu.ios_os.preferences,
+                fmt=plistlib.FMT_BINARY,
+            )
+
+            return self._create_xpc_dictionary(
+                {
+                    "CFPreferencesPropertyList": plist_data,
+                }
+            )
+
+        return 0
+
+    def _handle_securityd_message(self, message: int) -> int:
+        operation = self._read_xpc_dictionary_value(message, "operation")
+
+        query = self._sec_xpc_dictionary_copy_plist(message, "query")
+        if query is None:
+            return self._create_sec_error_reply(-25300)
+
+        # Filter out protocol fields
+        match_query = {
+            key: value
+            for key, value in query.items()
+            if not key.startswith(("m_", "r_", "u_"))
+        }
+
+        if operation == 0:  # Add
+            self.emu.ios_os.sec_item_add(match_query)
+
+            reply = self._create_xpc_dictionary()
+            self._sec_xpc_dictionary_set_plist(reply, "status", match_query)
+
+            return reply
+        elif operation == 1:  # CopyMatching
+            items = self.emu.ios_os.sec_item_copy_matching(match_query)
+            if not items:
+                return self._create_sec_error_reply(-25300)
+
+            result = items if query.get("m_Limit") == "m_LimitAll" else items[0]
+
+            reply = self._create_xpc_dictionary()
+            self._sec_xpc_dictionary_set_plist(reply, "status", result)
+
+            return reply
+        elif operation == 2:  # Update
+            attributes = self._sec_xpc_dictionary_copy_plist(
+                message,
+                "attributesToUpdate",
+            )
+            count = self.emu.ios_os.sec_item_update(match_query, attributes or {})
+
+            if not count:
+                return self._create_sec_error_reply(-25300)
+        elif operation == 3:  # Delete
+            count = self.emu.ios_os.sec_item_delete(match_query)
+
+            if not count:
+                return self._create_sec_error_reply(-25300)
+
+        return self._create_xpc_dictionary()
+
+    def _create_sec_error_reply(self, status: int) -> int:
+        return self._create_xpc_dictionary(
+            {
+                "error": {
+                    "domain": "NSOSStatusErrorDomain",
+                    "code": status,
+                },
+            }
+        )
+
+    def _sec_xpc_dictionary_set_plist(self, dictionary: int, key: str, value: Any):
+        """Set a DER encoded plist into a XPC dictionary by key."""
+        objc = ObjcRuntime(self.emu)
+
+        if isinstance(value, list):
+            plist = objc.create_cf_array(value)
+        elif isinstance(value, dict):
+            plist = objc.create_cf_dictionary(value)
+        else:
+            raise TypeError(f"Unsupported plist type: {type(value).__name__}")
+
+        with self.emu.memory_scope() as mem:
+            self.emu.call_symbol(
+                "_SecXPCDictionarySetPListWithRepair",
+                dictionary,
+                mem.create_string(key),
+                plist,
+            )
+
+        self.emu.call_symbol("_CFRelease", plist)
+
+    def _sec_xpc_dictionary_copy_plist(self, dictionary: int, key: str) -> Any:
+        """Copy a DER encoded plist from a XPC dictionary by key."""
+        with self.emu.memory_scope() as mem:
+            plist = self.emu.call_symbol(
+                "_SecXPCDictionaryCopyPList",
+                dictionary,
+                mem.create_string(key),
+                0,
+            )
+
+        if not plist:
+            return None
+
+        value = self._read_cf_object(plist)
+
+        self.emu.call_symbol("_CFRelease", plist)
+
+        return value
+
+    def _handle_dns_configuration_message(self, message: int) -> int:
+        request_op = self._read_xpc_dictionary_value(message, "request_op")
+
+        if request_op == 65537:  # _res_9_ninit
+            return self._create_xpc_dictionary()
+
+        return 0
 
     @staticmethod
     def _reply_get_identifier_of_type():
