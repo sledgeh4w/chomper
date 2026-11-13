@@ -8,7 +8,7 @@ description = "A lightweight emulation framework for emulating cryptographic alg
 readme = "README.md"
 license = { text = "MIT" }
 authors = [
-    { name = "Sh4w", email = "sledgeh4w@gmail.com" },
+    { name = "Sh4w", email = "lycheech33@gmail.com" },
 ]
 classifiers = [
     "License :: OSI Approved :: MIT License",
